@@ -1,0 +1,22 @@
+# 1. 환경 변수 및 보안 (가장 중요!)
+.env
+.env.local
+
+# 2. 데이터 파일 (Git은 코드 저장소이지, 데이터 저장소가 아닙니다!)
+*.csv
+*.xlsx
+*.json
+/data/
+
+# 3. 주피터 노트북 찌꺼기 파일 (이거 안 넣으면 커밋 내역이 엄청 지저분해집니다)
+.ipynb_checkpoints/
+
+# 4. 파이썬 환경 및 캐시 파일
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# 5. OS 시스템 파일 (맥이나 윈도우가 몰래 만드는 파일들)
+.DS_Store
+Thumbs.db
