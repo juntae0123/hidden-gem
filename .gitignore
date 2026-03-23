@@ -6,7 +6,9 @@
 *.csv
 *.xlsx
 *.json
-/data/
+*.pkl
+/data/*
+!/data/.gitkeep
 
 # 3. 주피터 노트북 찌꺼기 파일 (이거 안 넣으면 커밋 내역이 엄청 지저분해집니다)
 .ipynb_checkpoints/

@@ -1,7 +1,12 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends # Depends 추가
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 import pandas as pd
 import os
+
+# database, models 불러오기
+from database import SessionLocal, engine, Base
+import models
 
 app = FastAPI()
 
