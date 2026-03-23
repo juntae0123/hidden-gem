@@ -6,8 +6,8 @@ services:
     image: ankane/pgvector:latest
     container_name: hidden_gem_vectordb
     environment:
-      POSTGRES_USER: gem_user
-      POSTGRES_PASSWORD: gem_password
+      POSTGRES_USER: juntae
+      POSTGRES_PASSWORD: "0312"
       POSTGRES_DB: hidden_gem_db
     ports:
       - "5432:5432"
