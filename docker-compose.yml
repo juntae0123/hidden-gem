@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  db:
+    # 일반 postgres가 아니라 pgvector가 이미 설치된 공식 이미지를 사용합니다!
+    image: ankane/pgvector:latest
+    container_name: hidden_gem_vectordb
+    environment:
+      POSTGRES_USER: gem_user
+      POSTGRES_PASSWORD: gem_password
+      POSTGRES_DB: hidden_gem_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
