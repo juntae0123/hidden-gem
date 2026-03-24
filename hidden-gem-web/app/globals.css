@@ -1,15 +1,12 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* 밑에 다른 코드들이 있다면 그대로 두셔도 됩니다 */
-@import "tailwindcss";
+/* ✅ 1. v4 표준 방식으로 교체 */
+@import "tailwindcss"; 
 
 :root {
   --background: #ffffff;
   --foreground: #171717;
 }
 
+/* ✅ 2. v4의 새로운 테마 시스템 (잘 쓰고 계신 부분!) */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
