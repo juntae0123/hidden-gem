@@ -22,3 +22,11 @@ venv/
 # 5. OS 시스템 파일 (맥이나 윈도우가 몰래 만드는 파일들)
 .DS_Store
 Thumbs.db
+
+# .gitignore 파일 설정
+node_modules/
+dist/
+
+node_modules/
+.venv/
+__pycache__/
