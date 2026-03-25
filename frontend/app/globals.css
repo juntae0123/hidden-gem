@@ -1,12 +1,29 @@
-/* ✅ 1. v4 표준 방식으로 교체 */
-@import "tailwindcss"; 
+@import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* 기본 색상 */
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  
+  /* 등급 색상 */
+  --tier-legendary: #FFD700;
+  --tier-mythic: #FF0000;
+  --tier-epic: #A335EE;
+  --tier-rare: #0070DD;
+  --tier-uncommon: #1EFF00;
+  --tier-solid: #CD7F32;
+  --tier-maniac: #00FF41;
+  
+  /* UI 색상 */
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --card-bg: #111111;
+  --card-border: #222222;
+  --text-muted: #888888;
+  --boost-color: #FFA500;
+  --fallback-color: #f97316;
 }
 
-/* ✅ 2. v4의 새로운 테마 시스템 (잘 쓰고 계신 부분!) */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -14,15 +31,89 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* 기본 스타일 */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 스크롤바 커스텀 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #111;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
+
+/* 글로벌 애니메이션 */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes glitch {
+  0%, 90%, 100% { transform: translate(0); }
+  92% { transform: translate(-2px, 1px); }
+  94% { transform: translate(2px, -1px); }
+  96% { transform: translate(-1px, 2px); }
+  98% { transform: translate(1px, -2px); }
+}
+
+/* 로딩 스켈레톤 */
+.skeleton {
+  background: linear-gradient(90deg, #1a1a1a 25%, #222 50%, #1a1a1a 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 8px;
+}
+
+/* 포커스 스타일 */
+input:focus,
+button:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* 선택 색상 */
+::selection {
+  background: var(--primary);
+  color: white;
 }
