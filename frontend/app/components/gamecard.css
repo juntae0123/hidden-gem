@@ -1,0 +1,173 @@
+.game-card-container {
+  background: #111;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  padding: 20px;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.3s ease;
+  border-left: 6px solid #333;
+  overflow: hidden;
+  color: #fff;
+}
+
+.game-card-container:hover { 
+  transform: translateY(-4px); 
+}
+
+/* 등급별 보더 컬러 및 효과 */
+.game-card-container.legendary { border-left-color: #FFD700; box-shadow: 0 0 20px rgba(255, 214, 0, 0.2); }
+.game-card-container.legendary .tier-label { animation: legendary-pulse 2s infinite; }
+.game-card-container.mythic { border-left-color: #FF0000; }
+.game-card-container.epic { border-left-color: #A335EE; }
+.game-card-container.rare { border-left-color: #0070DD; }
+.game-card-container.uncommon { border-left-color: #1EFF00; }
+.game-card-container.solid { border-left-color: #CD7F32; }
+
+/* ☠️ MANIAC (ANOMALY) 전용 스타일 */
+.game-card-container.maniac {
+  background: #0d0d0d;
+  border: 1px solid #00FF41;
+  border-left: 6px solid #00FF41;
+  clip-path: polygon(0 0, 100% 0, 100% 92%, 96% 100%, 0 100%); 
+}
+
+/* 헤더 레이아웃 */
+.card-header { 
+  display: flex; 
+  align-items: center; 
+  justify-content: space-between; 
+}
+.rank-badge { 
+  font-size: 1.5rem; 
+  font-weight: 900; 
+  color: rgba(255,255,255,0.1); 
+  margin-right: 15px; 
+  font-style: italic; 
+}
+.game-name { 
+  font-size: 1.25rem; 
+  font-weight: bold; 
+  margin: 0; 
+  flex: 1; 
+}
+.score-section { 
+  text-align: right; 
+  display: flex; 
+  flex-direction: column; 
+  min-width: 100px; 
+}
+.tier-label { 
+  font-size: 0.7rem; 
+  font-weight: 900; 
+  letter-spacing: 1px; 
+}
+.score-value { 
+  font-size: 1.8rem; 
+  font-weight: 900; 
+  line-height: 1; 
+}
+
+/* 태그 & 부스트 요약 */
+.tag { 
+  font-size: 0.7rem; 
+  background: rgba(255,255,255,0.08); 
+  padding: 2px 8px; 
+  border-radius: 4px; 
+  margin-right: 5px; 
+  color: #aaa; 
+  display: inline-block; 
+  margin-bottom: 4px; 
+}
+.boost-reason-summary { 
+  margin-top: 12px; 
+  font-size: 0.85rem; 
+  color: #FFA500; 
+  background: rgba(255, 165, 0, 0.1); 
+  padding: 10px; 
+  border-radius: 8px; 
+  border-left: 3px solid #FFA500; 
+}
+.fallback-rescued-badge { 
+  font-size: 0.7rem; 
+  color: #f97316; 
+  font-style: italic; 
+  margin-top: 8px; 
+}
+
+/* 확장 영역 */
+.divider { 
+  border: 0; 
+  border-top: 1px solid rgba(255,255,255,0.08); 
+  margin: 15px 0; 
+}
+.details-grid { 
+  display: grid; 
+  grid-template-columns: 1fr 280px; 
+  gap: 20px; 
+}
+
+/* 🚨 에러 해결: 미디어 쿼리 줄바꿈 처리 */
+@media (max-width: 768px) { 
+  .details-grid { 
+    grid-template-columns: 1fr; 
+  } 
+}
+
+/* 🚨 에러 해결: line-clamp 표준 속성 추가 */
+.description { 
+  font-size: 0.9rem; 
+  color: #aaa; 
+  line-height: 1.6; 
+  margin-bottom: 20px; 
+  display: -webkit-box; 
+  -webkit-line-clamp: 4; 
+  line-clamp: 4; 
+  -webkit-box-orient: vertical; 
+  overflow: hidden; 
+}
+
+.boost-details-list h5 { 
+  font-size: 0.8rem; 
+  color: #888; 
+  margin-bottom: 8px; 
+}
+.boost-item { 
+  display: flex; 
+  justify-content: space-between; 
+  font-size: 0.8rem; 
+  padding: 4px 0; 
+  border-bottom: 1px solid #222; 
+}
+.metric-name { 
+  color: #888; 
+}
+
+.steam-button { 
+  display: inline-flex; 
+  align-items: center; 
+  margin-top: 20px; 
+  background: #2a475e; 
+  color: #fff; 
+  padding: 10px 18px; 
+  border-radius: 8px; 
+  text-decoration: none; 
+  font-weight: bold; 
+  font-size: 0.9rem; 
+  transition: background 0.2s; 
+}
+.steam-button:hover { 
+  background: #3a5a78; 
+}
+
+.expand-indicator { 
+  text-align: center; 
+  font-size: 0.7rem; 
+  color: #444; 
+  margin-top: 15px; 
+}
+
+@keyframes legendary-pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(255, 215, 0, 0.2); }
+  50% { box-shadow: 0 0 30px rgba(255, 215, 0, 0.4); }
+}
