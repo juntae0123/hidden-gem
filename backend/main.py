@@ -25,10 +25,10 @@ logger = logging.getLogger("hidden_gem")
 load_dotenv(find_dotenv())
 
 # 초기화
-app = FastAPI(title="Hidden Gem API", version="2.5")
+app = FastAPI(title="Hidden Gem API", version="4.0")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 DB_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DB_URL, pool_pre_ping=True, pooSl_recycle=300)
+engine = create_engine(DB_URL, pool_pre_ping=True, pool_recycle=300)
 
 # CORS 설정
 app.add_middleware(
@@ -39,21 +39,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ============== 상수 정의 (FULL) ==============
-DROP_THRESHOLD = 65
-DROP_THRESHOLD_FALLBACK = 55
-DROP_THRESHOLD_EMERGENCY = 45
-MIN_RESULTS_BEFORE_FALLBACK = 3
-MIN_RESULTS_ABSOLUTE = 5
-MANIAC_AVG_THRESHOLD = 65
-MANIAC_S_TIER_THRESHOLD = 85
-INTENT_BASE_WEIGHT = 1.5
-BOOST_CAP = 1.7
-MAX_TOTAL_WEIGHT = 2.55
+# ============== v4.0 핵심 상수 ==============
+# 점수 기준 (100점 돌파 허용)
+LEGENDARY_THRESHOLD = 100              # 이 이상이면 LEGENDARY
+DROP_THRESHOLD = 40                    # 이 미만은 DROP
+MIN_RESULTS = 5                        # 최소 결과 수
+
+# 🔥 Limit Break 공식 가중치
+METADATA_WEIGHT = 0.8                  # 메타데이터 점수 × 0.8
+SIMILARITY_WEIGHT = 0.4                # 유사도 보정 × 0.4
+# 최대 이론치: 100×0.8 + 100×0.4 = 120점
+
+# 유사도 스케일링 (0.45~0.85 → 0~100)
+SIMILARITY_MIN = 0.45
+SIMILARITY_MAX = 0.85
+
+# 🔥 Exact Match 상수 (시리즈물 도배 방지)
+EXACT_MATCH_BOOST = 50                 # 완전 일치: +50점
+PARTIAL_MATCH_BOOST_MAX = 5            # 부분 일치: 최대 +5점
+EXACT_MATCH_QUERY_MAX_LEN = 15         # 15자 이내만 Exact Match 적용
+
+# S/A/B 티어 가중치
+WEIGHT_S_TIER = 1.8
+WEIGHT_A_TIER = 1.4
+WEIGHT_B_TIER = 1.1
+
 MAX_RETRIES = 3
 RETRY_DELAY_BASE = 1.0
 
-# ============== 14개 감성 지표 + 한글 매핑 (FULL) ==============
+# ============== 14개 감성 지표 ==============
 METRIC_KOREAN: Dict[str, str] = {
     "mania_score": "마니아 매력",
     "story_depth": "스토리 깊이",
@@ -73,297 +87,176 @@ METRIC_KOREAN: Dict[str, str] = {
 
 ALL_METRICS: List[str] = list(METRIC_KOREAN.keys())
 
-# ============== 장르별 S/A/B 티어 가중치 (FULL) ==============
+# ============== 장르별 S/A/B 티어 가중치 ==============
 GENRE_WEIGHTS: Dict[str, Dict[str, List[str]]] = {
     "Action": {
         "S": ["addictiveness", "difficulty"],
         "A": ["replay_value", "art_style", "mania_score"],
-        "B": ["user_friendliness", "originality", "atmosphere_intensity", "character_appeal", "soundtrack_prominence"]
+        "B": ["user_friendliness", "originality", "atmosphere_intensity"]
     },
     "RPG": {
         "S": ["story_depth", "character_appeal"],
         "A": ["replay_value", "originality", "emotional_impact"],
-        "B": ["art_style", "soundtrack_prominence", "atmosphere_intensity", "difficulty", "addictiveness"]
+        "B": ["art_style", "soundtrack_prominence", "atmosphere_intensity"]
     },
     "Adventure": {
         "S": ["story_depth", "atmosphere_intensity"],
         "A": ["emotional_impact", "art_style", "originality"],
-        "B": ["soundtrack_prominence", "character_appeal", "user_friendliness", "indie_spirit", "gem_potential"]
+        "B": ["soundtrack_prominence", "character_appeal", "user_friendliness"]
     },
     "Strategy": {
         "S": ["difficulty", "replay_value"],
         "A": ["originality", "addictiveness", "user_friendliness"],
-        "B": ["mania_score", "story_depth", "art_style", "atmosphere_intensity", "indie_spirit"]
+        "B": ["mania_score", "story_depth", "art_style"]
     },
     "Simulation": {
         "S": ["replay_value", "addictiveness"],
         "A": ["user_friendliness", "originality", "art_style"],
-        "B": ["atmosphere_intensity", "mania_score", "indie_spirit", "character_appeal", "story_depth"]
-    },
-    "Indie": {
-        "S": ["indie_spirit", "originality"],
-        "A": ["art_style", "emotional_impact", "gem_potential"],
-        "B": ["story_depth", "atmosphere_intensity", "soundtrack_prominence", "character_appeal", "user_friendliness"]
-    },
-    "Horror": {
-        "S": ["atmosphere_intensity", "emotional_impact"],
-        "A": ["story_depth", "soundtrack_prominence", "art_style"],
-        "B": ["difficulty", "originality", "character_appeal", "mania_score", "indie_spirit"]
+        "B": ["atmosphere_intensity", "mania_score", "indie_spirit"]
     },
     "Survival": {
         "S": ["addictiveness", "difficulty"],
         "A": ["replay_value", "atmosphere_intensity", "originality"],
-        "B": ["user_friendliness", "indie_spirit", "mania_score", "art_style", "gem_potential"]
-    },
-    "Puzzle": {
-        "S": ["originality", "difficulty"],
-        "A": ["user_friendliness", "art_style", "addictiveness"],
-        "B": ["atmosphere_intensity", "soundtrack_prominence", "indie_spirit", "replay_value", "emotional_impact"]
-    },
-    "Platformer": {
-        "S": ["difficulty", "art_style"],
-        "A": ["addictiveness", "replay_value", "originality"],
-        "B": ["soundtrack_prominence", "user_friendliness", "atmosphere_intensity", "indie_spirit", "character_appeal"]
+        "B": ["user_friendliness", "indie_spirit", "mania_score"]
     },
     "Roguelike": {
         "S": ["difficulty", "replay_value"],
         "A": ["addictiveness", "originality", "mania_score"],
-        "B": ["art_style", "atmosphere_intensity", "indie_spirit", "user_friendliness", "soundtrack_prominence"]
-    },
-    "Shooter": {
-        "S": ["addictiveness", "difficulty"],
-        "A": ["replay_value", "atmosphere_intensity", "art_style"],
-        "B": ["originality", "soundtrack_prominence", "user_friendliness", "mania_score", "character_appeal"]
-    },
-    "Racing": {
-        "S": ["addictiveness", "replay_value"],
-        "A": ["difficulty", "art_style", "user_friendliness"],
-        "B": ["soundtrack_prominence", "atmosphere_intensity", "originality", "mania_score", "indie_spirit"]
-    },
-    "Sports": {
-        "S": ["replay_value", "addictiveness"],
-        "A": ["user_friendliness", "difficulty", "art_style"],
-        "B": ["originality", "atmosphere_intensity", "character_appeal", "soundtrack_prominence", "mania_score"]
-    },
-    "Fighting": {
-        "S": ["difficulty", "addictiveness"],
-        "A": ["character_appeal", "replay_value", "art_style"],
-        "B": ["soundtrack_prominence", "originality", "atmosphere_intensity", "mania_score", "user_friendliness"]
-    },
-    "Visual Novel": {
-        "S": ["story_depth", "emotional_impact"],
-        "A": ["character_appeal", "art_style", "soundtrack_prominence"],
-        "B": ["originality", "atmosphere_intensity", "user_friendliness", "indie_spirit", "gem_potential"]
+        "B": ["art_style", "atmosphere_intensity", "indie_spirit"]
     },
     "Sandbox": {
         "S": ["replay_value", "originality"],
         "A": ["addictiveness", "user_friendliness", "indie_spirit"],
-        "B": ["art_style", "atmosphere_intensity", "difficulty", "mania_score", "gem_potential"]
+        "B": ["art_style", "atmosphere_intensity", "difficulty"]
     },
-    "Management": {
-        "S": ["addictiveness", "replay_value"],
-        "A": ["difficulty", "originality", "user_friendliness"],
-        "B": ["art_style", "atmosphere_intensity", "indie_spirit", "story_depth", "mania_score"]
+    "Colony Sim": {
+        "S": ["replay_value", "addictiveness", "difficulty"],
+        "A": ["originality", "mania_score", "atmosphere_intensity"],
+        "B": ["art_style", "indie_spirit", "user_friendliness"]
+    },
+    "Base Building": {
+        "S": ["replay_value", "addictiveness"],
+        "A": ["difficulty", "originality", "atmosphere_intensity"],
+        "B": ["art_style", "user_friendliness", "indie_spirit"]
     },
     "City Builder": {
         "S": ["replay_value", "addictiveness"],
         "A": ["originality", "user_friendliness", "difficulty"],
-        "B": ["art_style", "atmosphere_intensity", "indie_spirit", "mania_score", "soundtrack_prominence"]
+        "B": ["art_style", "atmosphere_intensity", "indie_spirit"]
     },
-    "Tower Defense": {
-        "S": ["addictiveness", "difficulty"],
-        "A": ["replay_value", "originality", "art_style"],
-        "B": ["user_friendliness", "atmosphere_intensity", "indie_spirit", "mania_score", "soundtrack_prominence"]
+    "Horror": {
+        "S": ["atmosphere_intensity", "emotional_impact"],
+        "A": ["story_depth", "soundtrack_prominence", "art_style"],
+        "B": ["difficulty", "originality", "character_appeal"]
+    },
+    "Puzzle": {
+        "S": ["originality", "difficulty"],
+        "A": ["user_friendliness", "art_style", "addictiveness"],
+        "B": ["atmosphere_intensity", "soundtrack_prominence", "indie_spirit"]
+    },
+    "Platformer": {
+        "S": ["difficulty", "art_style"],
+        "A": ["addictiveness", "replay_value", "originality"],
+        "B": ["soundtrack_prominence", "user_friendliness", "atmosphere_intensity"]
     },
     "Metroidvania": {
         "S": ["difficulty", "atmosphere_intensity"],
         "A": ["art_style", "originality", "replay_value"],
-        "B": ["soundtrack_prominence", "addictiveness", "indie_spirit", "story_depth", "character_appeal"]
+        "B": ["soundtrack_prominence", "addictiveness", "indie_spirit"]
     },
     "Souls-like": {
         "S": ["difficulty", "atmosphere_intensity"],
         "A": ["mania_score", "replay_value", "originality"],
-        "B": ["art_style", "story_depth", "soundtrack_prominence", "addictiveness", "emotional_impact"]
+        "B": ["art_style", "story_depth", "soundtrack_prominence"]
+    },
+    "Visual Novel": {
+        "S": ["story_depth", "emotional_impact"],
+        "A": ["character_appeal", "art_style", "soundtrack_prominence"],
+        "B": ["originality", "atmosphere_intensity", "user_friendliness"]
     },
     "Card Game": {
         "S": ["replay_value", "addictiveness"],
         "A": ["originality", "difficulty", "mania_score"],
-        "B": ["art_style", "user_friendliness", "indie_spirit", "story_depth", "character_appeal"]
+        "B": ["art_style", "user_friendliness", "indie_spirit"]
     },
-    "Casual": {
-        "S": ["user_friendliness", "addictiveness"],
-        "A": ["art_style", "originality", "replay_value"],
-        "B": ["atmosphere_intensity", "soundtrack_prominence", "indie_spirit", "emotional_impact", "gem_potential"]
-    }
+    "Shooter": {
+        "S": ["addictiveness", "difficulty"],
+        "A": ["replay_value", "atmosphere_intensity", "art_style"],
+        "B": ["originality", "soundtrack_prominence", "user_friendliness"]
+    },
+    "Open World": {
+        "S": ["replay_value", "atmosphere_intensity"],
+        "A": ["story_depth", "originality", "addictiveness"],
+        "B": ["art_style", "character_appeal", "user_friendliness"]
+    },
+    "Indie": {
+        "S": ["indie_spirit", "originality"],
+        "A": ["art_style", "emotional_impact", "gem_potential"],
+        "B": ["story_depth", "atmosphere_intensity", "soundtrack_prominence"]
+    },
+    "Automation": {
+        "S": ["addictiveness", "replay_value", "originality"],
+        "A": ["difficulty", "mania_score", "user_friendliness"],
+        "B": ["art_style", "atmosphere_intensity", "indie_spirit"]
+    },
+    "Management": {
+        "S": ["addictiveness", "replay_value"],
+        "A": ["difficulty", "originality", "user_friendliness"],
+        "B": ["art_style", "atmosphere_intensity", "indie_spirit"]
+    },
+    "Crafting": {
+        "S": ["addictiveness", "replay_value"],
+        "A": ["originality", "difficulty", "user_friendliness"],
+        "B": ["atmosphere_intensity", "indie_spirit", "art_style"]
+    },
 }
 
-# ============== 장르 매핑 (한글 → Steam 장르) (FULL) ==============
-GENRE_MAPPING: Dict[str, List[str]] = {
+# ============== 코어 장르 매핑 (한글 → Steam 장르) ==============
+CORE_GENRE_MAPPING: Dict[str, List[str]] = {
     # 건설/관리 계열
-    "건설": ["Simulation", "Strategy", "City Builder", "Base Building", "Management", "Sandbox"],
-    "생존": ["Survival", "Crafting", "Open World Survival Craft", "Sandbox"],
-    "관리": ["Management", "Simulation", "Tycoon", "Economy", "City Builder"],
+    "건설": ["Simulation", "Strategy", "City Builder", "Base Building", "Colony Sim", "Sandbox"],
+    "생존": ["Survival", "Crafting", "Open World Survival Craft", "Base Building"],
+    "관리": ["Management", "Simulation", "Tycoon", "City Builder"],
     "샌드박스": ["Sandbox", "Open World", "Crafting", "Building"],
-    "전략": ["Strategy", "Turn-Based Strategy", "Real-Time Strategy", "4X", "Grand Strategy"],
-    "시뮬레이션": ["Simulation", "Life Sim", "Farming Sim", "Management"],
-    "식민지": ["Colony Sim", "Base Building", "Simulation", "Strategy", "Survival"],
-    "타이쿤": ["Tycoon", "Management", "Simulation", "Economy"],
-    "농장": ["Farming Sim", "Simulation", "Life Sim", "Casual"],
-    "자동화": ["Automation", "Factory", "Simulation", "Strategy"],
-    "세계구축": ["Sandbox", "Building", "City Builder", "Simulation", "Open World"],
-    "기지건설": ["Base Building", "Survival", "Strategy", "Simulation"],
+    "식민지": ["Colony Sim", "Base Building", "Simulation", "Survival"],
+    "기지건설": ["Base Building", "Survival", "Strategy", "Colony Sim"],
+    "자동화": ["Automation", "Factory", "Simulation"],
     
-    # 액션 계열
-    "액션": ["Action", "Action-Adventure", "Beat 'em up", "Hack and Slash"],
-    "격투": ["Fighting", "Beat 'em up", "Martial Arts", "Combat"],
-    "슈팅": ["Shooter", "FPS", "Third-Person Shooter", "Top-Down Shooter"],
-    "플랫폼": ["Platformer", "2D Platformer", "3D Platformer"],
-    "핵앤슬래시": ["Hack and Slash", "Action", "ARPG", "Loot"],
-    "전투": ["Action", "Combat", "Fighting", "Shooter"],
+    # 액션/전투 계열
+    "액션": ["Action", "Action-Adventure", "Hack and Slash"],
+    "슈팅": ["Shooter", "FPS", "Third-Person Shooter"],
+    "격투": ["Fighting", "Beat 'em up"],
     
-    # RPG 계열
-    "rpg": ["RPG", "JRPG", "Action RPG", "Turn-Based RPG", "CRPG"],
-    "롤플레잉": ["RPG", "Role-Playing", "JRPG", "CRPG"],
-    "턴제": ["Turn-Based", "Turn-Based RPG", "Turn-Based Strategy", "Tactical"],
-    "오픈월드": ["Open World", "Exploration", "Adventure", "Sandbox"],
-    
-    # 어드벤처/스토리
-    "어드벤처": ["Adventure", "Action-Adventure", "Visual Novel", "Narrative"],
+    # RPG/스토리 계열
+    "rpg": ["RPG", "JRPG", "Action RPG", "CRPG"],
+    "롤플레잉": ["RPG", "Role-Playing"],
     "스토리": ["Adventure", "Visual Novel", "Narrative", "Story Rich"],
-    "탐험": ["Exploration", "Adventure", "Open World", "Metroidvania"],
-    "미스터리": ["Mystery", "Detective", "Puzzle", "Adventure"],
+    "어드벤처": ["Adventure", "Action-Adventure"],
     
-    # 공포
-    "호러": ["Horror", "Psychological Horror", "Survival Horror"],
-    "공포": ["Horror", "Psychological Horror", "Survival Horror"],
-    
-    # 인디/캐주얼
-    "인디": ["Indie", "Casual", "Pixel Graphics"],
-    "캐주얼": ["Casual", "Relaxing", "Family Friendly"],
-    "힐링": ["Relaxing", "Casual", "Life Sim", "Cozy"],
-    
-    # 멀티플레이
-    "멀티": ["Multiplayer", "Co-op", "Online Co-Op", "MMO", "PvP"],
-    "협동": ["Co-op", "Online Co-Op", "Local Co-Op", "Multiplayer"],
-    "싱글": ["Singleplayer", "Solo"],
-    "pvp": ["PvP", "Competitive", "Multiplayer"],
+    # 전략 계열
+    "전략": ["Strategy", "Turn-Based Strategy", "Real-Time Strategy", "4X"],
+    "턴제": ["Turn-Based", "Turn-Based Strategy", "Tactical"],
     
     # 특수 장르
-    "로그라이크": ["Roguelike", "Roguelite", "Procedural Generation"],
-    "메트로배니아": ["Metroidvania", "Action", "Platformer", "Exploration"],
-    "소울라이크": ["Souls-like", "Action RPG", "Difficult", "Hardcore"],
-    "덱빌딩": ["Card Game", "Deck Builder", "Roguelike", "Strategy"],
-    "타워디펜스": ["Tower Defense", "Strategy", "Real-Time Strategy"],
-    "레이싱": ["Racing", "Driving", "Sports"],
-    "퍼즐": ["Puzzle", "Puzzle Platformer", "Logic", "Brain Training"],
-    "리듬": ["Rhythm", "Music", "Arcade"],
-    "비주얼노벨": ["Visual Novel", "Narrative", "Story Rich", "Dating Sim"],
-}
-
-# ============== 장르 충돌 맵 (FULL) ==============
-GENRE_CONFLICTS: Dict[str, List[str]] = {
-    "건설": ["Fighting", "Beat 'em up", "Shooter", "Racing", "Sports", "Rhythm"],
-    "생존": ["Visual Novel", "Puzzle", "Rhythm", "Sports", "Racing", "Card Game"],
-    "전략": ["Platformer", "Racing", "Sports", "Fighting", "Rhythm"],
-    "시뮬레이션": ["Fighting", "Beat 'em up", "Shooter", "Horror"],
-    "관리": ["Action", "Fighting", "Shooter", "Horror", "Platformer"],
-    "타이쿤": ["Action", "Fighting", "Horror", "Platformer", "Shooter"],
-    "세계구축": ["Fighting", "Racing", "Sports", "Horror", "Visual Novel"],
-    "기지건설": ["Racing", "Sports", "Rhythm", "Visual Novel", "Fighting"],
-    "rpg": ["Sports", "Racing", "Rhythm", "Simulation"],
-    "퍼즐": ["Shooter", "Fighting", "Hack and Slash", "Racing", "Survival"],
-    "호러": ["Casual", "Family Friendly", "Cute", "Relaxing", "Sports", "Racing"],
-    "캐주얼": ["Horror", "Difficult", "Hardcore", "Souls-like", "Survival Horror"],
-    "힐링": ["Horror", "Difficult", "Hardcore", "Violence", "Gore"],
-    "비주얼노벨": ["Action", "Shooter", "Racing", "Sports", "Survival"],
-    "리듬": ["Strategy", "Survival", "Horror", "Simulation"],
-    "스토리": ["Racing", "Sports", "Rhythm", "Tower Defense"],
-}
-
-# ============== 레퍼런스 게임 DB (FULL) ==============
-REFERENCE_GAMES: Dict[str, Dict[str, Any]] = {
-    # 건설/시뮬레이션
-    "림월드": {"genres": ["Simulation", "Strategy", "Colony Sim", "Base Building", "Survival"], "keywords": ["건설", "생존", "관리", "식민지"]},
-    "rimworld": {"genres": ["Simulation", "Strategy", "Colony Sim", "Base Building", "Survival"], "keywords": ["건설", "생존", "관리", "식민지"]},
-    "팩토리오": {"genres": ["Simulation", "Strategy", "Automation", "Base Building", "Factory"], "keywords": ["건설", "자동화", "공장", "관리"]},
-    "factorio": {"genres": ["Simulation", "Strategy", "Automation", "Base Building", "Factory"], "keywords": ["건설", "자동화", "공장", "관리"]},
-    "스타듀밸리": {"genres": ["Simulation", "Farming Sim", "RPG", "Life Sim", "Relaxing"], "keywords": ["농장", "시뮬레이션", "힐링", "관리"]},
-    "stardew valley": {"genres": ["Simulation", "Farming Sim", "RPG", "Life Sim", "Relaxing"], "keywords": ["농장", "시뮬레이션", "힐링", "관리"]},
-    "시티즈 스카이라인": {"genres": ["City Builder", "Simulation", "Management", "Building"], "keywords": ["건설", "도시", "관리", "시뮬레이션"]},
-    "cities skylines": {"genres": ["City Builder", "Simulation", "Management", "Building"], "keywords": ["건설", "도시", "관리", "시뮬레이션"]},
-    "플래닛 코스터": {"genres": ["Simulation", "Management", "Building", "Tycoon"], "keywords": ["건설", "관리", "놀이공원", "타이쿤"]},
-    "planet coaster": {"genres": ["Simulation", "Management", "Building", "Tycoon"], "keywords": ["건설", "관리", "놀이공원", "타이쿤"]},
-    "두 포인트 호스피탈": {"genres": ["Simulation", "Management", "Tycoon", "Strategy"], "keywords": ["관리", "병원", "타이쿤", "시뮬레이션"]},
-    "two point hospital": {"genres": ["Simulation", "Management", "Tycoon", "Strategy"], "keywords": ["관리", "병원", "타이쿤", "시뮬레이션"]},
-    "oxygen not included": {"genres": ["Simulation", "Colony Sim", "Survival", "Strategy", "Base Building"], "keywords": ["생존", "건설", "관리", "식민지"]},
-    "dwarf fortress": {"genres": ["Simulation", "Colony Sim", "Strategy", "Roguelike", "Base Building"], "keywords": ["건설", "관리", "식민지", "전략"]},
-    "frostpunk": {"genres": ["Simulation", "Strategy", "City Builder", "Survival", "Post-apocalyptic"], "keywords": ["건설", "생존", "관리", "전략"]},
-    "banished": {"genres": ["Simulation", "City Builder", "Strategy", "Survival"], "keywords": ["건설", "생존", "관리", "마을"]},
+    "로그라이크": ["Roguelike", "Roguelite"],
+    "메트로배니아": ["Metroidvania", "Platformer"],
+    "소울라이크": ["Souls-like", "Action RPG", "Difficult"],
+    "플랫폼": ["Platformer", "2D Platformer", "3D Platformer"],
+    "퍼즐": ["Puzzle", "Puzzle Platformer"],
+    "호러": ["Horror", "Psychological Horror", "Survival Horror"],
+    "공포": ["Horror", "Survival Horror"],
     
-    # 생존
-    "발하임": {"genres": ["Survival", "Open World", "Co-op", "Crafting", "Action"], "keywords": ["생존", "건설", "협동", "바이킹"]},
-    "valheim": {"genres": ["Survival", "Open World", "Co-op", "Crafting", "Action"], "keywords": ["생존", "건설", "협동", "바이킹"]},
-    "서브노티카": {"genres": ["Survival", "Open World", "Adventure", "Crafting", "Exploration"], "keywords": ["생존", "탐험", "바다", "건설"]},
-    "subnautica": {"genres": ["Survival", "Open World", "Adventure", "Crafting", "Exploration"], "keywords": ["생존", "탐험", "바다", "건설"]},
-    "테라리아": {"genres": ["Sandbox", "Survival", "Crafting", "2D", "Action", "Adventure"], "keywords": ["샌드박스", "건설", "탐험", "생존"]},
-    "terraria": {"genres": ["Sandbox", "Survival", "Crafting", "2D", "Action", "Adventure"], "keywords": ["샌드박스", "건설", "탐험", "생존"]},
-    "돈스타브": {"genres": ["Survival", "Indie", "Adventure", "Crafting"], "keywords": ["생존", "인디", "어려움", "탐험"]},
-    "don't starve": {"genres": ["Survival", "Indie", "Adventure", "Crafting"], "keywords": ["생존", "인디", "어려움", "탐험"]},
-    "the forest": {"genres": ["Survival", "Horror", "Open World", "Crafting"], "keywords": ["생존", "공포", "건설", "탐험"]},
-    "rust": {"genres": ["Survival", "Multiplayer", "Open World", "Crafting", "PvP"], "keywords": ["생존", "멀티", "pvp", "건설"]},
-    "ark": {"genres": ["Survival", "Open World", "Dinosaurs", "Multiplayer", "Crafting"], "keywords": ["생존", "공룡", "건설", "멀티"]},
+    # 분위기/테마
+    "인디": ["Indie"],
+    "힐링": ["Relaxing", "Casual", "Cozy"],
+    "오픈월드": ["Open World", "Exploration"],
+    "협동": ["Co-op", "Multiplayer"],
+    "멀티": ["Multiplayer", "Online Co-Op", "PvP"],
     
-    # 액션/RPG
-    "할로우나이트": {"genres": ["Action", "Metroidvania", "Platformer", "Indie", "Souls-like"], "keywords": ["액션", "탐험", "보스전", "분위기"]},
-    "hollow knight": {"genres": ["Action", "Metroidvania", "Platformer", "Indie", "Souls-like"], "keywords": ["액션", "탐험", "보스전", "분위기"]},
-    "엘든링": {"genres": ["Action RPG", "Souls-like", "Open World", "Difficult", "Dark Fantasy"], "keywords": ["액션", "어려움", "오픈월드", "보스전"]},
-    "elden ring": {"genres": ["Action RPG", "Souls-like", "Open World", "Difficult", "Dark Fantasy"], "keywords": ["액션", "어려움", "오픈월드", "보스전"]},
-    "다크소울": {"genres": ["Action RPG", "Souls-like", "Difficult", "Dark Fantasy"], "keywords": ["액션", "어려움", "보스전", "분위기"]},
-    "dark souls": {"genres": ["Action RPG", "Souls-like", "Difficult", "Dark Fantasy"], "keywords": ["액션", "어려움", "보스전", "분위기"]},
-    "하데스": {"genres": ["Action", "Roguelike", "Indie", "Hack and Slash", "Mythology"], "keywords": ["액션", "로그라이크", "반복", "스토리"]},
-    "hades": {"genres": ["Action", "Roguelike", "Indie", "Hack and Slash", "Mythology"], "keywords": ["액션", "로그라이크", "반복", "스토리"]},
-    "데드셀": {"genres": ["Action", "Roguelike", "Metroidvania", "Indie", "Difficult"], "keywords": ["액션", "로그라이크", "어려움", "플랫폼"]},
-    "dead cells": {"genres": ["Action", "Roguelike", "Metroidvania", "Indie", "Difficult"], "keywords": ["액션", "로그라이크", "어려움", "플랫폼"]},
-    "셀레스트": {"genres": ["Platformer", "Indie", "Difficult", "Pixel Graphics"], "keywords": ["플랫폼", "어려움", "인디", "스토리"]},
-    "celeste": {"genres": ["Platformer", "Indie", "Difficult", "Pixel Graphics"], "keywords": ["플랫폼", "어려움", "인디", "스토리"]},
-    
-    # 전략
-    "문명": {"genres": ["Strategy", "4X", "Turn-Based Strategy", "Historical"], "keywords": ["전략", "턴제", "문명", "역사"]},
-    "civilization": {"genres": ["Strategy", "4X", "Turn-Based Strategy", "Historical"], "keywords": ["전략", "턴제", "문명", "역사"]},
-    "크루세이더 킹즈": {"genres": ["Strategy", "Grand Strategy", "RPG", "Medieval"], "keywords": ["전략", "중세", "역사", "관리"]},
-    "crusader kings": {"genres": ["Strategy", "Grand Strategy", "RPG", "Medieval"], "keywords": ["전략", "중세", "역사", "관리"]},
-    "토탈워": {"genres": ["Strategy", "Real-Time Strategy", "Turn-Based Strategy", "War"], "keywords": ["전략", "전쟁", "역사", "전투"]},
-    "total war": {"genres": ["Strategy", "Real-Time Strategy", "Turn-Based Strategy", "War"], "keywords": ["전략", "전쟁", "역사", "전투"]},
-    "스타크래프트": {"genres": ["Strategy", "Real-Time Strategy", "Sci-fi", "Competitive"], "keywords": ["전략", "RTS", "SF", "멀티"]},
-    "starcraft": {"genres": ["Strategy", "Real-Time Strategy", "Sci-fi", "Competitive"], "keywords": ["전략", "RTS", "SF", "멀티"]},
-    "엑스컴": {"genres": ["Strategy", "Turn-Based", "Tactical", "Sci-fi"], "keywords": ["전략", "턴제", "전술", "SF"]},
-    "xcom": {"genres": ["Strategy", "Turn-Based", "Tactical", "Sci-fi"], "keywords": ["전략", "턴제", "전술", "SF"]},
-    
-    # 스토리/어드벤처
-    "디스코 엘리시움": {"genres": ["RPG", "Narrative", "Detective", "Indie", "Story Rich"], "keywords": ["스토리", "선택", "탐정", "대화"]},
-    "disco elysium": {"genres": ["RPG", "Narrative", "Detective", "Indie", "Story Rich"], "keywords": ["스토리", "선택", "탐정", "대화"]},
-    "디비니티 오리지널 신": {"genres": ["RPG", "Turn-Based", "Co-op", "Fantasy", "Story Rich"], "keywords": ["rpg", "턴제", "협동", "스토리"]},
-    "divinity original sin": {"genres": ["RPG", "Turn-Based", "Co-op", "Fantasy", "Story Rich"], "keywords": ["rpg", "턴제", "협동", "스토리"]},
-    "발더스 게이트": {"genres": ["RPG", "Turn-Based", "Fantasy", "Story Rich", "D&D"], "keywords": ["rpg", "스토리", "판타지", "선택"]},
-    "baldur's gate": {"genres": ["RPG", "Turn-Based", "Fantasy", "Story Rich", "D&D"], "keywords": ["rpg", "스토리", "판타지", "선택"]},
-    "위쳐": {"genres": ["RPG", "Action RPG", "Open World", "Story Rich", "Fantasy"], "keywords": ["rpg", "스토리", "오픈월드", "판타지"]},
-    "witcher": {"genres": ["RPG", "Action RPG", "Open World", "Story Rich", "Fantasy"], "keywords": ["rpg", "스토리", "오픈월드", "판타지"]},
-    
-    # 로그라이크/카드
-    "슬레이 더 스파이어": {"genres": ["Card Game", "Roguelike", "Deck Builder", "Strategy", "Indie"], "keywords": ["덱빌딩", "로그라이크", "전략", "카드"]},
-    "slay the spire": {"genres": ["Card Game", "Roguelike", "Deck Builder", "Strategy", "Indie"], "keywords": ["덱빌딩", "로그라이크", "전략", "카드"]},
-    "인스크립션": {"genres": ["Card Game", "Horror", "Roguelike", "Puzzle", "Indie"], "keywords": ["카드", "공포", "퍼즐", "인디"]},
-    "inscryption": {"genres": ["Card Game", "Horror", "Roguelike", "Puzzle", "Indie"], "keywords": ["카드", "공포", "퍼즐", "인디"]},
-    "몬스터 트레인": {"genres": ["Card Game", "Roguelike", "Strategy", "Tower Defense"], "keywords": ["덱빌딩", "로그라이크", "전략", "카드"]},
-    "monster train": {"genres": ["Card Game", "Roguelike", "Strategy", "Tower Defense"], "keywords": ["덱빌딩", "로그라이크", "전략", "카드"]},
-    
-    # 호러
-    "레지던트 이블": {"genres": ["Horror", "Survival Horror", "Action", "Zombie"], "keywords": ["공포", "생존", "좀비", "액션"]},
-    "resident evil": {"genres": ["Horror", "Survival Horror", "Action", "Zombie"], "keywords": ["공포", "생존", "좀비", "액션"]},
-    "아웃라스트": {"genres": ["Horror", "Survival Horror", "Indie", "First-Person"], "keywords": ["공포", "인디", "생존", "분위기"]},
-    "outlast": {"genres": ["Horror", "Survival Horror", "Indie", "First-Person"], "keywords": ["공포", "인디", "생존", "분위기"]},
-    "암네시아": {"genres": ["Horror", "Survival Horror", "Adventure", "Atmospheric"], "keywords": ["공포", "분위기", "탐험", "퍼즐"]},
-    "amnesia": {"genres": ["Horror", "Survival Horror", "Adventure", "Atmospheric"], "keywords": ["공포", "분위기", "탐험", "퍼즐"]},
+    # 테마
+    "우주": ["Space", "Sci-fi"],
+    "중세": ["Medieval", "Fantasy"],
+    "판타지": ["Fantasy", "Magic"],
 }
 
 # ============== 제외 장르 ==============
@@ -374,38 +267,46 @@ EXCLUDED_GENRES: List[str] = [
     "Tutorial", "Documentary"
 ]
 
-# ============== 요청 모델 ==============
+# ============== Pydantic 요청/응답 모델 ==============
 class SearchRequest(BaseModel):
     query: str
     top_k: int = 10
-    include_maniac: bool = False
 
-# ============== Intent 객체 타입 ==============
-@dataclass
-class IntentObject:
-    id: str
+class GameResult(BaseModel):
+    app_id: str
     name: str
-    
-    def to_dict(self) -> Dict[str, str]:
-        return {"id": self.id, "name": self.name}
+    genres: str
+    developer: str
+    description: str
+    final_score: float
+    status: str
+    similarity: float
+    is_genre_match: bool
+    is_exact_match: bool
+    matched_intents: List[Dict[str, str]]
+    scores: Dict[str, int]
 
+# ============== v4.0 인텐트 데이터 클래스 ==============
 @dataclass
 class ExtractedIntent:
+    # 1. Guardrail
+    is_game_search: bool = True
+    rejection_reason: str = ""
+    
+    # 2. 압축 쿼리
+    summary_query: str = ""
+    
+    # 3. 지표 (무제한)
     metrics: List[str] = field(default_factory=list)
-    required_genres: Set[str] = field(default_factory=set)
-    preferred_keywords: List[str] = field(default_factory=list)
-    negative_genres: Set[str] = field(default_factory=set)
-    reference_game: Optional[str] = None
-    genre_strictness: float = 0.5
-    core_keywords: List[str] = field(default_factory=list)
+    
+    # 4. 코어 장르
+    core_genres: List[str] = field(default_factory=list)
     
     def get_intent_objects(self) -> List[Dict[str, str]]:
-        """metrics를 객체 배열로 변환"""
         return [{"id": m, "name": METRIC_KOREAN.get(m, m)} for m in self.metrics]
 
 # ============== 재시도 데코레이터 ==============
 def retry_on_failure(max_retries: int = MAX_RETRIES, delay_base: float = RETRY_DELAY_BASE):
-    """OpenAI API 호출 재시도 데코레이터"""
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -413,97 +314,64 @@ def retry_on_failure(max_retries: int = MAX_RETRIES, delay_base: float = RETRY_D
             for attempt in range(max_retries):
                 try:
                     return func(*args, **kwargs)
-                except RateLimitError as e:
+                except (RateLimitError, APITimeoutError, APIError) as e:
                     last_exception = e
                     wait_time = delay_base * (2 ** attempt)
-                    logger.warning(f"Rate limit hit, waiting {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                    logger.warning(f"API error, retrying in {wait_time}s")
                     time.sleep(wait_time)
-                except APITimeoutError as e:
-                    last_exception = e
-                    wait_time = delay_base * (attempt + 1)
-                    logger.warning(f"API timeout, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
-                    time.sleep(wait_time)
-                except APIError as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        wait_time = delay_base
-                        logger.warning(f"API error: {e}, retrying in {wait_time}s...")
-                        time.sleep(wait_time)
-                    else:
-                        raise
                 except Exception as e:
-                    logger.error(f"Unexpected error in {func.__name__}: {e}")
+                    logger.error(f"Unexpected error: {e}")
                     raise
-            
-            logger.error(f"All {max_retries} retries failed for {func.__name__}")
             if last_exception:
                 raise last_exception
             return None
         return wrapper
     return decorator
 
-# ============== 레퍼런스 게임 추출 ==============
-def extract_reference_game(query: str) -> Optional[Dict]:
-    """쿼리에서 레퍼런스 게임 추출"""
-    query_lower = query.lower()
-    patterns = [
-        r"(.+?)\s*같은", r"(.+?)\s*같이", r"(.+?)\s*처럼", 
-        r"(.+?)\s*스타일", r"(.+?)\s*비슷한", r"(.+?)\s*느낌"
-    ]
-    
-    for pattern in patterns:
-        match = re.search(pattern, query_lower)
-        if match:
-            game_name = match.group(1).strip()
-            for ref_name, ref_data in REFERENCE_GAMES.items():
-                if ref_name in game_name or game_name in ref_name:
-                    return {"name": ref_name, **ref_data}
-    
-    for ref_name, ref_data in REFERENCE_GAMES.items():
-        if ref_name in query_lower:
-            return {"name": ref_name, **ref_data}
-    
-    return None
-
-# ============== 장르 키워드 추출 ==============
-def extract_genre_keywords(query: str) -> Tuple[Set[str], List[str]]:
-    """쿼리에서 장르 키워드 추출"""
-    query_lower = query.lower()
-    required_genres = set()
-    preferred_keywords = []
-    
-    for keyword, genres in GENRE_MAPPING.items():
-        if keyword in query_lower:
-            required_genres.update(genres)
-            preferred_keywords.append(keyword)
-    
-    return required_genres, preferred_keywords
-
-# ============== 부정 장르 추출 ==============
-def extract_negative_genres(query: str, required_keywords: List[str]) -> Set[str]:
-    """충돌하는 장르 추출"""
-    negative_genres = set()
-    
-    for keyword in required_keywords:
-        if keyword in GENRE_CONFLICTS:
-            negative_genres.update(GENRE_CONFLICTS[keyword])
-    
-    return negative_genres
-
-# ============== GPT로 지표 + 키워드 추출 ==============
+# ============== 🔥 v4.0 GPT 인텐트 추출 ==============
 @retry_on_failure()
-def extract_metrics_with_gpt(query: str) -> Tuple[List[str], List[str]]:
-    """GPT로 감성 지표 + 핵심 키워드 추출 (재시도 포함)"""
-    prompt = f"""사용자의 게임 검색 쿼리를 분석하세요.
+def extract_intent_with_gpt(query: str) -> Dict[str, Any]:
+    """
+    v4.0 GPT 인텐트 추출
+    
+    반환 스키마:
+    - is_game_search: 게임 검색인지
+    - summary_query: 벡터 검색용 압축 쿼리
+    - metrics: 관련 지표 (무제한)
+    - core_genres: 코어 장르
+    """
+    
+    prompt = f"""당신은 게임 추천 서비스의 쿼리 분석 전문가입니다.
 
-쿼리: "{query}"
+사용자 입력: "{query}"
 
-다음을 JSON으로 반환:
-1. intents: 관련된 감성 지표 (최대 4개)
-   - 사용 가능: {', '.join(ALL_METRICS)}
-2. core_keywords: 검색의 핵심 키워드 (최대 3개, 게임 장르/특징 관련)
+아래 JSON 스키마로 분석 결과를 반환하세요:
 
-예시: {{"intents": ["story_depth", "emotional_impact"], "core_keywords": ["스토리", "감동", "rpg"]}}
+{{
+    "is_game_search": true/false,
+    "rejection_reason": "",
+    "summary_query": "",
+    "metrics": [],
+    "core_genres": []
+}}
+
+**필드 설명:**
+
+1. is_game_search: 게임 추천/검색 관련이면 true, 아니면 false
+   - true: "림월드 같은 게임", "스토리 좋은 RPG", "어려운 로그라이크"
+   - false: "오늘 점심 뭐 먹지", "파이썬 코드 짜줘", "내일 날씨"
+
+2. rejection_reason: is_game_search가 false일 때 이유 (한글)
+
+3. summary_query: 벡터 검색에 최적화된 핵심 문장 (20자 내외)
+   - 예: "우주 식민지 건설 생존 시뮬레이션"
+   - 예: "스토리 중심 감성 인디 어드벤처"
+
+4. metrics: 관련 감성 지표 (해당되는 것 모두)
+   가능한 값: {', '.join(ALL_METRICS)}
+
+5. core_genres: 유저가 원하는 큰 틀의 장르 (한글, 최대 5개)
+   가능한 값: 건설, 생존, 관리, 샌드박스, 액션, RPG, 전략, 로그라이크, 퍼즐, 호러, 인디, 오픈월드, 협동 등
 """
     
     try:
@@ -511,273 +379,251 @@ def extract_metrics_with_gpt(query: str) -> Tuple[List[str], List[str]]:
             model="gpt-4o-mini",
             response_format={"type": "json_object"},
             messages=[
-                {"role": "system", "content": "게임 검색 분석 전문가. JSON만 출력."},
+                {"role": "system", "content": "게임 검색 쿼리 분석 전문가. JSON만 출력."},
                 {"role": "user", "content": prompt}
             ],
+            temperature=0.2,
             timeout=15.0
         )
+        
         result = json.loads(response.choices[0].message.content)
         
-        intents = result.get("intents", [])
-        if isinstance(intents, str):
-            intents = [intents]
-        valid_intents = [i for i in intents if i in ALL_METRICS][:4]
+        # 필드 검증 및 정규화
+        result["is_game_search"] = result.get("is_game_search", True)
+        result["rejection_reason"] = result.get("rejection_reason", "")
+        result["summary_query"] = result.get("summary_query", query)[:50]
         
-        core_keywords = result.get("core_keywords", [])
-        if isinstance(core_keywords, str):
-            core_keywords = [core_keywords]
+        metrics = result.get("metrics", [])
+        if isinstance(metrics, str):
+            metrics = [metrics]
+        result["metrics"] = [m for m in metrics if m in ALL_METRICS]
         
-        return valid_intents, core_keywords[:3]
+        core_genres = result.get("core_genres", [])
+        if isinstance(core_genres, str):
+            core_genres = [core_genres]
+        result["core_genres"] = core_genres[:5]
+        
+        return result
+        
     except Exception as e:
-        logger.warning(f"GPT metrics extraction failed: {e}")
-        return [], []
+        logger.warning(f"GPT extraction failed: {e}")
+        return {
+            "is_game_search": True,
+            "rejection_reason": "",
+            "summary_query": query,
+            "metrics": [],
+            "core_genres": []
+        }
 
-# ============== 고도화된 Intent 추출 ==============
-def extract_user_intent_v2(query: str) -> ExtractedIntent:
-    """고도화된 Intent 추출"""
+# ============== 로컬 장르 추출 (보조) ==============
+def extract_genres_local(query: str) -> List[str]:
+    """쿼리에서 로컬로 장르 키워드 추출"""
+    query_lower = query.lower()
+    found_genres = []
+    
+    for keyword in CORE_GENRE_MAPPING.keys():
+        if keyword in query_lower:
+            found_genres.append(keyword)
+    
+    return found_genres
+
+# ============== v4.0 인텐트 추출 메인 ==============
+def extract_user_intent(query: str) -> ExtractedIntent:
+    """v4.0 인텐트 추출 메인 함수"""
     intent = ExtractedIntent()
     
-    # 1. 레퍼런스 게임
-    ref_game = extract_reference_game(query)
-    if ref_game:
-        intent.reference_game = ref_game["name"]
-        intent.required_genres.update(ref_game.get("genres", []))
-        intent.preferred_keywords.extend(ref_game.get("keywords", []))
+    # 1. GPT로 인텐트 추출
+    gpt_result = extract_intent_with_gpt(query)
     
-    # 2. 장르 키워드
-    genres, keywords = extract_genre_keywords(query)
-    intent.required_genres.update(genres)
-    intent.preferred_keywords.extend(keywords)
-    intent.preferred_keywords = list(set(intent.preferred_keywords))
+    # 2. Guardrail 체크
+    intent.is_game_search = gpt_result.get("is_game_search", True)
+    intent.rejection_reason = gpt_result.get("rejection_reason", "")
     
-    # 3. 부정 장르
-    intent.negative_genres = extract_negative_genres(query, intent.preferred_keywords)
+    if not intent.is_game_search:
+        logger.info(f"[Guardrail] Not a game search: {intent.rejection_reason}")
+        return intent
     
-    # 4. 엄격도 계산
-    if any(w in query for w in ["꼭", "정확히", "딱", "반드시", "only"]):
-        intent.genre_strictness = 0.9
-    elif ref_game or len(intent.required_genres) >= 3:
-        intent.genre_strictness = 0.7
-    else:
-        intent.genre_strictness = 0.5
+    # 3. 압축 쿼리
+    intent.summary_query = gpt_result.get("summary_query", query)
     
-    # 5. GPT로 감성 지표 + 핵심 키워드
-    try:
-        metrics, core_keywords = extract_metrics_with_gpt(query)
-        intent.metrics = metrics
-        intent.core_keywords = core_keywords if core_keywords else intent.preferred_keywords[:3]
-    except Exception as e:
-        logger.warning(f"GPT extraction failed, using fallback: {e}")
-        intent.metrics = []
-        intent.core_keywords = intent.preferred_keywords[:3]
+    # 4. 지표 (무제한)
+    intent.metrics = gpt_result.get("metrics", [])
     
-    # 6. 핵심 키워드 보충 (GPT가 실패했거나 부족할 때)
-    if not intent.core_keywords:
-        words = query.replace(",", " ").split()
-        intent.core_keywords = [w for w in words if len(w) >= 2][:3]
+    # 5. 코어 장르 (GPT + 로컬 보완)
+    gpt_genres = gpt_result.get("core_genres", [])
+    local_genres = extract_genres_local(query)
+    
+    # 합치고 중복 제거
+    all_genres = list(dict.fromkeys(gpt_genres + local_genres))
+    intent.core_genres = all_genres[:5]
+    
+    logger.info(f"[Intent] summary='{intent.summary_query}', genres={intent.core_genres}, metrics={intent.metrics[:5]}")
     
     return intent
 
-# ============== 장르 매칭 점수 계산 ==============
-def calculate_genre_match_score(game_genres: str, intent: ExtractedIntent) -> Tuple[float, str]:
-    """
-    장르 매칭 점수 계산 (0.3 ~ 1.5)
+# ============== 🔥 장르 매칭 (점수에 영향 없음!) ==============
+# ============== 🔥 장르 매칭 수정판 ==============
+def check_genre_match(game_genres: str, core_genres: List[str]) -> bool:
+    if not core_genres:
+        return True 
     
-    - 완벽 매칭: 1.3 ~ 1.5
-    - 부분 매칭: 0.8 ~ 1.2
-    - 불일치: 0.3 ~ 0.7
-    """
-    if not intent.required_genres and not intent.negative_genres:
-        return 1.0, ""
+    game_genres_lower = game_genres.lower()
     
-    game_genre_lower = game_genres.lower()
-    
-    # 필수 장르 매칭 점수
-    match_count = 0
-    for g in intent.required_genres:
-        if g.lower() in game_genre_lower:
-            match_count += 1
-    
-    match_ratio = match_count / len(intent.required_genres) if intent.required_genres else 1.0
-    
-    # 부정 장르 매칭 (페널티)
-    negative_count = 0
-    for g in intent.negative_genres:
-        if g.lower() in game_genre_lower:
-            negative_count += 1
-    
-    penalty = 0.15 * negative_count * intent.genre_strictness
-    
-    # 기본 배율 계산 (0.5 ~ 1.0 범위)
-    base_multiplier = 0.5 + (match_ratio * 0.5)
-    
-    # 엄격 모드에서 매칭 실패 시 추가 페널티
-    if intent.genre_strictness > 0.7 and match_ratio < 0.3:
-        base_multiplier = max(0.3, base_multiplier - 0.2)
-    
-    # 페널티 적용
-    final_multiplier = max(0.3, min(1.5, base_multiplier - penalty))
-    
-    # 완벽 매칭 보너스
-    if match_ratio >= 0.6 and negative_count == 0:
-        final_multiplier = min(1.5, final_multiplier + 0.3)
-    
-    # 이유 생성
-    if final_multiplier < 0.5:
-        reason = f"⚠️ 장르 불일치 (일치율: {match_ratio:.0%})"
-    elif final_multiplier >= 1.2:
-        reason = "🎯 장르 완벽 매칭!"
-    elif negative_count > 0:
-        reason = f"⚡ 일부 장르 충돌 ({negative_count}개)"
-    else:
-        reason = ""
-    
-    return final_multiplier, reason
+    for user_genre in core_genres:
+        # 1. 유저가 입력한 한글 단어 자체가 DB 장르에 있는지 확인
+        if user_genre.lower() in game_genres_lower:
+            return True
+            
+        # 2. 영어로 매핑된 장르가 있는지도 확인
+        steam_genres = CORE_GENRE_MAPPING.get(user_genre, [user_genre])
+        for steam_genre in steam_genres:
+            if steam_genre.lower() in game_genres_lower:
+                return True
+                
+    return False
 
-# ============== 가중치 맵 생성 ==============
-def get_genre_weight_map(genres: str) -> Dict[str, float]:
-    """장르별 S/A/B 티어 가중치 적용"""
+# ============== 🔥 Exact Match 계산 (시리즈물 도배 방지) ==============
+def calculate_exact_match_boost(game_name: str, query: str) -> Tuple[int, bool]:
+    """
+    Exact Match 보너스 계산
+    
+    규칙:
+    1. query가 15자 이내 + name과 완전 일치 → +50점, is_exact=True
+    2. query가 name에 포함 → 최대 +5점, is_exact=False
+    3. 그 외 → 0점
+    
+    Returns:
+        (boost_points, is_exact_match)
+    """
+    query_clean = query.strip().lower()
+    name_clean = game_name.strip().lower()
+    
+    # 1. Exact Match: 15자 이내 + 완전 일치
+    if len(query_clean) <= EXACT_MATCH_QUERY_MAX_LEN:
+        if query_clean == name_clean:
+            return EXACT_MATCH_BOOST, True
+        
+        # 공백 제거 후 비교
+        if query_clean.replace(" ", "") == name_clean.replace(" ", ""):
+            return EXACT_MATCH_BOOST, True
+    
+    # 2. Partial Match: 쿼리가 이름에 포함 (최대 +5점)
+    if query_clean in name_clean:
+        return PARTIAL_MATCH_BOOST_MAX, False
+    
+    # 3. 이름의 핵심 단어가 쿼리에 포함 (최대 +3점)
+    name_words = set(name_clean.split())
+    query_words = set(query_clean.split())
+    
+    # 2글자 이상 단어만
+    name_words = {w for w in name_words if len(w) >= 2}
+    query_words = {w for w in query_words if len(w) >= 2}
+    
+    if name_words and query_words:
+        overlap = len(name_words & query_words)
+        if overlap >= 1:
+            return min(3, overlap * 2), False
+    
+    return 0, False
+
+# ============== 유사도 스케일링 ==============
+def scale_similarity(similarity: float) -> float:
+    """
+    코사인 유사도 0.45~0.85 → 0~100 스케일링
+    """
+    if similarity <= SIMILARITY_MIN:
+        return 0.0
+    if similarity >= SIMILARITY_MAX:
+        return 100.0
+    
+    return (similarity - SIMILARITY_MIN) / (SIMILARITY_MAX - SIMILARITY_MIN) * 100
+
+# ============== S/A/B 티어 가중치 맵 ==============
+def get_tier_weight_map(genres: str) -> Dict[str, float]:
+    """장르별 S/A/B 티어 가중치 생성"""
     weight_map = {m: 1.0 for m in ALL_METRICS}
+    
     for genre in [g.strip() for g in genres.split(",")]:
-        for gk, tc in GENRE_WEIGHTS.items():
-            if gk.lower() in genre.lower():
-                for m in tc.get("S", []):
-                    weight_map[m] = max(weight_map[m], 1.5)
-                for m in tc.get("A", []):
-                    weight_map[m] = max(weight_map[m], 1.3)
-                for m in tc.get("B", []):
-                    weight_map[m] = max(weight_map[m], 1.1)
+        for genre_key, tier_config in GENRE_WEIGHTS.items():
+            if genre_key.lower() in genre.lower():
+                for metric in tier_config.get("S", []):
+                    weight_map[metric] = max(weight_map[metric], WEIGHT_S_TIER)
+                for metric in tier_config.get("A", []):
+                    weight_map[metric] = max(weight_map[metric], WEIGHT_A_TIER)
+                for metric in tier_config.get("B", []):
+                    weight_map[metric] = max(weight_map[metric], WEIGHT_B_TIER)
+    
     return weight_map
 
-def get_s_tier_metrics(genres: str) -> List[str]:
-    """장르별 S티어 지표 추출"""
-    s_tier = set()
-    for genre in [g.strip() for g in genres.split(",")]:
-        for gk, tc in GENRE_WEIGHTS.items():
-            if gk.lower() in genre.lower():
-                s_tier.update(tc.get("S", []))
-    return list(s_tier)
-
-# ============== 동적 부스팅 적용 ==============
-def apply_dynamic_boosting(
-    scores: Dict[str, int], 
-    weight_map: Dict[str, float], 
-    user_intents: List[str]
-) -> Tuple[Dict[str, float], Dict[str, Any], Optional[str]]:
-    """사용자 Intent에 따른 동적 가중치 부스팅"""
-    boost_details = {}
-    boost_reason = None
-    
-    if not user_intents:
-        return weight_map, boost_details, boost_reason
-    
-    boosted_map = weight_map.copy()
-    max_boost_metric, max_boost_value = None, 0
-    
-    for metric in user_intents:
-        if metric in boosted_map:
-            original = weight_map.get(metric, 1.0)
-            boosted_map[metric] = original * INTENT_BASE_WEIGHT
-            boost_details[metric] = {"original": original, "after_base": boosted_map[metric]}
-    
-    group_a = [m for m in user_intents if m in scores]
-    group_b = [m for m in ALL_METRICS if m not in user_intents and m in scores]
-    
-    if group_a and len(group_b) >= 2:
-        group_a_avg = sum(scores[m] * boosted_map[m] for m in group_a) / len(group_a)
-        group_b_sorted = sorted([scores[m] * boosted_map[m] for m in group_b], reverse=True)
-        group_b_2nd = group_b_sorted[1] if len(group_b_sorted) > 1 else group_b_sorted[0]
-        
-        if group_a_avg < group_b_2nd and group_a_avg > 0:
-            additional_boost = min(BOOST_CAP, max(1.0, group_b_2nd / group_a_avg))
-            for metric in group_a:
-                final_weight = min(MAX_TOTAL_WEIGHT, boosted_map[metric] * additional_boost)
-                boosted_map[metric] = final_weight
-                boost_details[metric]["additional_boost"] = round(additional_boost, 2)
-                boost_details[metric]["final_weight"] = round(final_weight, 2)
-                if final_weight > max_boost_value:
-                    max_boost_value, max_boost_metric = final_weight, metric
-    
-    if max_boost_metric and max_boost_value > 1.5:
-        metric_name = METRIC_KOREAN.get(max_boost_metric, max_boost_metric)
-        boost_reason = f"🚀 [{metric_name}] 취향 집중 반영 (가중치 {max_boost_value:.2f}배)"
-    
-    return boosted_map, boost_details, boost_reason
-
-# ============== 최종 점수 계산 ==============
+# ============== 🔥🔥🔥 v4.0 최종 점수 계산 (Limit Break) ==============
 def calculate_final_score(
-    scores: Dict[str, int],
+    game_name: str,
     genres: str,
-    intent: ExtractedIntent,
-    drop_threshold: int = DROP_THRESHOLD
-) -> Tuple[float, str, Dict, Optional[str], float, str]:
-    """최종 점수 계산 (장르 매칭 포함)"""
-    weight_map = get_genre_weight_map(genres)
-    boosted_map, boost_details, boost_reason = apply_dynamic_boosting(scores, weight_map, intent.metrics)
+    scores: Dict[str, int],
+    similarity: float,
+    query: str,
+    intent: ExtractedIntent
+) -> Tuple[float, str, bool, bool]:
+    """
+    v4.0 Limit Break 점수 계산
     
-    # 장르 매칭 점수
-    genre_multiplier, genre_reason = calculate_genre_match_score(genres, intent)
+    공식: (메타데이터 × 0.8) + (유사도 보정 × 0.4) + Exact Match 보너스
     
-    # 가중 평균 계산
-    weighted_scores, total_weight = [], 0
+    Returns:
+        (final_score, status, is_genre_match, is_exact_match)
+    """
+    
+    # 1. 메타데이터 점수 (S/A/B 가중 평균)
+    weight_map = get_tier_weight_map(genres)
+    
+    weighted_sum = 0.0
+    total_weight = 0.0
     for metric in ALL_METRICS:
         if metric in scores:
-            w = boosted_map.get(metric, 1.0)
-            weighted_scores.append(scores[metric] * w)
+            w = weight_map.get(metric, 1.0)
+            weighted_sum += scores[metric] * w
             total_weight += w
     
-    base_score = sum(weighted_scores) / total_weight if total_weight > 0 else 50
+    metadata_score = weighted_sum / total_weight if total_weight > 0 else 50.0
     
-    # 장르 배율 적용 (최소 0.5배로 제한하여 너무 낮아지지 않게)
-    adjusted_genre_mult = max(0.5, genre_multiplier)
-    base_score *= adjusted_genre_mult
+    # 2. 유사도 보정 점수 (0~100 스케일)
+    similarity_scaled = scale_similarity(similarity)
     
-    # 시너지 보너스
-    synergy_bonus = 0
-    s_tier_metrics = get_s_tier_metrics(genres)
+    # 3. 🔥 Limit Break 공식
+    base_score = (metadata_score * METADATA_WEIGHT) + (similarity_scaled * SIMILARITY_WEIGHT)
     
-    if s_tier_metrics:
-        s_tier_scores = [scores.get(m, 0) for m in s_tier_metrics]
-        if all(s >= MANIAC_S_TIER_THRESHOLD for s in s_tier_scores):
-            synergy_bonus += 4 if intent.metrics else 8
+    # 4. Exact Match 보너스
+    exact_boost, is_exact_match = calculate_exact_match_boost(game_name, query)
     
-    if intent.metrics:
-        intent_scores = [scores.get(m, 0) for m in intent.metrics]
-        if all(s >= 80 for s in intent_scores):
-            synergy_bonus += len(intent.metrics) * 3
+    # 5. 최종 점수 (100점 돌파 허용!)
+    final_score = base_score + exact_boost
     
-    # 장르 완벽 매칭 보너스
-    if genre_multiplier >= 1.2:
-        synergy_bonus += 5
+    # 6. 장르 매칭 (점수에 영향 없음!)
+    is_genre_match = check_genre_match(genres, intent.core_genres)
     
-    final_score = base_score + synergy_bonus
-    
-    # 상태 분류
-    if final_score < drop_threshold:
-        if s_tier_metrics:
-            s_tier_scores = [scores.get(m, 0) for m in s_tier_metrics]
-            plain_avg = sum(scores.values()) / len(scores) if scores else 0
-            if all(s >= MANIAC_S_TIER_THRESHOLD for s in s_tier_scores) and plain_avg < MANIAC_AVG_THRESHOLD:
-                status = "MANIAC"
-            else:
-                status = "DROP"
-        else:
-            status = "DROP"
+    # 7. Status 결정
+    if final_score >= LEGENDARY_THRESHOLD:
+        status = "LEGENDARY"
+    elif final_score >= 80:
+        status = "MYTHIC"
+    elif final_score >= 65:
+        status = "EPIC"
+    elif final_score >= 50:
+        status = "RARE"
+    elif final_score >= DROP_THRESHOLD:
+        status = "UNCOMMON"
     else:
-        status = "GEM"
+        status = "DROP"
     
-    return final_score, status, boost_details, boost_reason, genre_multiplier, genre_reason
+    return final_score, status, is_genre_match, is_exact_match
 
-# ============== 장르 제외 체크 ==============
+# ============== 유틸리티 함수들 ==============
 def is_excluded_genre(genres: str) -> bool:
-    """유틸리티/소프트웨어 장르 제외"""
     if not genres:
         return False
     return any(ex.lower() in genres.lower() for ex in EXCLUDED_GENRES)
 
-# ============== DB row → scores 딕셔너리 ==============
 def parse_scores_from_row(row) -> Dict[str, int]:
-    """DB 결과 row에서 점수 딕셔너리 추출"""
     return {
         "mania_score": row[5] or 50,
         "story_depth": row[6] or 50,
@@ -795,58 +641,10 @@ def parse_scores_from_row(row) -> Dict[str, int]:
         "gem_potential": row[18] or 50
     }
 
-# ============== 후보 처리 ==============
-def process_candidates(
-    candidates: List,
-    intent: ExtractedIntent,
-    drop_threshold: int
-) -> Tuple[List[Dict], List[Dict]]:
-    """후보 게임들을 처리하여 GEM/MANIAC 분류"""
-    gems, maniacs = [], []
-    
-    for row in candidates:
-        genres = row[2] or ""
-        if is_excluded_genre(genres):
-            continue
-        
-        scores = parse_scores_from_row(row)
-        similarity = float(row[19]) if len(row) > 19 else 0.0
-        
-        final_score, status, boost_details, boost_reason, genre_mult, genre_reason = calculate_final_score(
-            scores, genres, intent, drop_threshold
-        )
-        
-        game_result = {
-            "app_id": row[0],
-            "name": row[1],
-            "genres": genres,
-            "developer": row[3] or "Unknown",
-            "description": row[4] or "",
-            "final_score": round(final_score, 2),
-            "status": status,
-            "similarity": round(similarity, 4),
-            "matched_intents": intent.metrics,
-            "boost_reason": boost_reason,
-            "boost_info": boost_details,
-            "scores": scores,
-            "genre_match": {
-                "multiplier": round(genre_mult, 2),
-                "reason": genre_reason,
-                "is_match": genre_mult >= 0.8
-            }
-        }
-        
-        if status == "GEM":
-            gems.append(game_result)
-        elif status == "MANIAC":
-            maniacs.append(game_result)
-    
-    return gems, maniacs
-
-# ============== 임베딩 생성 (재시도 포함) ==============
+# ============== 임베딩 생성 ==============
 @retry_on_failure()
 def create_query_embedding(query: str) -> List[float]:
-    """쿼리 임베딩 생성"""
+    """summary_query로 1536차원 임베딩 생성"""
     embed_response = client.embeddings.create(
         model="text-embedding-3-small",
         input=query,
@@ -854,9 +652,8 @@ def create_query_embedding(query: str) -> List[float]:
     )
     return embed_response.data[0].embedding
 
-# ============== 벡터 검색 실행 ==============
+# ============== 벡터 검색 ==============
 def execute_vector_search(query_vector: List[float], limit: int = 100) -> List:
-    """pgvector 벡터 유사도 검색"""
     try:
         with engine.connect() as conn:
             result = conn.execute(text("""
@@ -876,9 +673,8 @@ def execute_vector_search(query_vector: List[float], limit: int = 100) -> List:
         logger.error(f"Vector search failed: {e}")
         return []
 
-# ============== 인기 게임 가져오기 (최후의 보루) ==============
-def get_popular_games(limit: int = 10, genre_filter: Optional[Set[str]] = None) -> List[Dict]:
-    """gem_potential 높은 인기 게임 반환"""
+# ============== Fallback: 인기 게임 ==============
+def get_popular_games(limit: int = 10, core_genres: List[str] = None) -> List[Dict]:
     try:
         with engine.connect() as conn:
             result = conn.execute(text("""
@@ -896,18 +692,11 @@ def get_popular_games(limit: int = 10, genre_filter: Optional[Set[str]] = None) 
             games = []
             for row in result:
                 genres = row[2] or ""
-                
-                # 제외 장르 체크
                 if is_excluded_genre(genres):
                     continue
                 
-                # 장르 필터가 있으면 적용
-                if genre_filter:
-                    genre_lower = genres.lower()
-                    if not any(g.lower() in genre_lower for g in genre_filter):
-                        continue
+                is_match = check_genre_match(genres, core_genres) if core_genres else True
                 
-                scores = parse_scores_from_row(row)
                 games.append({
                     "app_id": row[0],
                     "name": row[1],
@@ -915,14 +704,13 @@ def get_popular_games(limit: int = 10, genre_filter: Optional[Set[str]] = None) 
                     "developer": row[3] or "Unknown",
                     "description": row[4] or "",
                     "final_score": float(row[18] or 70),
-                    "status": "GEM",
-                    "similarity": 0.0,
+                    "status": "RARE",
+                    "similarity": 0.5,
+                    "is_genre_match": is_match,
+                    "is_exact_match": False,
                     "matched_intents": [],
-                    "boost_reason": None,
-                    "boost_info": {},
-                    "scores": scores,
-                    "genre_match": {"multiplier": 1.0, "reason": "🌟 인기 명작", "is_match": True},
-                    "is_popular_fallback": True
+                    "scores": parse_scores_from_row(row),
+                    "is_fallback": True
                 })
                 
                 if len(games) >= limit:
@@ -930,250 +718,218 @@ def get_popular_games(limit: int = 10, genre_filter: Optional[Set[str]] = None) 
             
             return games
     except Exception as e:
-        logger.error(f"Failed to get popular games: {e}")
+        logger.error(f"Popular games failed: {e}")
         return []
 
-# ============== 3단계 무적 Fallback 검색 ==============
-def hybrid_search_with_fallback(
+# ============== 🔥🔥🔥 v4.0 메인 검색 함수 ==============
+def search_games(
     query: str,
     intent: ExtractedIntent,
-    top_k: int = 10,
-    include_maniac: bool = False
+    top_k: int = 10
 ) -> Dict:
     """
-    3단계 Fallback 전략
+    v4.0 메인 검색
     
-    1단계: 전체 쿼리 벡터 검색 (DROP_THRESHOLD=65)
-    2단계: 핵심 키워드 검색 + 기준 완화 (DROP_THRESHOLD=55)
-    3단계: 인기 게임 강제 반환 (DROP_THRESHOLD=45 또는 무조건)
+    반환:
+    - main_results: 장르 매칭 O
+    - alternative_results: 장르 매칭 X (점수는 높음)
     """
-    search_stage = 1
-    fallback_message = None
-    error_log = []
-    all_candidates = []
     
-    # ========== 1단계: 전체 쿼리 검색 ==========
-    logger.info(f"[Stage 1] Full query: '{query}'")
+    main_results = []
+    alternative_results = []
+    seen_ids = set()
+    
+    # 🔥 벡터 검색 (summary_query 사용!)
+    logger.info(f"[Search] Vector search: '{intent.summary_query}'")
+    
     try:
-        query_vector = create_query_embedding(query)
-        candidates = execute_vector_search(query_vector, limit=100)
-        all_candidates.extend(candidates)
+        query_vector = create_query_embedding(intent.summary_query)
+        candidates = execute_vector_search(query_vector, limit=150)
         
-        gems, maniacs = process_candidates(candidates, intent, DROP_THRESHOLD)
-        
-        if len(gems) >= MIN_RESULTS_BEFORE_FALLBACK:
-            gems.sort(key=lambda x: x["final_score"], reverse=True)
-            maniacs.sort(key=lambda x: x["final_score"], reverse=True)
+        for row in candidates:
+            app_id = row[0]
+            if app_id in seen_ids:
+                continue
             
-            return {
-                "success": True,
-                "search_stage": search_stage,
-                "gems": gems[:top_k],
-                "maniacs": maniacs[:5] if include_maniac else [],
-                "total_candidates": len(candidates),
-                "fallback_message": None,
-                "error_log": error_log
+            genres = row[2] or ""
+            if is_excluded_genre(genres):
+                continue
+            
+            scores = parse_scores_from_row(row)
+            similarity = float(row[19]) if len(row) > 19 else 0.5
+            
+            # 🔥 v4.0 점수 계산
+            final_score, status, is_genre_match, is_exact_match = calculate_final_score(
+                game_name=row[1],
+                genres=genres,
+                scores=scores,
+                similarity=similarity,
+                query=query,
+                intent=intent
+            )
+            
+            # DROP 필터링
+            if status == "DROP":
+                continue
+            
+            game_result = {
+                "app_id": app_id,
+                "name": row[1],
+                "genres": genres,
+                "developer": row[3] or "Unknown",
+                "description": row[4] or "",
+                "final_score": round(final_score, 2),
+                "status": status,
+                "similarity": round(similarity, 4),
+                "is_genre_match": is_genre_match,
+                "is_exact_match": is_exact_match,
+                "matched_intents": intent.get_intent_objects(),
+                "scores": scores
             }
-        
-        error_log.append(f"1단계: {len(gems)}개 결과 (기준 미달)")
-        logger.info(f"[Stage 1] Insufficient: {len(gems)} gems")
-        
-    except Exception as e:
-        logger.warning(f"[Stage 1] Failed: {e}")
-        error_log.append(f"1단계 실패: {str(e)[:50]}")
-        gems, maniacs = [], []
-    
-    # ========== 2단계: 핵심 키워드 검색 + 기준 완화 ==========
-    search_stage = 2
-    
-    # 핵심 키워드 조합
-    if intent.core_keywords:
-        simplified_query = " ".join(intent.core_keywords)
-    elif intent.preferred_keywords:
-        simplified_query = " ".join(intent.preferred_keywords[:2]) + " 게임"
-    else:
-        simplified_query = query[:20] + " 게임 추천"
-    
-    logger.info(f"[Stage 2] Simplified: '{simplified_query}'")
-    
-    try:
-        query_vector = create_query_embedding(simplified_query)
-        candidates_2 = execute_vector_search(query_vector, limit=100)
-        
-        # 기존 후보와 중복 제거 후 합치기
-        existing_ids = {c[0] for c in all_candidates}
-        new_candidates = [c for c in candidates_2 if c[0] not in existing_ids]
-        all_candidates.extend(new_candidates)
-        
-        # 완화된 Intent로 재처리
-        intent_relaxed = ExtractedIntent()
-        intent_relaxed.metrics = intent.metrics
-        intent_relaxed.required_genres = intent.required_genres
-        intent_relaxed.genre_strictness = 0.3  # 엄격도 대폭 완화
-        
-        gems_2, maniacs_2 = process_candidates(all_candidates, intent_relaxed, DROP_THRESHOLD_FALLBACK)
-        
-        # 기존 결과와 합치기
-        existing_gem_ids = {g["app_id"] for g in gems}
-        for g in gems_2:
-            if g["app_id"] not in existing_gem_ids:
-                g["fallback_rescued"] = True
-                gems.append(g)
-                existing_gem_ids.add(g["app_id"])
-        
-        if len(gems) >= MIN_RESULTS_BEFORE_FALLBACK:
-            gems.sort(key=lambda x: x["final_score"], reverse=True)
-            maniacs.extend([m for m in maniacs_2 if m["app_id"] not in {x["app_id"] for x in maniacs}])
-            maniacs.sort(key=lambda x: x["final_score"], reverse=True)
             
-            return {
-                "success": True,
-                "search_stage": search_stage,
-                "gems": gems[:top_k],
-                "maniacs": maniacs[:5] if include_maniac else [],
-                "total_candidates": len(all_candidates),
-                "fallback_message": "💡 검색 결과가 적어 기준을 완화하여 추가 발굴했습니다",
-                "simplified_query": simplified_query,
-                "error_log": error_log
-            }
-        
-        error_log.append(f"2단계: {len(gems)}개 결과 (여전히 부족)")
-        logger.info(f"[Stage 2] Still insufficient: {len(gems)} gems")
-        
-    except Exception as e:
-        logger.warning(f"[Stage 2] Failed: {e}")
-        error_log.append(f"2단계 실패: {str(e)[:50]}")
-    
-    # ========== 3단계: 무적 Fallback ==========
-    search_stage = 3
-    logger.info("[Stage 3] Emergency fallback - popular games")
-    
-    try:
-        # 장르 필터 적용하여 인기 게임 가져오기
-        genre_filter = intent.required_genres if intent.required_genres else None
-        popular_games = get_popular_games(limit=top_k, genre_filter=genre_filter)
-        
-        # 장르 필터로 못 찾으면 필터 없이 재시도
-        if len(popular_games) < MIN_RESULTS_ABSOLUTE:
-            popular_games = get_popular_games(limit=top_k, genre_filter=None)
-        
-        # 기존 gems와 합치기
-        existing_ids = {g["app_id"] for g in gems}
-        for pg in popular_games:
-            if pg["app_id"] not in existing_ids and len(gems) < top_k:
-                pg["fallback_rescued"] = True
-                gems.append(pg)
-                existing_ids.add(pg["app_id"])
-        
-        # 여전히 부족하면 모든 후보를 최저 기준으로 재처리
-        if len(gems) < MIN_RESULTS_ABSOLUTE and all_candidates:
-            intent_emergency = ExtractedIntent()
-            intent_emergency.metrics = []
-            intent_emergency.genre_strictness = 0.0
+            # 🔥 장르별 분류 (점수에 영향 없음!)
+            if is_exact_match or is_genre_match:
+                game_result["is_genre_match"] = True
+                main_results.append(game_result)
+            else:
+                alternative_results.append(game_result)
             
-            gems_emergency, _ = process_candidates(all_candidates, intent_emergency, DROP_THRESHOLD_EMERGENCY)
-            
-            for g in gems_emergency:
-                if g["app_id"] not in existing_ids and len(gems) < top_k:
-                    g["fallback_rescued"] = True
-                    g["emergency_rescue"] = True
-                    gems.append(g)
-                    existing_ids.add(g["app_id"])
-        
-        gems.sort(key=lambda x: x["final_score"], reverse=True)
-        
-        # 최소 결과 보장
-        if len(gems) == 0:
-            gems = get_popular_games(limit=top_k)
-        
-        fallback_message = "🔥 검색 조건에 맞는 게임을 찾기 어려워, 인기 명작들을 추천해 드립니다"
-        if intent.required_genres:
-            genre_str = ", ".join(list(intent.required_genres)[:3])
-            fallback_message = f"🔥 '{genre_str}' 관련 인기 명작들을 추천해 드립니다"
-        
-        return {
-            "success": True,
-            "search_stage": search_stage,
-            "gems": gems[:top_k],
-            "maniacs": maniacs[:5] if include_maniac else [],
-            "total_candidates": len(all_candidates) if all_candidates else len(gems),
-            "fallback_message": fallback_message,
-            "is_recommendation_mode": True,
-            "error_log": error_log
-        }
-        
     except Exception as e:
-        logger.error(f"[Stage 3] Also failed: {e}")
-        error_log.append(f"3단계 실패: {str(e)[:50]}")
+        logger.error(f"Vector search failed: {e}")
+    
+    # 점수순 정렬
+    main_results.sort(key=lambda x: (-x["is_exact_match"], -x["final_score"]))
+    alternative_results.sort(key=lambda x: -x["final_score"])
+    
+    # Fallback
+    if len(main_results) < MIN_RESULTS:
+        logger.info(f"[Search] Fallback: only {len(main_results)} main results")
+        fallback = get_popular_games(limit=top_k, core_genres=intent.core_genres)
         
-        # 최후의 최후: 아무거나라도 반환
-        return {
-            "success": False,
-            "search_stage": search_stage,
-            "gems": get_popular_games(limit=top_k) or [],
-            "maniacs": [],
-            "total_candidates": 0,
-            "fallback_message": "😢 검색에 문제가 발생했지만, 인기 게임을 추천해 드립니다",
-            "is_recommendation_mode": True,
-            "error_log": error_log
-        }
+        for fg in fallback:
+            if fg["app_id"] not in seen_ids and len(main_results) < top_k:
+                main_results.append(fg)
+                seen_ids.add(fg["app_id"])
+    
+    logger.info(f"[Search] Done: {len(main_results)} main, {len(alternative_results)} alt")
+    
+    return {
+        "success": True,
+        "main_results": main_results[:top_k],
+        "alternative_results": alternative_results[:5],
+        "total_found": len(main_results) + len(alternative_results)
+    }
 
 # ============== API 엔드포인트 ==============
-
 @app.get("/")
 def root():
-    """API 상태 확인"""
     return {
-        "message": "Hidden Gem API v2.5 - Zero Empty Results",
-        "version": "2.5",
+        "message": "Hidden Gem API v4.0 - Architecture Overhaul",
+        "version": "4.0",
+        "scoring_formula": "(metadata × 0.8) + (similarity × 0.4) + exact_match_boost",
+        "max_score": "120 (Limit Break)",
         "features": [
-            "3-Stage Fallback (Never Empty)",
-            "OpenAI Auto-Retry",
-            "Genre Conflict Detection",
-            "Intent Objects with Korean Names",
-            "Core Keyword Extraction"
+            "🛡️ is_game_search guardrail",
+            "📝 summary_query compression",
+            "🔥 Limit Break scoring (100점 돌파)",
+            "🎯 main_results / alternative_results 분리",
+            "⚔️ Exact Match (+50) / Partial Match (+5)"
         ]
     }
 
 @app.get("/health")
 def health_check():
-    """헬스 체크"""
     try:
         with engine.connect() as conn:
             count = conn.execute(text("SELECT COUNT(*) FROM games")).scalar()
-        return {"status": "healthy", "game_count": count, "version": "2.5"}
+        return {"status": "healthy", "game_count": count, "version": "4.0"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/search")
+def search_endpoint(request: SearchRequest):
+    """
+    🔥 v4.0 검색 API
+    
+    응답 스키마:
+    - main_results: 장르 매칭 게임
+    - alternative_results: 장르 다르지만 추천
+    """
+    try:
+        # 1. 인텐트 추출
+        intent = extract_user_intent(request.query)
+        
+        # 🛡️ 2. Guardrail (Early Exit)
+        if not intent.is_game_search:
+            logger.info(f"[Guardrail] Rejected: {intent.rejection_reason}")
+            return {
+                "success": False,
+                "is_game_search": False,
+                "error": "게임과 관련된 질문을 해주세요! 🎮",
+                "rejection_reason": intent.rejection_reason,
+                "suggestion": "예: '림월드 같은 건설 생존 게임', '스토리 좋은 인디 RPG'",
+                "main_results": [],
+                "alternative_results": [],
+                "intents": []
+            }
+        
+        # 3. 검색 실행
+        search_result = search_games(
+            query=request.query,
+            intent=intent,
+            top_k=request.top_k
+        )
+        
+        # 4. 응답 구성
+        return {
+            "success": True,
+            "is_game_search": True,
+            "query": request.query,
+            "summary_query": intent.summary_query,
+            "intents": intent.get_intent_objects(),
+            "core_genres": intent.core_genres,
+            "main_results": search_result["main_results"],
+            "alternative_results": search_result["alternative_results"],
+            "total_found": search_result["total_found"],
+            "algorithm_version": "v4.0",
+            "scoring_info": {
+                "formula": "(metadata×0.8) + (similarity×0.4) + exact_boost",
+                "legendary_threshold": LEGENDARY_THRESHOLD,
+                "exact_match_boost": EXACT_MATCH_BOOST
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Search error: {e}")
+        
+        fallback = get_popular_games(limit=request.top_k)
+        return {
+            "success": True,
+            "is_game_search": True,
+            "query": request.query,
+            "main_results": fallback,
+            "alternative_results": [],
+            "total_found": len(fallback),
+            "algorithm_version": "v4.0",
+            "fallback_reason": str(e)[:100],
+            "intents": []
+        }
+
 @app.get("/games/top")
 def get_top_games(limit: int = 20):
-    """잠재력 높은 게임 TOP N"""
     try:
         with engine.connect() as conn:
             result = conn.execute(text("""
                 SELECT app_id, name, genres, developer, description, gem_potential
-                FROM games
-                ORDER BY gem_potential DESC
-                LIMIT :limit
+                FROM games ORDER BY gem_potential DESC LIMIT :limit
             """), {"limit": limit})
-            games = [
-                {
-                    "app_id": r[0],
-                    "name": r[1],
-                    "genres": r[2],
-                    "developer": r[3],
-                    "description": r[4],
-                    "gem_potential": r[5]
-                }
-                for r in result
-            ]
+            games = [{"app_id": r[0], "name": r[1], "genres": r[2], "developer": r[3], "description": r[4], "gem_potential": r[5]} for r in result]
         return {"games": games}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/games/{app_id}")
 def get_game_detail(app_id: str):
-    """게임 상세 정보"""
     try:
         with engine.connect() as conn:
             result = conn.execute(text("""
@@ -1200,131 +956,78 @@ def get_game_detail(app_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/search")
-def hybrid_search(request: SearchRequest):
-    """
-    🔥 v2.5 하이브리드 검색 API
-    
-    - 3단계 무적 Fallback (절대 0개 결과 없음)
-    - Intent를 객체 배열로 반환 (한글 지원)
-    - 장르 매칭 강화
-    """
+@app.post("/debug/intent")
+def debug_intent(request: SearchRequest):
+    """인텐트 추출 디버깅"""
+    intent = extract_user_intent(request.query)
+    return {
+        "query": request.query,
+        "is_game_search": intent.is_game_search,
+        "rejection_reason": intent.rejection_reason,
+        "summary_query": intent.summary_query,
+        "metrics": intent.metrics,
+        "intent_objects": intent.get_intent_objects(),
+        "core_genres": intent.core_genres
+    }
+
+@app.post("/debug/score")
+def debug_score(request: SearchRequest):
+    """점수 계산 디버깅"""
     try:
-        # Intent 추출
-        intent = extract_user_intent_v2(request.query)
+        intent = extract_user_intent(request.query)
         
-        # 3단계 Fallback 검색
-        search_result = hybrid_search_with_fallback(
-            query=request.query,
-            intent=intent,
-            top_k=request.top_k,
-            include_maniac=request.include_maniac
-        )
+        if not intent.is_game_search:
+            return {"error": "Not a game search", "reason": intent.rejection_reason}
         
-        # Intent를 객체 배열로 변환
-        intent_objects = intent.get_intent_objects()
+        query_vector = create_query_embedding(intent.summary_query)
+        candidates = execute_vector_search(query_vector, limit=10)
+        
+        debug_results = []
+        for row in candidates:
+            scores = parse_scores_from_row(row)
+            similarity = float(row[19])
+            
+            final_score, status, is_genre_match, is_exact_match = calculate_final_score(
+                game_name=row[1],
+                genres=row[2] or "",
+                scores=scores,
+                similarity=similarity,
+                query=request.query,
+                intent=intent
+            )
+            
+            # 점수 구성 분해
+            weight_map = get_tier_weight_map(row[2] or "")
+            weighted_sum = sum(scores[m] * weight_map.get(m, 1.0) for m in scores)
+            total_weight = sum(weight_map.get(m, 1.0) for m in scores)
+            metadata_score = weighted_sum / total_weight if total_weight > 0 else 50
+            similarity_scaled = scale_similarity(similarity)
+            exact_boost, _ = calculate_exact_match_boost(row[1], request.query)
+            
+            debug_results.append({
+                "name": row[1],
+                "genres": row[2],
+                "similarity_raw": round(similarity, 4),
+                "similarity_scaled": round(similarity_scaled, 2),
+                "metadata_score": round(metadata_score, 2),
+                "metadata_contribution": round(metadata_score * METADATA_WEIGHT, 2),
+                "similarity_contribution": round(similarity_scaled * SIMILARITY_WEIGHT, 2),
+                "exact_match_boost": exact_boost,
+                "final_score": round(final_score, 2),
+                "status": status,
+                "is_genre_match": is_genre_match,
+                "is_exact_match": is_exact_match
+            })
         
         return {
             "query": request.query,
-            "intents": intent_objects,  # 🆕 객체 배열: [{"id": "story_depth", "name": "스토리 깊이"}, ...]
-            "gems": search_result["gems"],
-            "maniacs": search_result["maniacs"],
-            "total_candidates": search_result["total_candidates"],
-            "algorithm_version": "v2.5",
-            "fallback_activated": search_result["search_stage"] > 1,
-            "fallback_message": search_result["fallback_message"],
-            "search_stage": search_result["search_stage"],
-            "genre_analysis": {
-                "required_genres": list(intent.required_genres)[:10],
-                "negative_genres": list(intent.negative_genres)[:10],
-                "preferred_keywords": intent.preferred_keywords[:5],
-                "core_keywords": intent.core_keywords,
-                "reference_game": intent.reference_game,
-                "strictness": intent.genre_strictness
-            },
-            "is_recommendation_mode": search_result.get("is_recommendation_mode", False)
+            "summary_query": intent.summary_query,
+            "core_genres": intent.core_genres,
+            "formula": f"(meta×{METADATA_WEIGHT}) + (sim×{SIMILARITY_WEIGHT}) + exact_boost",
+            "results": debug_results
         }
-        
-    except Exception as e:
-        logger.error(f"Search error: {e}")
-        
-        # 최후의 보루: 인기 게임 반환
-        try:
-            popular = get_popular_games(limit=request.top_k)
-            return {
-                "query": request.query,
-                "intents": [],
-                "gems": popular if popular else [],
-                "maniacs": [],
-                "total_candidates": len(popular) if popular else 0,
-                "algorithm_version": "v2.5",
-                "fallback_activated": True,
-                "fallback_message": "🔥 검색 중 오류가 발생하여 인기 명작을 추천해 드립니다",
-                "search_stage": 3,
-                "is_recommendation_mode": True,
-                "error": str(e)[:100]
-            }
-        except Exception as inner_e:
-            logger.error(f"Even fallback failed: {inner_e}")
-            raise HTTPException(
-                status_code=500,
-                detail="검색 서비스에 일시적인 문제가 발생했습니다."
-            )
-
-@app.get("/games/filter")
-def filter_games(
-    min_gem: int = 0,
-    max_gem: int = 100,
-    genre: Optional[str] = None,
-    limit: int = 20
-):
-    """필터링 검색"""
-    try:
-        query = """
-            SELECT app_id, name, genres, developer, description, gem_potential
-            FROM games
-            WHERE gem_potential BETWEEN :min AND :max
-        """
-        params: Dict[str, Any] = {"min": min_gem, "max": max_gem, "limit": limit}
-        
-        if genre:
-            query += " AND genres ILIKE :genre"
-            params["genre"] = f"%{genre}%"
-        
-        query += " ORDER BY gem_potential DESC LIMIT :limit"
-        
-        with engine.connect() as conn:
-            result = conn.execute(text(query), params)
-            games = [
-                {
-                    "app_id": r[0],
-                    "name": r[1],
-                    "genres": r[2],
-                    "developer": r[3],
-                    "description": r[4],
-                    "gem_potential": r[5]
-                }
-                for r in result
-            ]
-        return {"games": games, "count": len(games)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/debug/intent")
-def debug_intent(request: SearchRequest):
-    """Intent 추출 디버깅"""
-    intent = extract_user_intent_v2(request.query)
-    return {
-        "query": request.query,
-        "metrics": intent.metrics,
-        "intent_objects": intent.get_intent_objects(),
-        "required_genres": list(intent.required_genres),
-        "preferred_keywords": intent.preferred_keywords,
-        "negative_genres": list(intent.negative_genres),
-        "core_keywords": intent.core_keywords,
-        "reference_game": intent.reference_game,
-        "genre_strictness": intent.genre_strictness
-    }
 
 # ============== 서버 실행 ==============
 if __name__ == "__main__":

@@ -1,119 +1,238 @@
+/* app/globals.css - v4.2 메달 글로우 + 점수 글로우 */
 @import "tailwindcss";
 
-:root {
-  /* 기본 색상 */
-  --background: #0a0a0a;
-  --foreground: #ededed;
-  
-  /* 등급 색상 */
-  --tier-legendary: #FFD700;
-  --tier-mythic: #FF0000;
-  --tier-epic: #A335EE;
-  --tier-rare: #0070DD;
-  --tier-uncommon: #1EFF00;
-  --tier-solid: #CD7F32;
-  --tier-maniac: #00FF41;
-  
-  /* UI 색상 */
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
-  --card-bg: #111111;
-  --card-border: #222222;
-  --text-muted: #888888;
-  --boost-color: #FFA500;
-  --fallback-color: #f97316;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-/* 기본 스타일 */
-* {
-  box-sizing: border-box;
-}
-
-html {
-  scroll-behavior: smooth;
-}
-
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  line-height: 1.6;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  background: linear-gradient(135deg, #0f0f1a 0%, #1a1025 50%, #0f0f1a 100%);
+  color: white;
+  min-height: 100vh;
 }
 
-/* 스크롤바 커스텀 */
+/* ==================== 0등석 히어로 배너 ==================== */
+.hero-banner {
+  background: linear-gradient(145deg, rgba(40, 35, 20, 0.95), rgba(30, 25, 15, 0.98));
+  border: 2px solid #FFD700;
+  border-radius: 1rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-banner::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: linear-gradient(45deg, #FFD700, #FFA500, #FFD700, #FF8C00, #FFD700);
+  background-size: 400% 400%;
+  border-radius: 1rem;
+  z-index: -1;
+  animation: heroGlow 3s ease-in-out infinite;
+  filter: blur(12px);
+}
+
+@keyframes heroGlow {
+  0%, 100% {
+    background-position: 0% 50%;
+    opacity: 0.6;
+  }
+  50% {
+    background-position: 100% 50%;
+    opacity: 0.9;
+  }
+}
+
+.hero-crown {
+  animation: crownBounce 2s ease-in-out infinite;
+}
+
+@keyframes crownBounce {
+  0%, 100% { transform: translateY(0) rotate(-5deg); }
+  50% { transform: translateY(-3px) rotate(5deg); }
+}
+
+/* ==================== 🥇 1등 금메달 글로우 ==================== */
+.glow-gold {
+  position: relative;
+  box-shadow: 
+    0 0 20px rgba(255, 215, 0, 0.5),
+    0 0 40px rgba(255, 215, 0, 0.3),
+    inset 0 0 15px rgba(255, 215, 0, 0.1);
+  border: 1px solid rgba(255, 215, 0, 0.6);
+}
+
+.glow-gold::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(45deg, #FFD700, #FFA500, #FFD700);
+  border-radius: inherit;
+  z-index: -1;
+  filter: blur(8px);
+  opacity: 0.5;
+  animation: goldPulse 2s ease-in-out infinite;
+}
+
+@keyframes goldPulse {
+  0%, 100% { opacity: 0.4; filter: blur(8px); }
+  50% { opacity: 0.7; filter: blur(12px); }
+}
+
+/* ==================== 🥈 2등 은메달 글로우 ==================== */
+.glow-silver {
+  position: relative;
+  box-shadow: 
+    0 0 15px rgba(192, 192, 192, 0.5),
+    0 0 30px rgba(192, 192, 192, 0.3),
+    inset 0 0 12px rgba(192, 192, 192, 0.1);
+  border: 1px solid rgba(192, 192, 192, 0.5);
+}
+
+.glow-silver::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(45deg, #C0C0C0, #E8E8E8, #C0C0C0);
+  border-radius: inherit;
+  z-index: -1;
+  filter: blur(8px);
+  opacity: 0.4;
+  animation: silverPulse 2.5s ease-in-out infinite;
+}
+
+@keyframes silverPulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.5; }
+}
+
+/* ==================== 🥉 3등 동메달 글로우 ==================== */
+.glow-bronze {
+  position: relative;
+  box-shadow: 
+    0 0 15px rgba(205, 127, 50, 0.5),
+    0 0 30px rgba(205, 127, 50, 0.3),
+    inset 0 0 12px rgba(205, 127, 50, 0.1);
+  border: 1px solid rgba(205, 127, 50, 0.5);
+}
+
+.glow-bronze::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(45deg, #CD7F32, #B87333, #CD7F32);
+  border-radius: inherit;
+  z-index: -1;
+  filter: blur(8px);
+  opacity: 0.4;
+  animation: bronzePulse 2.5s ease-in-out infinite;
+}
+
+@keyframes bronzePulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.5; }
+}
+
+/* ==================== 4등 이하: 점수 기반 글로우 ==================== */
+
+/* LEGENDARY (100점+) - 빨간 글로우 */
+.glow-legendary {
+  position: relative;
+  box-shadow: 
+    0 0 15px rgba(255, 68, 68, 0.4),
+    0 0 30px rgba(255, 68, 68, 0.2),
+    inset 0 0 10px rgba(255, 68, 68, 0.1);
+  border: 1px solid rgba(255, 68, 68, 0.4);
+}
+
+/* EPIC - 보라 글로우 */
+.glow-epic {
+  position: relative;
+  box-shadow: 
+    0 0 12px rgba(168, 85, 247, 0.4),
+    0 0 24px rgba(168, 85, 247, 0.2),
+    inset 0 0 10px rgba(168, 85, 247, 0.1);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+}
+
+/* RARE - 파란 글로우 */
+.glow-rare {
+  position: relative;
+  box-shadow: 
+    0 0 10px rgba(59, 130, 246, 0.4),
+    0 0 20px rgba(59, 130, 246, 0.2),
+    inset 0 0 8px rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+/* UNCOMMON - 초록 글로우 */
+.glow-uncommon {
+  position: relative;
+  box-shadow: 
+    0 0 8px rgba(34, 197, 94, 0.3),
+    0 0 16px rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+/* ==================== 기본 카드 ==================== */
+.game-card {
+  background: linear-gradient(145deg, rgba(30, 30, 40, 0.9), rgba(20, 20, 30, 0.95));
+  border-radius: 1rem;
+  position: relative;
+  transition: transform 0.3s, box-shadow 0.3s;
+  overflow: hidden;
+}
+
+.game-card:hover {
+  transform: translateY(-4px);
+}
+
+/* ==================== 메달 배지 ==================== */
+.medal-gold {
+  background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+  color: #000;
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
+}
+
+.medal-silver {
+  background: linear-gradient(135deg, #E8E8E8 0%, #C0C0C0 100%);
+  color: #333;
+  box-shadow: 0 0 8px rgba(192, 192, 192, 0.5);
+}
+
+.medal-bronze {
+  background: linear-gradient(135deg, #CD7F32 0%, #B87333 100%);
+  color: #fff;
+  box-shadow: 0 0 8px rgba(205, 127, 50, 0.5);
+}
+
+/* ==================== Fallback 뱃지 ==================== */
+.fallback-badge {
+  background: linear-gradient(135deg, #F97316 0%, #EA580C 100%);
+  animation: fallbackPulse 2s ease-in-out infinite;
+}
+
+@keyframes fallbackPulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(249, 115, 22, 0.5); }
+  50% { box-shadow: 0 0 15px rgba(249, 115, 22, 0.8); }
+}
+
+/* ==================== 점수 애니메이션 ==================== */
+.score-fire {
+  color: #FF4444;
+  text-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
+}
+
+/* ==================== 스크롤바 ==================== */
 ::-webkit-scrollbar {
   width: 8px;
-  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #111;
+  background: rgba(30, 30, 40, 0.5);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #333;
+  background: rgba(100, 100, 120, 0.5);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #444;
-}
-
-/* 글로벌 애니메이션 */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(30px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-@keyframes glitch {
-  0%, 90%, 100% { transform: translate(0); }
-  92% { transform: translate(-2px, 1px); }
-  94% { transform: translate(2px, -1px); }
-  96% { transform: translate(-1px, 2px); }
-  98% { transform: translate(1px, -2px); }
-}
-
-/* 로딩 스켈레톤 */
-.skeleton {
-  background: linear-gradient(90deg, #1a1a1a 25%, #222 50%, #1a1a1a 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-  border-radius: 8px;
-}
-
-/* 포커스 스타일 */
-input:focus,
-button:focus {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
-
-/* 선택 색상 */
-::selection {
-  background: var(--primary);
-  color: white;
+  background: rgba(120, 120, 140, 0.7);
 }
