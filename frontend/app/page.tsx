@@ -1,245 +1,296 @@
-'use client';
+// app/page.tsx - v4.2
+"use client";
 
-import React, { useState, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Gamepad2, Sparkles, Zap, AlertCircle } from "lucide-react";
-// 💡 GameCard 경로는 멘티님의 폴더 구조에 맞춰야 합니다. (예: ./components/GameCard)
-import GameCard from './components/gamecard'; 
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import GameCard from "./components/gamecard";
+import HeroBanner from "./components/herobanner";
+import { SearchResponse, GameResult } from "./types";
 
-// --- 인터페이스 (데이터 구조 정의) ---
-interface Intent {
-  id: string;
-  name: string;
-}
-
-interface Game {
-  app_id: string;
-  name: string;
-  genres: string;
-  developer: string;
-  description: string;
-  final_score: number;
-  status: string;
-  similarity: number;
-  matched_intents: Intent[]; 
-  scores: Record<string, number>;
-  genre_match?: {
-    multiplier: number;
-    reason: string;
-    is_match: boolean;
-  };
-  fallback_rescued?: boolean;
-}
-
-interface SearchResponse {
-  query: string;
-  intents: Intent[]; 
-  gems: Game[];
-  maniacs: Game[];
-  fallback_activated: boolean;
-  fallback_message: string | null;
-  search_stage: number;
-  total_candidates: number;
-  algorithm_version: string;
-}
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+type TabType = "main" | "alternative";
 
 export default function Home() {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SearchResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [searchResult, setSearchResult] = useState<SearchResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isSearched, setIsSearched] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>("main");
 
-  const handleSearch = useCallback(async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  const handleSearch = async () => {
     if (!query.trim()) return;
-    
-    setLoading(true);
+
+    setIsLoading(true);
     setError(null);
-    setIsSearched(true);
+    setSearchResult(null);
+    setActiveTab("main");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/search`, {
+      const response = await fetch("http://localhost:8000/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          query: query.trim(), 
-          top_k: 10, 
-          include_maniac: true 
-        }),
+        body: JSON.stringify({ query: query.trim(), top_k: 10 }),
       });
 
-      if (!response.ok) throw new Error(`서버 오류: ${response.status}`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       const data: SearchResponse = await response.json();
-      setResults(data);
-    } catch (err) {
-      console.error("❌ 검색 실패:", err);
-      setError(err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다");
-    } finally {
-      setLoading(false);
-    }
-  }, [query]);
 
-  const handleReset = () => {
-    setQuery("");
-    setResults(null);
-    setIsSearched(false);
-    setError(null);
+      if (!data.is_game_search) {
+        setError(data.error || "게임과 관련된 질문을 해주세요! 🎮");
+        return;
+      }
+
+      setSearchResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "검색 중 오류가 발생했습니다");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleSearch();
+  };
+
+  // 🔥 Exact Match 분리
+  const heroGame: GameResult | null =
+    searchResult?.main_results?.find((g) => g.is_exact_match) || null;
+
+  // 히어로 제외한 메인 결과
+  const filteredMainResults: GameResult[] =
+    searchResult?.main_results?.filter((g) => !g.is_exact_match) || [];
+
+  const altResults: GameResult[] = searchResult?.alternative_results || [];
+
+  const getCurrentGames = (): GameResult[] => {
+    return activeTab === "main" ? filteredMainResults : altResults;
+  };
+
+  const mainCount = filteredMainResults.length;
+  const altCount = altResults.length;
+
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-white flex flex-col items-center p-4 md:p-8 font-sans overflow-x-hidden">
-      
-      {/* 🚀 헤더 */}
-      <motion.header 
-        layout
-        className="w-full max-w-6xl flex items-center justify-between mb-8 md:mb-12"
-      >
-        <div 
-          className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity" 
-          onClick={handleReset}
+    <div className="min-h-screen">
+      {/* 헤더 */}
+      <header className="pt-12 pb-8 text-center">
+        <motion.h1
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-5xl font-bold"
+          style={{
+            background: "linear-gradient(90deg, #FFD700, #FF6B6B, #A855F7, #3B82F6)",
+            backgroundClip: "text",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+          }}
         >
-          <Gamepad2 size={28} className="text-blue-500 md:w-8 md:h-8" />
-          <h1 className="text-2xl md:text-3xl font-black tracking-tighter italic uppercase">
-            HIDDEN <span className="text-blue-500">GEM</span>
-          </h1>
-        </div>
-        
-        <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-blue-900/20 border border-blue-500/30 rounded-full text-blue-400 text-xs font-mono">
-          <Zap size={14} /> v2.5 POWERED
-        </div>
-      </motion.header>
+          💎 Hidden Gem
+        </motion.h1>
+        <p className="mt-2 text-gray-400">당신만을 위한 숨겨진 명작을 발굴합니다</p>
+      </header>
 
-      <AnimatePresence mode="wait">
-        {!isSearched ? (
-          <motion.section 
-            key="landing"
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0, y: -50 }}
-            className="w-full max-w-4xl text-center space-y-6 mt-[5vh] md:mt-[10vh]"
+      {/* 검색창 */}
+      <div className="max-w-2xl mx-auto px-4 mb-8">
+        <div className="relative">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder="어떤 게임을 찾으시나요? (예: 림월드 같은 건설 생존 게임)"
+            className="w-full px-6 py-4 bg-gray-800/80 border border-gray-700 rounded-2xl text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+          />
+          <button
+            onClick={handleSearch}
+            disabled={isLoading || !query.trim()}
+            className="absolute right-2 top-1/2 -translate-y-1/2 px-6 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl text-white font-semibold hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
-            <h1 className="text-4xl md:text-7xl lg:text-8xl font-black tracking-tighter italic uppercase leading-tight">
-              당신의 <span className="text-blue-500">인생 명작</span>을 <br className="hidden md:block" />
-              0.1초 만에 발굴합니다.
-            </h1>
-            <p className="text-gray-400 text-base md:text-xl lg:text-2xl font-light max-w-2xl mx-auto">
-              AI가 스캔한 <span className="text-white font-medium">5,000+ 게임 데이터</span>로<br/>
-              당신의 숨겨진 취향을 <span className="text-blue-400 font-bold">한글화 분석</span>합니다.
-            </p>
-            <form onSubmit={handleSearch} className="max-w-3xl w-full mt-8 md:mt-12 relative mx-auto px-4">
-              <div className="relative group">
-                <input
-                  type="text"
-                  autoFocus
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="예: 림월드 같이 세계 구축하면서 적들 잡는 게임"
-                  className="w-full bg-[#111] border-2 border-gray-800 rounded-2xl md:rounded-3xl 
-                             px-6 py-4 md:px-10 md:py-6 text-base md:text-xl text-white outline-none focus:border-blue-500 transition-all"
-                />
-                <button 
-                  type="submit"
-                  disabled={loading || !query.trim()}
-                  className="absolute right-2 md:right-4 top-1/2 -translate-y-1/2 bg-blue-600 p-3 md:p-4 rounded-xl transition-all"
-                >
-                  <Search size={20} className="md:w-6 md:h-6" />
-                </button>
-              </div>
-            </form>
-            <div className="mt-20 md:mt-32 grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl w-full px-4 text-left">
-                <FeatureCard 
-                    icon={<Sparkles className="text-blue-500" size={36} />}
-                    title="AI 감별 v2.5"
-                    description="강화된 한글 분석으로 숨겨진 게임의 본질을 꿰뚫어봅니다."
-                />
-                <FeatureCard 
-                    icon={<Gamepad2 className="text-blue-500" size={36} />}
-                    title="Massive DB"
-                    description="5,000여 개의 인디 게임 데이터를 실시간으로 비교 분석합니다."
-                />
-            </div>
-          </motion.section>
-        ) : (
-          <motion.section 
-            key="results"
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-5xl"
-          >
-            <form onSubmit={handleSearch} className="w-full max-w-3xl mx-auto relative mb-12">
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                className="w-full bg-[#111] border border-gray-800 rounded-xl px-5 py-3 text-white outline-none focus:border-blue-500"
-              />
-              <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-blue-600 rounded-lg">
-                <Search size={18} />
-              </button>
-            </form>
-
-            {loading && <LoadingState />}
-            {error && <ErrorState message={error} onRetry={handleSearch} />}
-
-            {!loading && !error && results && (
-              <div className="space-y-12">
-                {results.intents && results.intents.length > 0 && (
-                  <div className="flex flex-wrap gap-2 justify-center">
-                    {results.intents.map((intent) => (
-                      <span key={intent.id} className="bg-blue-900/40 text-blue-300 px-4 py-1.5 rounded-full text-sm font-bold border border-blue-500/30">
-                        #{intent.name}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <div className="space-y-6">
-                  <h2 className="text-2xl md:text-3xl font-black text-blue-400 flex items-center gap-3">
-                    <Sparkles size={28} /> 발굴된 보석 ({results.gems.length})
-                  </h2>
-                  <div className="space-y-6">
-                    {results.gems.map((game, idx) => (
-                      <GameCard key={game.app_id} game={game} rank={idx + 1} />
-                    ))}
-                  </div>
-                </div>
-              </div>
+            {isLoading ? (
+              <span className="flex items-center gap-2">
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    fill="none"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                검색중...
+              </span>
+            ) : (
+              "🔍 검색"
             )}
-          </motion.section>
+          </button>
+        </div>
+      </div>
+
+      {/* 에러 메시지 */}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="max-w-2xl mx-auto px-4 mb-8"
+          >
+            <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-6 text-center">
+              <p className="text-red-400 text-lg font-semibold mb-2">{error}</p>
+              <p className="text-gray-500 text-sm mt-4">
+                💡 예: "림월드 같은 건설 생존 게임", "스토리 좋은 인디 RPG"
+              </p>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
-    </main>
-  );
-}
 
-// --- 하단 보조 컴포넌트 (절대 생략 금지) ---
-function FeatureCard({ icon, title, description }: any) {
-  return (
-    <div className="p-8 bg-[#0f0f0f] border border-gray-800 rounded-2xl hover:border-blue-900/50 transition-all duration-300">
-      <div className="mb-4">{icon}</div>
-      <h3 className="text-xl font-bold mb-3">{title}</h3>
-      <p className="text-gray-500 text-sm">{description}</p>
-    </div>
-  );
-}
+      {/* 검색 결과 */}
+      {searchResult && searchResult.is_game_search && (
+        <div className="max-w-6xl mx-auto px-4 pb-16">
+          {/* 탭 UI (상단) */}
+          <div className="flex justify-center mb-6">
+            <div className="inline-flex bg-gray-800/50 rounded-xl p-1">
+              <button
+                onClick={() => setActiveTab("main")}
+                className={`px-6 py-3 rounded-lg font-semibold transition-all ${
+                  activeTab === "main"
+                    ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white"
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                🎯 메인 결과
+                {mainCount > 0 && (
+                  <span className="ml-2 px-2 py-0.5 bg-white/20 rounded-full text-sm">
+                    {mainCount}
+                  </span>
+                )}
+              </button>
 
-function LoadingState() {
-  return (
-    <div className="text-center py-24 space-y-4">
-      <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-      <p className="text-blue-400 font-bold text-xl animate-pulse">DNA 분석 중...</p>
-    </div>
-  );
-}
+              <button
+                onClick={() => setActiveTab("alternative")}
+                className={`px-6 py-3 rounded-lg font-semibold transition-all ${
+                  activeTab === "alternative"
+                    ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white"
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                💡 장르 다른 추천
+                {altCount > 0 && (
+                  <span className="ml-2 px-2 py-0.5 bg-white/20 rounded-full text-sm">
+                    {altCount}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
 
-function ErrorState({ message, onRetry }: any) {
-  return (
-    <div className="text-center py-20 bg-red-950/20 border border-red-900/50 rounded-3xl p-10 max-w-md mx-auto">
-      <AlertCircle className="text-red-500 mx-auto mb-6" size={60} />
-      <p className="text-gray-400 mb-8">{message}</p>
-      <button onClick={onRetry} className="bg-red-600 px-10 py-4 rounded-xl font-bold">다시 시도</button>
+          {/* 🏆 0등석 히어로 배너 (탭 아래) */}
+          {heroGame && activeTab === "main" && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="mb-8"
+            >
+              <div className="text-center mb-3">
+                <span className="text-yellow-400 text-sm font-semibold">
+                  👑 0등석 히어로 배너 (Exact Match)
+                </span>
+              </div>
+              <HeroBanner game={heroGame} />
+            </motion.div>
+          )}
+
+          {/* 요약 정보 */}
+          <div className="mb-6 text-center">
+            <p className="text-gray-400 text-sm">
+              <span className="text-purple-400 font-semibold">
+                "{searchResult.summary_query || query}"
+              </span>
+              {" "}검색 결과{" "}
+              <span className="text-white font-bold">{searchResult.total_found}</span>개
+            </p>
+          </div>
+
+          {/* 게임 카드 그리드 */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+            >
+              {getCurrentGames().length > 0 ? (
+                getCurrentGames().map((game, index) => (
+                  <motion.div
+                    key={game.app_id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.08 }}
+                  >
+                    <GameCard game={game} rank={index + 1} />
+                  </motion.div>
+                ))
+              ) : (
+                <div className="col-span-full text-center py-12">
+                  <p className="text-gray-500 text-lg">
+                    {activeTab === "main"
+                      ? "😢 메인 결과가 없습니다"
+                      : "이 탭에 표시할 게임이 없습니다"}
+                  </p>
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
+
+          {/* 인텐트 태그 */}
+          {searchResult.intents && searchResult.intents.length > 0 && (
+            <div className="mt-8 text-center">
+              <p className="text-gray-500 text-sm mb-2">감지된 취향:</p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {searchResult.intents.map((intent, i) => (
+                  <span
+                    key={intent.id || i}
+                    className="px-3 py-1 bg-gray-700/50 text-gray-300 rounded-full text-sm"
+                  >
+                    {intent.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 초기 상태 */}
+      {!searchResult && !error && !isLoading && (
+        <div className="text-center py-20">
+          <p className="text-gray-500 text-lg">
+            🎮 검색어를 입력하고 숨겨진 명작을 찾아보세요!
+          </p>
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            {["림월드 같은 건설 생존", "스토리 좋은 인디 RPG", "어려운 로그라이크"].map(
+              (example) => (
+                <button
+                  key={example}
+                  onClick={() => setQuery(example)}
+                  className="px-4 py-2 bg-gray-800/50 text-gray-400 rounded-lg hover:bg-gray-700/50 hover:text-white transition-all"
+                >
+                  {example}
+                </button>
+              )
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
