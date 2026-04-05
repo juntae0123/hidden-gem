@@ -1,0 +1,175 @@
+"""
+Hidden Gem - Configuration & Constants
+=======================================
+모든 상수, 설정, 매핑 테이블을 한 곳에서 관리
+"""
+
+from typing import Dict, List
+
+# ============== 핵심 상수 ==============
+DROP_THRESHOLD = 35
+DROP_THRESHOLD_FALLBACK = 25
+DROP_THRESHOLD_EMERGENCY = 15
+MIN_RESULTS_BEFORE_FALLBACK = 3
+MIN_RESULTS_ABSOLUTE = 5
+
+MANIAC_AVG_THRESHOLD = 65
+MANIAC_S_TIER_THRESHOLD = 85
+
+INTENT_BASE_WEIGHT = 1.5
+BOOST_CAP = 1.7
+MAX_TOTAL_WEIGHT = 2.55
+MAX_RETRIES = 3
+RETRY_DELAY_BASE = 1.0
+
+# 점수 배합 비율
+SIMILARITY_WEIGHT = 0.65
+METRIC_WEIGHT = 0.35
+GENRE_MISMATCH_PENALTY = -15
+GENRE_MIN_MULTIPLIER = 0.7
+
+# 장르 DNA 점수 상수
+SCORE_S_TIER = 85
+SCORE_A_TIER = 75
+SCORE_B_TIER = 65
+SCORE_DEFAULT = 50
+
+# ============== 14개 감성 지표 ==============
+METRIC_KOREAN: Dict[str, str] = {
+    "mania_score": "마니아 매력",
+    "story_depth": "스토리 깊이",
+    "originality": "독창성",
+    "difficulty": "난이도",
+    "art_style": "아트 스타일",
+    "replay_value": "리플레이 가치",
+    "indie_spirit": "인디 감성",
+    "character_appeal": "캐릭터 매력",
+    "user_friendliness": "접근성",
+    "addictiveness": "중독성",
+    "emotional_impact": "감정적 임팩트",
+    "atmosphere_intensity": "분위기 몰입",
+    "soundtrack_prominence": "사운드트랙",
+    "gem_potential": "숨겨진 명작"
+}
+
+ALL_METRICS: List[str] = list(METRIC_KOREAN.keys())
+
+# ============== 장르별 가중치 (완전판) ==============
+GENRE_WEIGHTS: Dict[str, Dict[str, List[str]]] = {
+    "Action": {
+        "S": ["addictiveness", "difficulty"],
+        "A": ["replay_value", "art_style", "mania_score"],
+        "B": ["user_friendliness", "originality", "atmosphere_intensity"]
+    },
+    "RPG": {
+        "S": ["story_depth", "character_appeal"],
+        "A": ["replay_value", "originality", "emotional_impact"],
+        "B": ["art_style", "soundtrack_prominence", "atmosphere_intensity"]
+    },
+    "Adventure": {
+        "S": ["story_depth", "atmosphere_intensity"],
+        "A": ["emotional_impact", "art_style", "originality"],
+        "B": ["soundtrack_prominence", "character_appeal", "user_friendliness"]
+    },
+    "Strategy": {
+        "S": ["difficulty", "replay_value"],
+        "A": ["originality", "addictiveness", "user_friendliness"],
+        "B": ["mania_score", "story_depth", "art_style"]
+    },
+    "Simulation": {
+        "S": ["replay_value", "addictiveness"],
+        "A": ["user_friendliness", "originality", "art_style"],
+        "B": ["atmosphere_intensity", "mania_score", "indie_spirit"]
+    },
+    "Indie": {
+        "S": ["indie_spirit", "originality"],
+        "A": ["art_style", "emotional_impact", "gem_potential"],
+        "B": ["story_depth", "atmosphere_intensity", "soundtrack_prominence"]
+    },
+    "Horror": {
+        "S": ["atmosphere_intensity", "emotional_impact"],
+        "A": ["story_depth", "soundtrack_prominence", "art_style"],
+        "B": ["difficulty", "originality", "character_appeal"]
+    },
+    "Survival": {
+        "S": ["addictiveness", "difficulty"],
+        "A": ["replay_value", "atmosphere_intensity", "originality"],
+        "B": ["user_friendliness", "indie_spirit", "mania_score"]
+    },
+    "Roguelike": {
+        "S": ["difficulty", "replay_value"],
+        "A": ["addictiveness", "originality", "mania_score"],
+        "B": ["art_style", "atmosphere_intensity", "indie_spirit"]
+    },
+    "Sandbox": {
+        "S": ["replay_value", "originality"],
+        "A": ["addictiveness", "user_friendliness", "indie_spirit"],
+        "B": ["art_style", "atmosphere_intensity", "difficulty"]
+    },
+    "Colony Sim": {
+        "S": ["replay_value", "addictiveness", "difficulty"],
+        "A": ["originality", "mania_score", "atmosphere_intensity"],
+        "B": ["art_style", "indie_spirit", "user_friendliness"]
+    },
+    "Base Building": {
+        "S": ["replay_value", "addictiveness"],
+        "A": ["difficulty", "originality", "atmosphere_intensity"],
+        "B": ["art_style", "user_friendliness", "indie_spirit"]
+    },
+    # ... 더 많은 장르는 config.py에서 관리
+}
+
+# ============== 장르 매핑 (한글 → Steam 장르) ==============
+GENRE_MAPPING: Dict[str, List[str]] = {
+    "건설": ["Simulation", "Strategy", "City Builder", "Base Building", "Management"],
+    "생존": ["Survival", "Crafting", "Sandbox", "Base Building"],
+    "관리": ["Management", "Simulation", "Tycoon", "Economy"],
+    "샌드박스": ["Sandbox", "Open World", "Crafting", "Building"],
+    "전략": ["Strategy", "Turn-Based Strategy", "Real-Time Strategy", "4X"],
+    "시뮬레이션": ["Simulation", "Life Sim", "Farming Sim", "Management"],
+    "식민지": ["Colony Sim", "Base Building", "Simulation", "Strategy"],
+    "액션": ["Action", "Action-Adventure", "Hack and Slash"],
+    "rpg": ["RPG", "JRPG", "Action RPG", "Turn-Based RPG"],
+    "호러": ["Horror", "Psychological Horror", "Survival Horror"],
+    "인디": ["Indie", "Casual", "Pixel Graphics"],
+    "로그라이크": ["Roguelike", "Roguelite", "Procedural Generation"],
+}
+
+# ============== 장르 충돌 맵 ==============
+GENRE_CONFLICTS: Dict[str, List[str]] = {
+    "건설": ["Fighting", "Racing", "Sports", "Rhythm"],
+    "생존": ["Visual Novel", "Puzzle", "Rhythm", "Sports"],
+    "전략": ["Racing", "Sports", "Fighting"],
+    "rpg": ["Sports", "Racing"],
+}
+
+# ============== 레퍼런스 게임 ==============
+REFERENCE_GAMES: Dict[str, Dict] = {
+    "림월드": {
+        "genres": ["Simulation", "Strategy", "Colony Sim", "Base Building"],
+        "keywords": ["건설", "생존", "관리", "식민지"],
+        "priority_metrics": ["replay_value", "addictiveness", "difficulty"]
+    },
+    "rimworld": {
+        "genres": ["Simulation", "Strategy", "Colony Sim", "Base Building"],
+        "keywords": ["건설", "생존", "관리", "식민지"],
+        "priority_metrics": ["replay_value", "addictiveness", "difficulty"]
+    },
+    "팩토리오": {
+        "genres": ["Simulation", "Strategy", "Automation", "Base Building"],
+        "keywords": ["건설", "자동화", "공장", "관리"],
+        "priority_metrics": ["addictiveness", "replay_value", "originality"]
+    },
+    "factorio": {
+        "genres": ["Simulation", "Strategy", "Automation", "Base Building"],
+        "keywords": ["건설", "자동화", "공장", "관리"],
+        "priority_metrics": ["addictiveness", "replay_value", "originality"]
+    },
+}
+
+# ============== 제외 장르 ==============
+EXCLUDED_GENRES: List[str] = [
+    "Utilities", "Software", "Video Production", "Photo Editing",
+    "Audio Production", "Design & Illustration", "Web Publishing",
+    "Education", "Accounting", "Animation & Modeling"
+]
