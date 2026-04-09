@@ -2,11 +2,13 @@
 .env
 .env.local
 
+
 # 2. 데이터 파일 (Git은 코드 저장소이지, 데이터 저장소가 아닙니다!)
 *.csv
 *.xlsx
 *.json
 *.pkl
+*.jsonl
 /data/*
 !/data/.gitkeep
 
