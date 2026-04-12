@@ -13,6 +13,8 @@
 !/data/.gitkeep
 
 # 3. 주피터 노트북 찌꺼기 파일 (이거 안 넣으면 커밋 내역이 엄청 지저분해집니다)
+# 📓 프로젝트 명세서 노트북만 단독 제외
+hidden_gem_project_specification.ipynb
 .ipynb_checkpoints/
 
 # 4. 파이썬 환경 및 캐시 파일
