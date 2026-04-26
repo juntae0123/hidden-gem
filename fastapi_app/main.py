@@ -6,10 +6,13 @@ Hidden Gem - FastAPI 메인
 - 미들웨어 (CORS, Rate Limit)
 - 예외 핸들러
 - Lifespan (시작/종료 이벤트)
+- Redis Pub/Sub 동기화
+
+⚠️ 주의: DB 스키마 관리는 Django migrate가 전담
+   FastAPI는 테이블 생성하지 않음 (Single Source of Truth)
 """
 
 from contextlib import asynccontextmanager
-import asyncio
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,7 +22,7 @@ from api.v1.router import api_router
 from core.exceptions import HiddenGemException, get_friendly_error_response
 from core.rate_limiter import rate_limit_middleware
 from config import settings
-from database import create_tables
+from services.sync_service import start_sync, stop_sync
 
 
 # ============================================================
@@ -30,25 +33,25 @@ from database import create_tables
 async def lifespan(app: FastAPI):
     """앱 시작/종료 시 실행"""
     
-    # 시작 시
+    # ========== 시작 시 ==========
     print("🚀 Hidden Gem API Server Starting...")
     print(f"📊 Environment: {'Development' if settings.DEBUG else 'Production'}")
     print(f"🗄️ Database: {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
     print(f"📦 Redis: {settings.REDIS_HOST}:{settings.REDIS_PORT}")
     
-    # 테이블 생성 (개발 모드)
-    if settings.DEBUG:
-        await create_tables()
-        print("✅ Database tables created")
+    # ⚠️ DB 테이블 생성 제거됨
+    # Django migrate가 Single Source of Truth
+    # FastAPI는 Django가 생성한 테이블을 사용만 함
+    print("📋 DB Schema: Managed by Django (run 'python manage.py migrate' first)")
     
-    # TODO: Redis Pub/Sub 구독 시작
-    # sync_task = asyncio.create_task(listen_game_updates())
+    # Redis Pub/Sub 동기화 시작
+    await start_sync()
     
     yield
     
-    # 종료 시
+    # ========== 종료 시 ==========
+    await stop_sync()
     print("👋 Shutting down...")
-    # sync_task.cancel()
 
 
 # ============================================================
@@ -85,7 +88,11 @@ async def rate_limit_middleware_handler(request: Request, call_next):
     """Rate Limit 미들웨어"""
     
     # 제외 경로
-    if request.url.path in ["/health", "/health/live", "/health/ready", "/docs", "/openapi.json"]:
+    excluded_paths = [
+        "/health", "/api/v1/health", "/api/v1/health/live", "/api/v1/health/ready",
+        "/docs", "/redoc", "/openapi.json", "/"
+    ]
+    if request.url.path in excluded_paths:
         return await call_next(request)
     
     # Rate Limit 체크
@@ -122,6 +129,7 @@ async def hidden_gem_exception_handler(request: Request, exc: HiddenGemException
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """일반 예외 핸들러"""
+    print(f"❌ Unhandled exception: {type(exc).__name__}: {exc}")
     return JSONResponse(
         status_code=500,
         content=get_friendly_error_response(exc),
@@ -145,8 +153,10 @@ async def root():
     return {
         "service": settings.APP_NAME,
         "version": settings.VERSION,
+        "status": "running",
         "docs": "/docs" if settings.DEBUG else "Disabled in production",
-        "health": "/health",
+        "health": "/api/v1/health",
+        "search": "/api/v1/search",
     }
 
 

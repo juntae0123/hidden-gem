@@ -1,35 +1,36 @@
+# ============================================================
+# Hidden Gem - 통합 Requirements
+# Django + FastAPI 모두 포함
+# ============================================================
+
 # Django
-Django>=5.0
-djangorestframework>=3.14
-django-cors-headers>=4.3
+Django>=5.0,<6.0
+djangorestframework>=3.14.0
+django-cors-headers>=4.3.0
 django-filter>=23.5
-django-import-export>=3.3
-djangorestframework-simplejwt>=5.3
+django-import-export>=3.3.0
 
 # FastAPI
-fastapi>=0.109
-uvicorn[standard]>=0.27
-python-multipart>=0.0.9
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.3
+pydantic-settings>=2.1.0
 
 # Database
-psycopg2-binary>=2.9
-sqlalchemy>=2.0
-pgvector>=0.2
-asyncpg>=0.29
+psycopg2-binary>=2.9.9
+sqlalchemy[asyncio]>=2.0.25
+asyncpg>=0.29.0
+pgvector>=0.2.4
 
-# AI
-openai>=1.12
-tiktoken>=0.6
-numpy>=1.26
+# Redis
+redis>=5.0.1
+
+# OpenAI
+openai>=1.12.0
+
+# HTTP Client
+httpx>=0.26.0
 
 # Utilities
-python-dotenv>=1.0
-pydantic>=2.6
-pydantic-settings>=2.1
-httpx>=0.26
-orjson>=3.9
-
-# Dev
-pytest>=8.0
-black>=24.1
-ipython>=8.21
+numpy>=1.26.3
+python-dotenv>=1.0.0

@@ -115,3 +115,9 @@ GPT_MODELS = {
     # 임베딩
     'embedding': 'text-embedding-3-small',
 }
+# ============================================================
+# Redis 설정
+# ============================================================
+REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
+REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"

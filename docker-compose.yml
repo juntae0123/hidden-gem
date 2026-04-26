@@ -1,168 +1,115 @@
 # docker-compose.yml
-# Hidden Gem - 프로덕션 인프라 구성
-# 
-# 실행: docker-compose up -d
-# 로그: docker-compose logs -f
-# 중지: docker-compose down
-
-version: '3.9'
+version: '3.8'
 
 services:
   # ============================================================
-  # PostgreSQL + pgvector (벡터 검색)
+  # PostgreSQL + pgvector
   # ============================================================
-  postgres:
+  db:
     image: pgvector/pgvector:pg16
     container_name: hidden_gem_db
-    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DB_USER:-juntae}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-0312}
-      POSTGRES_DB: ${DB_NAME:-hidden_gem_db}
-      # 성능 튜닝
-      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      POSTGRES_USER: juntae
+      POSTGRES_PASSWORD: "0312"
+      POSTGRES_DB: hidden_gem_db
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init_scripts:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-juntae} -d ${DB_NAME:-hidden_gem_db}"]
+      test: ["CMD-SHELL", "pg_isready -U juntae -d hidden_gem_db"]
       interval: 10s
       timeout: 5s
       retries: 5
-    # 성능 설정
-    command: >
-      postgres
-      -c shared_buffers=256MB
-      -c effective_cache_size=768MB
-      -c maintenance_work_mem=128MB
-      -c checkpoint_completion_target=0.9
-      -c wal_buffers=16MB
-      -c default_statistics_target=100
-      -c random_page_cost=1.1
-      -c effective_io_concurrency=200
-      -c work_mem=16MB
-      -c min_wal_size=1GB
-      -c max_wal_size=4GB
+    networks:
+      - hidden_gem_network
 
   # ============================================================
-  # Redis (Semantic Cache + Rate Limiting + Pub/Sub)
+  # Redis
   # ============================================================
   redis:
     image: redis:7-alpine
     container_name: hidden_gem_redis
-    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: >
-      redis-server
-      --appendonly yes
-      --maxmemory 512mb
-      --maxmemory-policy allkeys-lru
-      --save 60 1000
-      --loglevel warning
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - hidden_gem_network
 
   # ============================================================
-  # FastAPI (검색 API 서버)
-  # ============================================================
-  fastapi:
-    build:
-      context: ./fastapi_app
-      dockerfile: Dockerfile
-    container_name: hidden_gem_api
-    restart: unless-stopped
-    ports:
-      - "8001:8000"
-    environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=${DB_NAME:-hidden_gem_db}
-      - DB_USER=${DB_USER:-juntae}
-      - DB_PASSWORD=${DB_PASSWORD:-0312}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - DEBUG=${DEBUG:-False}
-      - SECRET_KEY=${SECRET_KEY:-change-me}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./fastapi_app:/app
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  # ============================================================
-  # Django (Admin 서버)
+  # Django (Admin & Management)
   # ============================================================
   django:
     build:
       context: ./django_core
       dockerfile: Dockerfile
-    container_name: hidden_gem_admin
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
+    container_name: hidden_gem_django
     environment:
-      - DB_HOST=postgres
+      - DJANGO_DEBUG=True
+      - DB_HOST=db
       - DB_PORT=5432
-      - DB_NAME=${DB_NAME:-hidden_gem_db}
-      - DB_USER=${DB_USER:-juntae}
-      - DB_PASSWORD=${DB_PASSWORD:-0312}
+      - DB_NAME=hidden_gem_db
+      - DB_USER=juntae
+      - DB_PASSWORD=0312
       - REDIS_HOST=redis
-      - DEBUG=${DEBUG:-False}
-      - SECRET_KEY=${SECRET_KEY:-change-me}
+      - REDIS_PORT=6379
+    ports:
+      - "8001:8000"
     depends_on:
-      postgres:
+      db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - ./django_core:/app
-      - static_volume:/app/staticfiles
     command: >
       sh -c "python manage.py migrate &&
-             python manage.py collectstatic --noinput &&
-             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2"
+             python manage.py runserver 0.0.0.0:8000"
+    networks:
+      - hidden_gem_network
 
   # ============================================================
-  # Nginx (리버스 프록시) - 선택적
+  # FastAPI (Search API)
   # ============================================================
-  # nginx:
-  #   image: nginx:alpine
-  #   container_name: hidden_gem_nginx
-  #   restart: unless-stopped
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #   volumes:
-  #     - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-  #     - static_volume:/app/staticfiles
-  #   depends_on:
-  #     - fastapi
-  #     - django
+  fastapi:
+    build:
+      context: ./fastapi_app
+      dockerfile: Dockerfile
+    container_name: hidden_gem_fastapi
+    environment:
+      - DEBUG=True
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=hidden_gem_db
+      - DB_USER=juntae
+      - DB_PASSWORD=0312
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./fastapi_app:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - hidden_gem_network
 
 volumes:
   postgres_data:
-    driver: local
   redis_data:
-    driver: local
-  static_volume:
-    driver: local
 
 networks:
-  default:
-    name: hidden_gem_network
+  hidden_gem_network:
     driver: bridge

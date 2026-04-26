@@ -25,7 +25,61 @@ class Game(models.Model):
     release_date = models.DateField(null=True, blank=True)
     price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     
-    # 분석 상태
+    # ========== 스팀 데이터 (FastAPI와 동기화) ==========
+    steam_positive_ratio = models.FloatField(
+        null=True, blank=True,
+        verbose_name="스팀 긍정 비율",
+        help_text="0.0 ~ 1.0"
+    )
+    review_count = models.IntegerField(
+        default=0,
+        verbose_name="리뷰 수"
+    )
+    is_free = models.BooleanField(
+        default=False,
+        verbose_name="무료 게임"
+    )
+    is_indie = models.BooleanField(
+        default=True,
+        verbose_name="인디 게임"
+    )
+    is_early_access = models.BooleanField(
+        default=False,
+        verbose_name="얼리 액세스"
+    )
+    
+    # ========== AI 생성 콘텐츠 ==========
+    ai_curation_summary = models.TextField(
+        blank=True, default='',
+        verbose_name="AI 큐레이션 요약",
+        help_text="게임의 핵심 매력 한 줄 평"
+    )
+    marketing_hook = models.TextField(
+        blank=True, default='',
+        verbose_name="마케팅 훅"
+    )
+    one_line_summary = models.TextField(
+        blank=True, default='',
+        verbose_name="한 줄 요약"
+    )
+    target_personas = models.JSONField(
+        default=list, blank=True,
+        verbose_name="타겟 페르소나"
+    )
+    not_for_personas = models.JSONField(
+        default=list, blank=True,
+        verbose_name="비추천 페르소나"
+    )
+    similar_games = models.JSONField(
+        default=list, blank=True,
+        verbose_name="유사 게임"
+    )
+    unique_selling_points = models.JSONField(
+        default=list, blank=True,
+        verbose_name="핵심 셀링 포인트"
+    )
+    
+    # ========== 분석 상태 ==========
     is_analyzed = models.BooleanField(default=False, help_text="분석 완료 여부")
     analysis_method = models.CharField(
         max_length=50, 
@@ -37,6 +91,7 @@ class Game(models.Model):
             ('pending', '대기 중'),
         ]
     )
+    analyzed_at = models.DateTimeField(null=True, blank=True)
     
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -255,13 +310,12 @@ class GameMetric(models.Model):
     is_anime_style = models.BooleanField(default=False, help_text="애니메이션 스타일")
     is_retro_aesthetic = models.BooleanField(default=False, help_text="레트로 미학")
     
-    # ========== CONTENT - AI 생성 텍스트 콘텐츠 ==========
-    marketing_hook = models.TextField(blank=True, default='', help_text="마케팅 훅 (홍보 문구)")
-    one_line_summary = models.TextField(blank=True, default='', help_text="한 줄 요약")
-    target_personas = models.JSONField(default=list, blank=True, help_text="타겟 페르소나")
-    not_for_personas = models.JSONField(default=list, blank=True, help_text="비추천 페르소나")
-    similar_games = models.JSONField(default=list, blank=True, help_text="유사 게임")
-    unique_selling_points = models.JSONField(default=list, blank=True, help_text="핵심 셀링 포인트")
+    # ========== AI 평가 (FastAPI와 동기화) ==========
+    gem_potential = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="AI 평가 잠재력 (0~10)"
+    )
     
     # ========== REASONING - AI 분석 근거 ==========
     analysis_summary = models.TextField(blank=True, default='', help_text="분석 요약")
