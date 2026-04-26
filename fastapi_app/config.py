@@ -85,7 +85,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
-
+        extra = "ignore"  # <--- 이 한 줄만 추가하세요!
 
 @lru_cache()
 def get_settings() -> Settings:

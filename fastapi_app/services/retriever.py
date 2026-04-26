@@ -23,8 +23,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.constants import ALL_NUMERIC_METRICS, CATEGORY_METRICS
 from core.metrics_config import CATEGORY_BASE_WEIGHTS, get_metric_config
 from schemas.search import MetricPreference, TagPreference, PreferenceType
-from models.user import User
-
 
 @dataclass
 class RetrieverConfig:
@@ -32,7 +30,6 @@ class RetrieverConfig:
     top_k: int = 1000
     timeout_seconds: float = 5.0
     pre_filter_margin: float = 2.0
-
 
 @dataclass
 class GameCandidate:
@@ -60,7 +57,6 @@ class GameCandidate:
     # 검색 메타
     l2_distance: float = 0.0
     analysis_method: str = "gpt5.4_batch"
-
 
 class TwoTowerRetriever:
     """
@@ -90,18 +86,7 @@ class TwoTowerRetriever:
     ) -> List[GameCandidate]:
         """
         Two-Tower ANN 검색
-        
-        Args:
-            db: DB 세션
-            user_metrics: 유저 지표 선호도
-            user_tags: 유저 태그 선호도
-            personal_bias: 개인화 바이어스 (취향 DNA)
-            exclude_app_ids: 제외할 게임 ID
-            
-        Returns:
-            Top K 후보 게임
         """
-        
         user_tags = user_tags or {}
         personal_bias = personal_bias or {}
         exclude_app_ids = exclude_app_ids or []
@@ -128,76 +113,175 @@ class TwoTowerRetriever:
         
         return candidates
     
-    def _build_weighted_query_vector(
+    async def get_game_by_app_id(
         self,
-        user_metrics: Dict[str, MetricPreference],
-        personal_bias: Dict[str, Any],
-    ) -> np.ndarray:
+        db: AsyncSession,
+        app_id: int,
+    ) -> Optional[GameCandidate]:
+        """App ID로 게임 조회"""
+        query = """
+        SELECT 
+            g.app_id, g.name, g.genres, g.description, g.header_image,
+            g.steam_positive_ratio, g.review_count, g.is_indie,
+            g.analysis_method, g.ai_curation_summary, g.marketing_hook,
+            m.cozy_factor, m.horror_factor, m.gore_level, m.humor_rating,
+            m.dark_fantasy_vibe, m.epic_scale, m.melancholy,
+            m.reflex_demand, m.strategic_depth, m.grind_factor,
+            m.time_pressure, m.learning_curve,
+            m.freedom_level, m.action_pacing, m.rng_dependency,
+            m.growth_reward, m.exploration_reward, m.management_complexity,
+            m.stealth_importance, m.session_length, m.narrative_linearity,
+            m.puzzle_complexity, m.platforming_precision,
+            m.coop_synergy, m.competitive_stress, m.npc_interaction,
+            m.user_creation, m.multiplayer_scale,
+            m.lore_richness, m.choice_consequence, m.visual_spectacle,
+            m.environmental_storytelling, m.soundtrack_impact,
+            m.is_turn_based, m.is_real_time, m.is_first_person, m.is_third_person,
+            m.has_permadeath, m.has_base_building, m.has_crafting,
+            m.is_anime_style, m.is_retro_aesthetic,
+            m.gem_potential
+        FROM games g
+        JOIN game_metrics m ON g.id = m.game_id
+        WHERE g.app_id = :app_id
+        LIMIT 1
         """
-        개인화 가중치가 적용된 쿼리 벡터 생성
-        
-        수식:
-        weighted_query[i] = user_value[i] × sqrt(category_weight × metric_weight × personal_boost)
-        
-        sqrt를 쓰는 이유: L2 거리에서 가중치 효과가 제곱되므로
+        try:
+            result = await db.execute(text(query), {"app_id": app_id})
+            row = result.fetchone()
+            if row:
+                return self._row_to_candidate(row)
+            return None
+        except Exception as e:
+            print(f"get_game_by_app_id error: {e}")
+            return None
+    
+    async def search_game_by_name(
+        self,
+        db: AsyncSession,
+        name: str,
+    ) -> Optional[GameCandidate]:
+        """이름으로 게임 검색 (Fuzzy)"""
+        # 정확 매칭
+        query_exact = """
+        SELECT 
+            g.app_id, g.name, g.genres, g.description, g.header_image,
+            g.steam_positive_ratio, g.review_count, g.is_indie,
+            g.analysis_method, g.ai_curation_summary, g.marketing_hook,
+            m.cozy_factor, m.horror_factor, m.gore_level, m.humor_rating,
+            m.dark_fantasy_vibe, m.epic_scale, m.melancholy,
+            m.reflex_demand, m.strategic_depth, m.grind_factor,
+            m.time_pressure, m.learning_curve,
+            m.freedom_level, m.action_pacing, m.rng_dependency,
+            m.growth_reward, m.exploration_reward, m.management_complexity,
+            m.stealth_importance, m.session_length, m.narrative_linearity,
+            m.puzzle_complexity, m.platforming_precision,
+            m.coop_synergy, m.competitive_stress, m.npc_interaction,
+            m.user_creation, m.multiplayer_scale,
+            m.lore_richness, m.choice_consequence, m.visual_spectacle,
+            m.environmental_storytelling, m.soundtrack_impact,
+            m.is_turn_based, m.is_real_time, m.is_first_person, m.is_third_person,
+            m.has_permadeath, m.has_base_building, m.has_crafting,
+            m.is_anime_style, m.is_retro_aesthetic,
+            m.gem_potential
+        FROM games g
+        JOIN game_metrics m ON g.id = m.game_id
+        WHERE LOWER(g.name) = LOWER(:name)
+        LIMIT 1
         """
-        
-        # 기본 벡터 (중립값 5.0)
+        try:
+            result = await db.execute(text(query_exact), {"name": name})
+            row = result.fetchone()
+            if row:
+                return self._row_to_candidate(row)
+            
+            # 부분 매칭
+            query_like = """
+            SELECT 
+                g.app_id, g.name, g.genres, g.description, g.header_image,
+                g.steam_positive_ratio, g.review_count, g.is_indie,
+                g.analysis_method, g.ai_curation_summary, g.marketing_hook,
+                m.cozy_factor, m.horror_factor, m.gore_level, m.humor_rating,
+                m.dark_fantasy_vibe, m.epic_scale, m.melancholy,
+                m.reflex_demand, m.strategic_depth, m.grind_factor,
+                m.time_pressure, m.learning_curve,
+                m.freedom_level, m.action_pacing, m.rng_dependency,
+                m.growth_reward, m.exploration_reward, m.management_complexity,
+                m.stealth_importance, m.session_length, m.narrative_linearity,
+                m.puzzle_complexity, m.platforming_precision,
+                m.coop_synergy, m.competitive_stress, m.npc_interaction,
+                m.user_creation, m.multiplayer_scale,
+                m.lore_richness, m.choice_consequence, m.visual_spectacle,
+                m.environmental_storytelling, m.soundtrack_impact,
+                m.is_turn_based, m.is_real_time, m.is_first_person, m.is_third_person,
+                m.has_permadeath, m.has_base_building, m.has_crafting,
+                m.is_anime_style, m.is_retro_aesthetic,
+                m.gem_potential
+            FROM games g
+            JOIN game_metrics m ON g.id = m.game_id
+            WHERE LOWER(g.name) LIKE LOWER(:pattern)
+            ORDER BY LENGTH(g.name) ASC
+            LIMIT 1
+            """
+            result = await db.execute(text(query_like), {"pattern": f"%{name}%"})
+            row = result.fetchone()
+            if row:
+                return self._row_to_candidate(row)
+            return None
+        except Exception as e:
+            print(f"search_game_by_name error: {e}")
+            return None
+    
+    def game_to_user_preferences(self, game: GameCandidate) -> Dict[str, MetricPreference]:
+        """게임 지표 → 유저 선호도로 변환 (유사 게임 검색용)"""
+        preferences = {}
+        for metric_name, value in game.metrics.items():
+            if value is not None:
+                preferences[metric_name] = MetricPreference(
+                    value=value,
+                    type=PreferenceType.MUST_EXACT,
+                    confidence=0.9,
+                )
+        return preferences
+    
+    def _build_weighted_query_vector(self, user_metrics: Dict[str, MetricPreference], personal_bias: Dict[str, Any]) -> np.ndarray:
+        """가중치가 적용된 쿼리 벡터 생성"""
         vector = np.full(len(self.metric_order), 5.0, dtype=np.float32)
         weights = np.ones(len(self.metric_order), dtype=np.float32)
-        
-        # 개인화 부스트
         category_boosts = personal_bias.get("category_boosts", {})
         
         for metric_name, pref in user_metrics.items():
             if pref.type == PreferenceType.NEUTRAL or pref.value is None:
                 continue
-            
             idx = self.metric_to_idx.get(metric_name)
             if idx is None:
                 continue
             
-            # 유저 값 설정
             vector[idx] = pref.value
-            
-            # 가중치 계산
             config = get_metric_config(metric_name)
             category = self._find_category(metric_name)
-            
             category_weight = CATEGORY_BASE_WEIGHTS.get(category, 0.2)
             personal_boost = category_boosts.get(category, 1.0)
             
-            # 최종 가중치
             final_weight = np.sqrt(category_weight * config.weight * personal_boost)
             weights[idx] = final_weight
         
-        # 가중 벡터 생성
         weighted_vector = vector * weights
-        
-        # L2 정규화
         norm = np.linalg.norm(weighted_vector)
         if norm > 0:
             weighted_vector = weighted_vector / norm
-        
         return weighted_vector
     
-    def _build_pre_filter(
-        self,
-        user_metrics: Dict[str, MetricPreference],
-        user_tags: Dict[str, TagPreference],
-        exclude_app_ids: List[int],
-    ) -> Dict[str, Any]:
+    def _build_pre_filter(self, user_metrics: Dict[str, MetricPreference], user_tags: Dict[str, TagPreference], exclude_app_ids: List[int]) -> Dict[str, Any]:
         """Pre-Filter SQL 조건"""
-        
         conditions = ["g.is_analyzed = true"]
         params = {}
         
-        # 제외 게임
         if exclude_app_ids:
-            conditions.append("g.app_id NOT IN :exclude_ids")
-            params["exclude_ids"] = tuple(exclude_app_ids)
+            placeholders = ", ".join([f":exclude_{i}" for i in range(len(exclude_app_ids))])
+            conditions.append(f"g.app_id NOT IN ({placeholders})")
+            for i, app_id in enumerate(exclude_app_ids):
+                params[f"exclude_{i}"] = app_id
         
-        # Tags Hard Filter
         for tag_name, tag_pref in user_tags.items():
             if tag_pref.type == "MUST" and tag_pref.value is not None:
                 conditions.append(f"m.{tag_name} = :tag_{tag_name}")
@@ -206,49 +290,43 @@ class TwoTowerRetriever:
                 conditions.append(f"m.{tag_name} != :tag_{tag_name}")
                 params[f"tag_{tag_name}"] = tag_pref.value
         
-        # AVOID Pre-Filter
         for metric_name, pref in user_metrics.items():
             if pref.type == PreferenceType.MUST_LOW and pref.value is not None:
                 config = get_metric_config(metric_name)
                 margin = self.config.pre_filter_margin
-                
                 if config.is_sensitive:
-                    margin = margin * 0.5  # 민감 지표는 마진 줄임
-                
+                    margin = margin * 0.5
                 threshold = min(10, pref.value + margin)
                 conditions.append(f"m.{metric_name} <= :avoid_{metric_name}")
                 params[f"avoid_{metric_name}"] = threshold
         
-        return {
-            "where": " AND ".join(conditions),
-            "params": params,
-        }
+        return {"where": " AND ".join(conditions), "params": params}
     
-    async def _execute_ann_search(
-        self,
-        db: AsyncSession,
-        query_vector: np.ndarray,
-        pre_filter: Dict[str, Any],
-    ) -> List[GameCandidate]:
+    async def _execute_ann_search(self, db: AsyncSession, query_vector: np.ndarray, pre_filter: Dict[str, Any]) -> List[GameCandidate]:
         """HNSW ANN 검색 실행"""
-        
-        # 벡터를 PostgreSQL 형식으로
         vector_str = "[" + ",".join(map(str, query_vector.tolist())) + "]"
         
         query = f"""
         SELECT 
-            g.app_id,
-            g.name,
-            g.genres,
-            g.description,
-            g.header_image,
-            g.steam_positive_ratio,
-            g.review_count,
-            g.is_indie,
-            g.analysis_method,
-            g.ai_curation_summary,
-            g.marketing_hook,
-            m.*,
+            g.app_id, g.name, g.genres, g.description, g.header_image,
+            g.steam_positive_ratio, g.review_count, g.is_indie,
+            g.analysis_method, g.ai_curation_summary, g.marketing_hook,
+            m.cozy_factor, m.horror_factor, m.gore_level, m.humor_rating,
+            m.dark_fantasy_vibe, m.epic_scale, m.melancholy,
+            m.reflex_demand, m.strategic_depth, m.grind_factor,
+            m.time_pressure, m.learning_curve,
+            m.freedom_level, m.action_pacing, m.rng_dependency,
+            m.growth_reward, m.exploration_reward, m.management_complexity,
+            m.stealth_importance, m.session_length, m.narrative_linearity,
+            m.puzzle_complexity, m.platforming_precision,
+            m.coop_synergy, m.competitive_stress, m.npc_interaction,
+            m.user_creation, m.multiplayer_scale,
+            m.lore_richness, m.choice_consequence, m.visual_spectacle,
+            m.environmental_storytelling, m.soundtrack_impact,
+            m.is_turn_based, m.is_real_time, m.is_first_person, m.is_third_person,
+            m.has_permadeath, m.has_base_building, m.has_crafting,
+            m.is_anime_style, m.is_retro_aesthetic,
+            m.gem_potential,
             m.pure_embedding <-> :query_vector::vector AS l2_distance
         FROM games g
         JOIN game_metrics m ON g.id = m.game_id
@@ -257,65 +335,68 @@ class TwoTowerRetriever:
         LIMIT :top_k
         """
         
-        params = {
-            **pre_filter["params"],
-            "query_vector": vector_str,
-            "top_k": self.config.top_k,
-        }
+        params = {**pre_filter["params"], "query_vector": vector_str, "top_k": self.config.top_k}
         
         try:
-            result = await asyncio.wait_for(
-                db.execute(text(query), params),
-                timeout=self.config.timeout_seconds,
-            )
+            result = await asyncio.wait_for(db.execute(text(query), params), timeout=self.config.timeout_seconds)
             rows = result.fetchall()
         except asyncio.TimeoutError:
+            print("ANN search timeout")
             return []
         except Exception as e:
             print(f"ANN search error: {e}")
             return []
         
-        # 결과 변환
         candidates = []
         for row in rows:
-            candidate = self._row_to_candidate(row)
-            candidates.append(candidate)
-        
+            candidates.append(self._row_to_candidate(row))
         return candidates
     
     def _row_to_candidate(self, row) -> GameCandidate:
         """DB Row → GameCandidate"""
+        if hasattr(row, '_mapping'):
+            row_dict = dict(row._mapping)
+        else:
+            row_dict = row._asdict() if hasattr(row, '_asdict') else {}
         
         metrics = {}
         for metric_name in ALL_NUMERIC_METRICS:
-            value = getattr(row, metric_name, None)
+            value = row_dict.get(metric_name) if row_dict else getattr(row, metric_name, None)
             if value is not None:
                 metrics[metric_name] = float(value)
         
         tags = {}
-        for tag_name in ["is_turn_based", "is_real_time", "is_first_person", "is_third_person",
-                         "has_permadeath", "has_base_building", "has_crafting",
-                         "is_anime_style", "is_retro_aesthetic"]:
-            value = getattr(row, tag_name, None)
+        tag_names = [
+            "is_turn_based", "is_real_time", "is_first_person", "is_third_person",
+            "has_permadeath", "has_base_building", "has_crafting",
+            "is_anime_style", "is_retro_aesthetic"
+        ]
+        for tag_name in tag_names:
+            value = row_dict.get(tag_name) if row_dict else getattr(row, tag_name, None)
             if value is not None:
                 tags[tag_name] = bool(value)
         
+        def get_val(key, default=None):
+            if row_dict:
+                return row_dict.get(key, default)
+            return getattr(row, key, default)
+        
         return GameCandidate(
-            app_id=row.app_id,
-            name=row.name,
-            genres=row.genres or "",
-            description=row.description or "",
-            header_image=getattr(row, "header_image", None),
+            app_id=get_val("app_id"),
+            name=get_val("name", ""),
+            genres=get_val("genres", ""),
+            description=get_val("description", ""),
+            header_image=get_val("header_image"),
             metrics=metrics,
             tags=tags,
-            ai_curation_summary=getattr(row, "ai_curation_summary", None),
-            marketing_hook=getattr(row, "marketing_hook", None),
-            steam_positive_ratio=getattr(row, "steam_positive_ratio", None),
-            review_count=getattr(row, "review_count", None),
-            gem_potential=getattr(row, "gem_potential", None),
-            is_indie=getattr(row, "is_indie", True),
-            l2_distance=getattr(row, "l2_distance", 0.0),
-            analysis_method=getattr(row, "analysis_method", "gpt5.4_batch"),
+            ai_curation_summary=get_val("ai_curation_summary"),
+            marketing_hook=get_val("marketing_hook"),
+            steam_positive_ratio=get_val("steam_positive_ratio"),
+            review_count=get_val("review_count"),
+            gem_potential=get_val("gem_potential"),
+            is_indie=get_val("is_indie", True),
+            l2_distance=get_val("l2_distance", 0.0),
+            analysis_method=get_val("analysis_method", "gpt5.4_batch"),
         )
     
     def _find_category(self, metric_name: str) -> Optional[str]:
@@ -324,7 +405,6 @@ class TwoTowerRetriever:
             if metric_name in metrics:
                 return category
         return None
-
 
 # 싱글톤
 retriever = TwoTowerRetriever()
