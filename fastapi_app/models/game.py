@@ -1,44 +1,32 @@
 # fastapi_app/models/game.py
 """
-Hidden Gem - 게임 모델
-Two-Tower 검색을 위한 pure_embedding 설계
-Django와 동일한 스키마 유지
-
-⚠️ 중요: DB 스키마는 Django migrate가 관리
-   이 파일은 SQLAlchemy ORM 매핑 전용
+SQLAlchemy ORM 모델 - Django의 games, game_metrics 테이블 매핑
+49개 수치 지표 + 9개 Boolean 태그 + 2개 평가 = 60개 지표
 """
 
 from sqlalchemy import (
-    Column, Integer, String, Text, Float, Boolean,
-    DateTime, ForeignKey, Index, BigInteger
+    Column, Integer, String, Text, Float, Boolean, 
+    Date, DateTime, JSON, ForeignKey, Numeric
 )
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import JSONB
-from pgvector.sqlalchemy import Vector
-from datetime import datetime
-
 from database import Base
-from core.constants import EMBEDDING_DIMENSION, ALL_NUMERIC_METRICS
 
 
 class Game(Base):
-    """게임 기본 정보 - Django Game 모델과 동기화"""
-    
+    """Django의 'games' 테이블 매핑"""
     __tablename__ = "games"
     
-    id = Column(BigInteger, primary_key=True, index=True)
-    app_id = Column(Integer, unique=True, nullable=False, index=True)
-    
-    # 기본 정보
-    name = Column(String(255), nullable=False, default='', index=True)
-    genres = Column(String(500), default="")
-    developer = Column(String(255), default="")
-    publisher = Column(String(255), default="")
-    description = Column(Text, default="")
-    short_description = Column(Text, default="")
-    header_image = Column(String(500), nullable=True)
-    release_date = Column(DateTime, nullable=True)
-    price = Column(Float, nullable=True)
+    id = Column(Integer, primary_key=True, index=True)
+    app_id = Column(Integer, unique=True, index=True, nullable=False)
+    name = Column(String(255), index=True, default='')
+    genres = Column(String(500), default='')
+    developer = Column(String(255), default='')
+    publisher = Column(String(255), default='')
+    description = Column(Text, default='')
+    short_description = Column(Text, default='')
+    header_image = Column(String(500), default='')
+    release_date = Column(Date, nullable=True)
+    price = Column(Numeric(10, 2), nullable=True)
     
     # 스팀 데이터
     steam_positive_ratio = Column(Float, nullable=True)
@@ -48,61 +36,35 @@ class Game(Base):
     is_early_access = Column(Boolean, default=False)
     
     # AI 생성 콘텐츠
-    ai_curation_summary = Column(Text, nullable=True)
-    marketing_hook = Column(Text, nullable=True)
-    one_line_summary = Column(Text, nullable=True)
-    target_personas = Column(JSONB, default=list)
-    not_for_personas = Column(JSONB, default=list)
-    similar_games = Column(JSONB, default=list)
-    unique_selling_points = Column(JSONB, default=list)
+    ai_curation_summary = Column(Text, default='')
+    marketing_hook = Column(Text, default='')
+    one_line_summary = Column(Text, default='')
+    target_personas = Column(JSON, default=list)
+    not_for_personas = Column(JSON, default=list)
+    similar_games = Column(JSON, default=list)
+    unique_selling_points = Column(JSON, default=list)
     
     # 분석 상태
-    is_analyzed = Column(Boolean, default=False, index=True)
-    analysis_method = Column(String(50), default="pending")
+    is_analyzed = Column(Boolean, default=False)
+    analysis_method = Column(String(50), default='pending')
     analyzed_at = Column(DateTime, nullable=True)
     
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
     
-    # 관계 - Django와 동일하게 PK 기반 OneToOne
-    metrics = relationship(
-        "GameMetric", 
-        back_populates="game", 
-        uselist=False, 
-        cascade="all, delete-orphan"
-    )
-    
-    def __repr__(self):
-        return f"<Game {self.app_id}: {self.name}>"
+    # 관계 설정 (1:1)
+    metrics = relationship("GameMetric", back_populates="game", uselist=False)
 
 
 class GameMetric(Base):
-    """
-    게임 52개 지표 + 벡터 임베딩
-    Django GameMetric과 동기화 - game_id가 PK
-    
-    ⚠️ 경고: pure_embedding 차원(EMBEDDING_DIMENSION)은 
-       core/constants.py의 ALL_NUMERIC_METRICS 개수와 반드시 일치해야 함!
-       현재: 33개 지표 → 33차원 벡터
-       
-       지표 추가/삭제 시:
-       1. core/constants.py의 ALL_NUMERIC_METRICS 수정
-       2. Django models.py에 필드 추가
-       3. Django makemigrations + migrate 실행
-       4. 기존 데이터의 pure_embedding 재계산 필요
-    """
-    
+    """Django의 'game_metrics' 테이블 매핑 - 60개 지표"""
     __tablename__ = "game_metrics"
     
-    # Django와 동일: game_id가 PK (OneToOne)
-    game_id = Column(
-        BigInteger, 
-        ForeignKey("games.id", ondelete="CASCADE"), 
-        primary_key=True
-    )
+    # PK = FK (1:1 관계)
+    game_id = Column(Integer, ForeignKey("games.id"), primary_key=True)
     
-    # ========== VIBE (7개) ==========
+    # ========== VIBE (7개) - 게임 분위기/톤 ==========
     cozy_factor = Column(Float, nullable=True)
     horror_factor = Column(Float, nullable=True)
     gore_level = Column(Float, nullable=True)
@@ -111,14 +73,14 @@ class GameMetric(Base):
     epic_scale = Column(Float, nullable=True)
     melancholy = Column(Float, nullable=True)
     
-    # ========== DEMANDS (5개) ==========
+    # ========== DEMANDS (5개) - 플레이어에게 요구하는 것 ==========
     reflex_demand = Column(Float, nullable=True)
     strategic_depth = Column(Float, nullable=True)
     grind_factor = Column(Float, nullable=True)
     time_pressure = Column(Float, nullable=True)
     learning_curve = Column(Float, nullable=True)
     
-    # ========== MECHANICS (11개) ==========
+    # ========== MECHANICS (9개) - 게임 메커니즘 (기존) ==========
     freedom_level = Column(Float, nullable=True)
     action_pacing = Column(Float, nullable=True)
     rng_dependency = Column(Float, nullable=True)
@@ -128,22 +90,48 @@ class GameMetric(Base):
     stealth_importance = Column(Float, nullable=True)
     session_length = Column(Float, nullable=True)
     narrative_linearity = Column(Float, nullable=True)
+    
+    # ========== MECHANICS EXTRA (2개) - 게임 메커니즘 확장 ==========
     puzzle_complexity = Column(Float, nullable=True)
     platforming_precision = Column(Float, nullable=True)
     
-    # ========== SOCIAL (5개) ==========
+    # ========== SOCIAL (5개) - 소셜/멀티플레이 ==========
     coop_synergy = Column(Float, nullable=True)
     competitive_stress = Column(Float, nullable=True)
     npc_interaction = Column(Float, nullable=True)
     user_creation = Column(Float, nullable=True)
     multiplayer_scale = Column(Float, nullable=True)
     
-    # ========== PRESENTATION (5개) ==========
+    # ========== PRESENTATION (5개) - 연출/프레젠테이션 ==========
     lore_richness = Column(Float, nullable=True)
     choice_consequence = Column(Float, nullable=True)
     visual_spectacle = Column(Float, nullable=True)
     environmental_storytelling = Column(Float, nullable=True)
     soundtrack_impact = Column(Float, nullable=True)
+    
+    # ========== SYSTEM/UX (7개) - 신규 ==========
+    build_variety = Column(Float, nullable=True)
+    progression_clarity = Column(Float, nullable=True)
+    save_flexibility = Column(Float, nullable=True)
+    difficulty_accessibility = Column(Float, nullable=True)
+    tutorial_quality = Column(Float, nullable=True)
+    ui_ux_polish = Column(Float, nullable=True)
+    modding_support = Column(Float, nullable=True)
+    
+    # ========== ART/AUDIO (3개) - 신규 ==========
+    art_style_uniqueness = Column(Float, nullable=True)
+    audio_design = Column(Float, nullable=True)
+    animation_quality = Column(Float, nullable=True)
+    
+    # ========== OTHER (2개) - 신규 ==========
+    world_reactivity = Column(Float, nullable=True)
+    community_dependency = Column(Float, nullable=True)
+    
+    # ========== NEW (4개) - 신규 ==========
+    narrative_depth = Column(Float, nullable=True)
+    replay_value = Column(Float, nullable=True)
+    endgame_content = Column(Float, nullable=True)
+    monetization_fairness = Column(Float, nullable=True)
     
     # ========== TAGS (9개 Boolean) ==========
     is_turn_based = Column(Boolean, default=False)
@@ -156,56 +144,86 @@ class GameMetric(Base):
     is_anime_style = Column(Boolean, default=False)
     is_retro_aesthetic = Column(Boolean, default=False)
     
-    # ========== AI 평가 ==========
+    # ========== AI 평가 (2개) ==========
     gem_potential = Column(Float, nullable=True)
     confidence_score = Column(Float, nullable=True)
     
-    # ========== REASONING (Django와 동기화) ==========
-    analysis_summary = Column(Text, nullable=True)
-    genre_classification = Column(String(255), nullable=True)
-    core_loop = Column(Text, nullable=True)
-    metric_justifications = Column(JSONB, default=dict)
-    data_limitations = Column(Text, nullable=True)
+    # ========== REASONING ==========
+    analysis_summary = Column(Text, default='')
+    genre_classification = Column(String(255), default='')
+    core_loop = Column(Text, default='')
+    metric_justifications = Column(JSON, default=dict)
+    data_limitations = Column(Text, default='')
     
-    # ========== 벡터 임베딩 ==========
-    # ⚠️ 차원은 EMBEDDING_DIMENSION (core/constants.py)에서 관리
-    # 현재: 33차원 (ALL_NUMERIC_METRICS 개수)
-    pure_embedding = Column(Vector(EMBEDDING_DIMENSION), nullable=True)
+    # ========== 원본 데이터 ==========
+    raw_content = Column(JSON, default=dict)
+    raw_reasoning = Column(JSON, default=dict)
     
-    # ========== 메타 ==========
-    extraction_version = Column(String(50), default="gpt5.4-batch-v1")
-    raw_content = Column(JSONB, nullable=True)
-    raw_reasoning = Column(JSONB, nullable=True)
-    extracted_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # ========== META ==========
+    extraction_version = Column(String(50), default='gpt5.4-batch-v1')
+    extracted_at = Column(DateTime)
+    updated_at = Column(DateTime)
     
-    # 관계
+    # 관계 설정
     game = relationship("Game", back_populates="metrics")
-    
-    # HNSW 인덱스
-    __table_args__ = (
-        Index(
-            'ix_game_metrics_pure_embedding_hnsw',
-            pure_embedding,
-            postgresql_using='hnsw',
-            postgresql_with={'m': 16, 'ef_construction': 64},
-            postgresql_ops={'pure_embedding': 'vector_l2_ops'}
-        ),
-    )
-    
-    def to_vector(self) -> list:
-        """
-        지표를 벡터로 변환
-        
-        ⚠️ 순서가 ALL_NUMERIC_METRICS와 반드시 일치해야 함!
-        """
-        # ALL_NUMERIC_METRICS 순서대로 값 추출
-        vector = []
-        for metric_name in ALL_NUMERIC_METRICS:
-            value = getattr(self, metric_name, None)
-            vector.append(value if value is not None else 5.0)
-        
-        assert len(vector) == EMBEDDING_DIMENSION, \
-            f"Vector dimension mismatch! Expected {EMBEDDING_DIMENSION}, got {len(vector)}"
-        
-        return vector
+
+
+# ============================================================
+# 49개 수치 지표 필드명 리스트 (추천 알고리즘에서 사용)
+# ============================================================
+NUMERIC_METRIC_FIELDS = [
+    # VIBE (7)
+    'cozy_factor', 'horror_factor', 'gore_level', 'humor_rating',
+    'dark_fantasy_vibe', 'epic_scale', 'melancholy',
+    # DEMANDS (5)
+    'reflex_demand', 'strategic_depth', 'grind_factor', 'time_pressure', 'learning_curve',
+    # MECHANICS (9)
+    'freedom_level', 'action_pacing', 'rng_dependency', 'growth_reward',
+    'exploration_reward', 'management_complexity', 'stealth_importance',
+    'session_length', 'narrative_linearity',
+    # MECHANICS EXTRA (2)
+    'puzzle_complexity', 'platforming_precision',
+    # SOCIAL (5)
+    'coop_synergy', 'competitive_stress', 'npc_interaction', 'user_creation', 'multiplayer_scale',
+    # PRESENTATION (5)
+    'lore_richness', 'choice_consequence', 'visual_spectacle',
+    'environmental_storytelling', 'soundtrack_impact',
+    # SYSTEM/UX (7)
+    'build_variety', 'progression_clarity', 'save_flexibility',
+    'difficulty_accessibility', 'tutorial_quality', 'ui_ux_polish', 'modding_support',
+    # ART/AUDIO (3)
+    'art_style_uniqueness', 'audio_design', 'animation_quality',
+    # OTHER (2)
+    'world_reactivity', 'community_dependency',
+    # NEW (4)
+    'narrative_depth', 'replay_value', 'endgame_content', 'monetization_fairness',
+]
+
+# 9개 Boolean 태그 필드명
+BOOLEAN_TAG_FIELDS = [
+    'is_turn_based', 'is_real_time', 'is_first_person', 'is_third_person',
+    'has_permadeath', 'has_base_building', 'has_crafting',
+    'is_anime_style', 'is_retro_aesthetic',
+]
+
+# 카테고리별 지표 그룹 (UI 표시용)
+METRIC_CATEGORIES = {
+    'vibe': ['cozy_factor', 'horror_factor', 'gore_level', 'humor_rating',
+             'dark_fantasy_vibe', 'epic_scale', 'melancholy'],
+    'demands': ['reflex_demand', 'strategic_depth', 'grind_factor', 
+                'time_pressure', 'learning_curve'],
+    'mechanics': ['freedom_level', 'action_pacing', 'rng_dependency', 'growth_reward',
+                  'exploration_reward', 'management_complexity', 'stealth_importance',
+                  'session_length', 'narrative_linearity'],
+    'mechanics_extra': ['puzzle_complexity', 'platforming_precision'],
+    'social': ['coop_synergy', 'competitive_stress', 'npc_interaction',
+               'user_creation', 'multiplayer_scale'],
+    'presentation': ['lore_richness', 'choice_consequence', 'visual_spectacle',
+                     'environmental_storytelling', 'soundtrack_impact'],
+    'system_ux': ['build_variety', 'progression_clarity', 'save_flexibility',
+                  'difficulty_accessibility', 'tutorial_quality', 'ui_ux_polish',
+                  'modding_support'],
+    'art_audio': ['art_style_uniqueness', 'audio_design', 'animation_quality'],
+    'other': ['world_reactivity', 'community_dependency'],
+    'new': ['narrative_depth', 'replay_value', 'endgame_content', 'monetization_fairness'],
+}
