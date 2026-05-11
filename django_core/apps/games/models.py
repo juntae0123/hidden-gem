@@ -1,10 +1,16 @@
 # django_core/apps/games/models.py
 """
-Hidden Gem - 게임 & 52개 지표 모델
+Hidden Gem - 게임 & 60개 지표 모델
 
 데이터 출처:
 - 4,190개 원본: GPT-5.4 Batch API로 추출 (고품질)
 - 신규 게임: 4,190개 데이터 기반 Few-Shot으로 저비용 고품질 분석
+
+지표 구성:
+- 수치 지표 49개 (기존 31개 + 신규 18개)
+- 태그 9개 (Boolean)
+- 평가 2개 (gem_potential, confidence_score)
+- 총 60개
 """
 
 from django.db import models
@@ -111,7 +117,7 @@ class Game(models.Model):
 
 class GameMetric(models.Model):
     """
-    52개 지표 + AI 생성 콘텐츠
+    60개 지표: 49개 수치 + 9개 태그 + 2개 평가
     
     - 원본 4,190개: GPT-5.4 Batch로 추출한 고품질 데이터
     - 신규 게임: 원본 4,190개를 Few-Shot 예시로 활용하여 저렴한 모델로 5.4급 품질 생성
@@ -188,7 +194,7 @@ class GameMetric(models.Model):
         help_text="학습 곡선 (높을수록 어려움)"
     )
     
-    # ========== MECHANICS (11개) - 게임 메커니즘 ==========
+    # ========== MECHANICS (9개) - 게임 메커니즘 (기존) ==========
     freedom_level = models.FloatField(
         null=True, blank=True,
         validators=[MinValueValidator(0), MaxValueValidator(10)],
@@ -234,6 +240,8 @@ class GameMetric(models.Model):
         validators=[MinValueValidator(0), MaxValueValidator(10)],
         help_text="서사 선형성 (1=비선형, 10=완전 선형)"
     )
+    
+    # ========== MECHANICS EXTRA (2개) - 게임 메커니즘 (기존 확장) ==========
     puzzle_complexity = models.FloatField(
         null=True, blank=True,
         validators=[MinValueValidator(0), MaxValueValidator(10)],
@@ -299,6 +307,94 @@ class GameMetric(models.Model):
         help_text="사운드트랙 영향력"
     )
     
+    # ========== SYSTEM/UX (7개) - 신규 ==========
+    build_variety = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="빌드 다양성"
+    )
+    progression_clarity = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="진행 명확성"
+    )
+    save_flexibility = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="저장 유연성"
+    )
+    difficulty_accessibility = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="난이도 접근성"
+    )
+    tutorial_quality = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="튜토리얼 품질"
+    )
+    ui_ux_polish = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="UI/UX 완성도"
+    )
+    modding_support = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="모딩 지원"
+    )
+    
+    # ========== ART/AUDIO (3개) - 신규 ==========
+    art_style_uniqueness = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="아트 스타일 독창성"
+    )
+    audio_design = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="오디오 디자인"
+    )
+    animation_quality = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="애니메이션 품질"
+    )
+    
+    # ========== OTHER (2개) - 신규 ==========
+    world_reactivity = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="월드 반응성"
+    )
+    community_dependency = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="커뮤니티 의존도"
+    )
+    
+    # ========== NEW (4개) - 신규 ==========
+    narrative_depth = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="서사 깊이"
+    )
+    replay_value = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="리플레이 가치"
+    )
+    endgame_content = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="엔드게임 콘텐츠"
+    )
+    monetization_fairness = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="과금 공정성"
+    )
+    
     # ========== TAGS (9개) - Boolean ==========
     is_turn_based = models.BooleanField(default=False, help_text="턴제 게임")
     is_real_time = models.BooleanField(default=False, help_text="실시간 게임")
@@ -310,11 +406,16 @@ class GameMetric(models.Model):
     is_anime_style = models.BooleanField(default=False, help_text="애니메이션 스타일")
     is_retro_aesthetic = models.BooleanField(default=False, help_text="레트로 미학")
     
-    # ========== AI 평가 (FastAPI와 동기화) ==========
+    # ========== AI 평가 (2개) ==========
     gem_potential = models.FloatField(
         null=True, blank=True,
         validators=[MinValueValidator(0), MaxValueValidator(10)],
         help_text="AI 평가 잠재력 (0~10)"
+    )
+    confidence_score = models.FloatField(
+        null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(1)],
+        help_text="분석 신뢰도 (0~1)"
     )
     
     # ========== REASONING - AI 분석 근거 ==========
@@ -322,7 +423,6 @@ class GameMetric(models.Model):
     genre_classification = models.CharField(max_length=255, blank=True, default='', help_text="장르 분류")
     core_loop = models.TextField(blank=True, default='', help_text="핵심 게임 루프")
     metric_justifications = models.JSONField(default=dict, blank=True, help_text="지표별 판단 근거")
-    confidence_score = models.FloatField(null=True, blank=True, help_text="분석 신뢰도 (0~1)")
     data_limitations = models.TextField(blank=True, default='', help_text="데이터 한계점")
     
     # ========== 원본 데이터 보관 ==========
