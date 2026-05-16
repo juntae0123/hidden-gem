@@ -1,4 +1,3 @@
-# fastapi_app/config.py
 """
 환경 설정 - Docker 컨테이너 DB 연결
 """
@@ -16,24 +15,27 @@ class Settings(BaseSettings):
     DB_NAME: str = "hidden_gem_db"
     
     # 앱 설정
-    DEBUG: bool = True
+    DEBUG: bool = False
     API_V1_PREFIX: str = "/api/v1"
     
     # 추천 설정
     DEFAULT_RECOMMEND_COUNT: int = 5
     MAX_RECOMMEND_COUNT: int = 20
     
-    @property
-    def DATABASE_URL(self) -> str:
-        return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+    # gem_potential 스케일 (CSV는 0~100 기준)
+    GEM_POTENTIAL_SCALE: float = 100.0
     
     @property
-    def DATABASE_URL_SYNC(self) -> str:
-        return f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+    def DATABASE_URL(self) -> str:
+        return (
+            f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}"
+            f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        )
 
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
 
 
 @lru_cache()

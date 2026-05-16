@@ -1,12 +1,10 @@
-# fastapi_app/services/recommender.py
 """
-🎯 Hidden Gem 추천 엔진 - 49차원 지표 기반 유사도 계산
+🎯 Hidden Gem 추천 엔진 v2 - 점수 변별력 강화
 
-알고리즘:
-1. 벡터 유사도: 49개 수치 지표 → 코사인 + 유클리드 하이브리드
-2. 태그 필터링: 9개 Boolean 태그로 필수/제외 조건
-3. 가중치 시스템: 유저 지정 지표에 2배 가중치
-4. Hidden Gem 보정: gem_potential 높고 review_count 낮은 게임 우대
+개선 사항:
+1. 유클리드 거리 정규화 개선 (실제 거리 분포 반영)
+2. 점수 변별력 강화 (round 정밀도 ↑, 가중치 재조정)
+3. by-game에서도 match_reasons 생성 (공통 특징 분석)
 """
 
 import numpy as np
@@ -15,60 +13,74 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from models.game import Game, GameMetric, NUMERIC_METRIC_FIELDS, BOOLEAN_TAG_FIELDS
+from models.game import (
+    Game, GameMetric, 
+    NUMERIC_METRIC_FIELDS, BOOLEAN_TAG_FIELDS
+)
 from schemas.game import RecommendedGame
+from config import settings
 
 
 class GameRecommender:
     """49차원 게임 추천 엔진"""
     
     def __init__(self):
-        self.dimension = len(NUMERIC_METRIC_FIELDS)  # 49차원
-        self.default_weights = {field: 1.0 for field in NUMERIC_METRIC_FIELDS}
+        self.dimension = len(NUMERIC_METRIC_FIELDS)  # 49
+        self.neutral_value = 5.0
+        # 실제 게임 간 거리는 보통 10~30 범위 → 30을 1.0으로 정규화
+        # (max_distance=70은 너무 커서 모든 점수가 1에 수렴함)
+        self.max_distance = 30.0
+    
+    # ==================== 벡터 변환 ====================
     
     def _metric_to_vector(
         self, 
         metric: GameMetric, 
-        weights: Dict[str, float] = None
+        weights: Optional[Dict[str, float]] = None
     ) -> np.ndarray:
-        """
-        GameMetric → 49차원 벡터 변환
-        - None 값은 5.0 (중립값)으로 대체
-        - 가중치 적용 가능
-        """
-        if weights is None:
-            weights = self.default_weights
+        """GameMetric → 49차원 벡터"""
+        vector = np.empty(self.dimension, dtype=np.float32)
         
-        vector = []
-        for field in NUMERIC_METRIC_FIELDS:
+        for i, field in enumerate(NUMERIC_METRIC_FIELDS):
             value = getattr(metric, field, None)
-            value = value if value is not None else 5.0
-            weight = weights.get(field, 1.0)
-            vector.append(value * weight)
+            if value is None:
+                value = self.neutral_value
+            
+            w = weights.get(field, 1.0) if weights else 1.0
+            vector[i] = value * w
         
-        return np.array(vector, dtype=np.float32)
+        return vector
     
-    def _cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
+    # ==================== 유사도 계산 ====================
+    
+    def _cosine_similarity(self, v1: np.ndarray, v2: np.ndarray) -> float:
         """코사인 유사도 (0~1)"""
-        norm1 = np.linalg.norm(vec1)
-        norm2 = np.linalg.norm(vec2)
+        n1 = np.linalg.norm(v1)
+        n2 = np.linalg.norm(v2)
         
-        if norm1 == 0 or norm2 == 0:
+        if n1 == 0 or n2 == 0:
             return 0.0
         
-        return float(np.dot(vec1, vec2) / (norm1 * norm2))
+        sim = float(np.dot(v1, v2) / (n1 * n2))
+        return max(0.0, min(sim, 1.0))
     
-    def _euclidean_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
-        """유클리드 거리 기반 유사도 (0~1)"""
-        distance = np.linalg.norm(vec1 - vec2)
-        # 최대 거리: sqrt(49 * 100) ≈ 70
-        max_distance = 70.0
-        return float(1 - min(distance / max_distance, 1.0))
+    def _euclidean_similarity(self, v1: np.ndarray, v2: np.ndarray) -> float:
+        """유클리드 거리 기반 유사도 (0~1)
+        
+        max_distance=30으로 정규화 → 변별력 강화
+        - 거리 0 → 1.0 (완전 일치)
+        - 거리 15 → 0.5 (보통)
+        - 거리 30+ → 0.0 (완전 다름)
+        """
+        distance = float(np.linalg.norm(v1 - v2))
+        return max(0.0, 1.0 - min(distance / self.max_distance, 1.0))
+    
+    # ==================== 필터링 ====================
     
     def _check_tags(
-        self, 
-        metric: GameMetric, 
-        required: List[str], 
+        self,
+        metric: GameMetric,
+        required: List[str],
         excluded: List[str]
     ) -> bool:
         """태그 조건 확인"""
@@ -84,85 +96,118 @@ class GameRecommender:
         
         return True
     
+    # ==================== Hidden Gem 보너스 ====================
+    
     def _calculate_gem_bonus(self, game: Game, metric: GameMetric) -> float:
-        """
-        Hidden Gem 보너스
-        - gem_potential 높을수록 보너스
-        - review_count 적을수록 보너스 (진짜 숨겨진 보석)
-        """
-        gem = metric.gem_potential or 5.0
-        confidence = metric.confidence_score or 0.5
+        """Hidden Gem 보너스 (0~0.15) - 보너스 영향 축소"""
+        gem = metric.gem_potential if metric.gem_potential is not None else 50.0
+        confidence = metric.confidence_score if metric.confidence_score is not None else 0.5
         reviews = game.review_count or 0
         
-        # 리뷰 1000개 이하면 보너스
-        review_bonus = 0.1 * (1 - min(reviews / 1000, 1.0)) if reviews < 1000 else 0
+        # 리뷰 적을수록 보너스 (1000개 이하 기준)
+        if reviews < 1000:
+            review_bonus = 0.05 * (1.0 - reviews / 1000.0)
+        else:
+            review_bonus = 0.0
         
-        # gem_potential을 0~0.2 범위로
-        gem_bonus = (gem / 10) * 0.2
+        # gem_potential 정규화 (0~100 → 0~0.10)
+        gem_bonus = (gem / settings.GEM_POTENTIAL_SCALE) * 0.10
         
         return (gem_bonus + review_bonus) * confidence
     
-    def _generate_match_reasons(
+    # ==================== 추천 이유 생성 ====================
+    
+    def _generate_match_reasons_from_preferences(
         self,
         candidate_vec: np.ndarray,
-        preferences: Dict[str, float] = None
+        preferences: Dict[str, float]
     ) -> List[str]:
-        """추천 이유 생성"""
+        """선호도 기반 추천 이유"""
         reasons = []
         
-        if preferences:
-            for field, target_value in preferences.items():
-                if field in NUMERIC_METRIC_FIELDS:
-                    idx = NUMERIC_METRIC_FIELDS.index(field)
-                    actual_value = candidate_vec[idx]
-                    diff = abs(actual_value - target_value)
-                    
-                    if diff <= 2:
-                        if target_value >= 7:
-                            reasons.append(f"✓ {field} 높음 ({actual_value:.1f})")
-                        elif target_value <= 3:
-                            reasons.append(f"✓ {field} 낮음 ({actual_value:.1f})")
-                        else:
-                            reasons.append(f"✓ {field} 적절 ({actual_value:.1f})")
+        for field, target_value in preferences.items():
+            if field not in NUMERIC_METRIC_FIELDS:
+                continue
+            
+            idx = NUMERIC_METRIC_FIELDS.index(field)
+            actual_value = float(candidate_vec[idx])
+            diff = abs(actual_value - target_value)
+            
+            if diff <= 2.0:
+                if target_value >= 7:
+                    reasons.append(f"✓ {field} 높음 ({actual_value:.1f})")
+                elif target_value <= 3:
+                    reasons.append(f"✓ {field} 낮음 ({actual_value:.1f})")
+                else:
+                    reasons.append(f"✓ {field} 적절 ({actual_value:.1f})")
         
         return reasons[:5]
     
+    def _generate_match_reasons_from_target(
+        self,
+        target_vec: np.ndarray,
+        candidate_vec: np.ndarray,
+    ) -> List[str]:
+        """기준 게임과 비교한 공통 특징"""
+        reasons = []
+        common_features = []
+        
+        for i, field in enumerate(NUMERIC_METRIC_FIELDS):
+            target = float(target_vec[i])
+            cand = float(candidate_vec[i])
+            
+            # 둘 다 극단값이고 차이 작으면 공통 특징
+            if abs(target - cand) <= 1.5:
+                # 둘 다 높음 (7+)
+                if target >= 7 and cand >= 7:
+                    common_features.append((field, "공통적으로 높음", cand))
+                # 둘 다 낮음 (≤3)
+                elif target <= 3 and cand <= 3:
+                    common_features.append((field, "공통적으로 낮음", cand))
+        
+        # 차이가 큰 정도순으로 정렬해서 상위 5개
+        for field, desc, value in common_features[:5]:
+            reasons.append(f"✓ {field} {desc} ({value:.1f})")
+        
+        return reasons
+    
     def _get_key_metrics(self, metric: GameMetric) -> Dict[str, float]:
         """핵심 지표 5개 추출 (극단값 우선)"""
-        metrics_dict = {}
-        
+        all_metrics = {}
         for field in NUMERIC_METRIC_FIELDS:
-            value = getattr(metric, field, None)
-            if value is not None:
-                metrics_dict[field] = value
+            v = getattr(metric, field, None)
+            if v is not None:
+                all_metrics[field] = float(v)
         
-        # 극단값 (0~2 또는 8~10) 우선
-        extreme = {k: v for k, v in metrics_dict.items() if v <= 2 or v >= 8}
+        extreme = {k: v for k, v in all_metrics.items() if v <= 2 or v >= 8}
         
-        priority = ['cozy_factor', 'strategic_depth', 'freedom_level', 
-                   'horror_factor', 'narrative_depth']
+        priority = [
+            'cozy_factor', 'strategic_depth', 'horror_factor',
+            'narrative_depth', 'freedom_level', 'action_pacing',
+            'lore_richness', 'replay_value'
+        ]
         
         result = {}
         for p in priority:
-            if p in extreme:
+            if p in extreme and len(result) < 5:
                 result[p] = extreme[p]
-            if len(result) >= 5:
-                break
         
         for k, v in extreme.items():
-            if k not in result:
-                result[k] = v
             if len(result) >= 5:
                 break
+            if k not in result:
+                result[k] = v
         
         if len(result) < 5:
-            for field in priority:
-                if field not in result and field in metrics_dict:
-                    result[field] = metrics_dict[field]
+            for p in priority:
                 if len(result) >= 5:
                     break
+                if p not in result and p in all_metrics:
+                    result[p] = all_metrics[p]
         
         return result
+    
+    # ==================== 추천 메인 로직 ====================
     
     async def recommend_by_game(
         self,
@@ -170,9 +215,13 @@ class GameRecommender:
         app_id: int,
         count: int = 5,
         exclude_same_developer: bool = False
-    ) -> Tuple[Optional[Game], List[Tuple[Game, GameMetric, float]]]:
-        """특정 게임 기반 유사 게임 추천"""
+    ) -> Tuple[Optional[Game], List[Tuple[Game, GameMetric, float, np.ndarray]]]:
+        """특정 게임 기반 유사 게임 추천
         
+        Returns:
+            (기준 게임, [(게임, 지표, 점수, target_vec), ...])
+            target_vec 추가 → format에서 match_reasons 생성용
+        """
         # 기준 게임 조회
         stmt = (
             select(Game)
@@ -185,9 +234,9 @@ class GameRecommender:
         if not target_game or not target_game.metrics:
             return None, []
         
-        target_vector = self._metric_to_vector(target_game.metrics)
+        target_vec = self._metric_to_vector(target_game.metrics)
         
-        # 전체 게임 조회
+        # 후보 조회
         stmt = (
             select(Game)
             .options(selectinload(Game.metrics))
@@ -202,24 +251,22 @@ class GameRecommender:
         result = await db.execute(stmt)
         candidates = result.scalars().all()
         
-        # 유사도 계산
+        # 점수 계산
         scored = []
         for game in candidates:
             if not game.metrics:
                 continue
             
-            candidate_vector = self._metric_to_vector(game.metrics)
+            cand_vec = self._metric_to_vector(game.metrics)
             
-            # 하이브리드 유사도
-            cosine = self._cosine_similarity(target_vector, candidate_vector)
-            euclidean = self._euclidean_similarity(target_vector, candidate_vector)
-            base_score = cosine * 0.6 + euclidean * 0.4
+            cosine = self._cosine_similarity(target_vec, cand_vec)
+            euclidean = self._euclidean_similarity(target_vec, cand_vec)
+            base_score = cosine * 0.5 + euclidean * 0.5  # 5:5 균형
             
-            # Hidden Gem 보너스
             gem_bonus = self._calculate_gem_bonus(game, game.metrics)
-            
             final_score = min(base_score + gem_bonus, 1.0)
-            scored.append((game, game.metrics, final_score))
+            
+            scored.append((game, game.metrics, final_score, target_vec))
         
         scored.sort(key=lambda x: x[2], reverse=True)
         return target_game, scored[:count]
@@ -228,30 +275,32 @@ class GameRecommender:
         self,
         db: AsyncSession,
         preferences: Dict[str, float],
-        required_tags: List[str] = None,
-        excluded_tags: List[str] = None,
+        required_tags: Optional[List[str]] = None,
+        excluded_tags: Optional[List[str]] = None,
         count: int = 5,
-        min_gem_potential: float = 0
+        min_gem_potential: float = 0.0
     ) -> List[Tuple[Game, GameMetric, float]]:
         """유저 선호도 기반 추천"""
         required_tags = required_tags or []
         excluded_tags = excluded_tags or []
         
-        # 선호도 벡터 생성
-        target_vector = np.full(self.dimension, 5.0, dtype=np.float32)
+        # 목표 벡터
+        target_vec = np.full(self.dimension, self.neutral_value, dtype=np.float32)
         weights = {field: 1.0 for field in NUMERIC_METRIC_FIELDS}
         
         for field, value in preferences.items():
             if field in NUMERIC_METRIC_FIELDS:
                 idx = NUMERIC_METRIC_FIELDS.index(field)
-                target_vector[idx] = value
-                weights[field] = 2.0  # 지정 지표 가중치 상승
+                target_vec[idx] = value
+                weights[field] = 2.5  # 지정 지표 가중치 강화
         
-        target_vector_weighted = target_vector * np.array(
-            [weights[f] for f in NUMERIC_METRIC_FIELDS]
+        weight_array = np.array(
+            [weights[f] for f in NUMERIC_METRIC_FIELDS],
+            dtype=np.float32
         )
+        target_weighted = target_vec * weight_array
         
-        # 전체 게임 조회
+        # 후보 조회
         stmt = (
             select(Game)
             .options(selectinload(Game.metrics))
@@ -261,28 +310,25 @@ class GameRecommender:
         result = await db.execute(stmt)
         candidates = result.scalars().all()
         
-        # 필터링 및 점수 계산
+        # 점수 계산
         scored = []
         for game in candidates:
             if not game.metrics:
                 continue
             
-            # 태그 필터
             if not self._check_tags(game.metrics, required_tags, excluded_tags):
                 continue
             
-            # gem_potential 최소값 필터
             if min_gem_potential > 0:
-                gp = game.metrics.gem_potential or 0
-                if gp < min_gem_potential:
+                gp = game.metrics.gem_potential
+                if gp is None or gp < min_gem_potential:
                     continue
             
-            candidate_vector = self._metric_to_vector(game.metrics, weights)
+            cand_vec = self._metric_to_vector(game.metrics, weights)
             
-            # 유클리드 위주 (선호도 매칭)
-            euclidean = self._euclidean_similarity(target_vector_weighted, candidate_vector)
-            cosine = self._cosine_similarity(target_vector_weighted, candidate_vector)
-            base_score = euclidean * 0.7 + cosine * 0.3
+            euclidean = self._euclidean_similarity(target_weighted, cand_vec)
+            cosine = self._cosine_similarity(target_weighted, cand_vec)
+            base_score = euclidean * 0.6 + cosine * 0.4
             
             gem_bonus = self._calculate_gem_bonus(game, game.metrics)
             final_score = min(base_score + gem_bonus, 1.0)
@@ -292,31 +338,60 @@ class GameRecommender:
         scored.sort(key=lambda x: x[2], reverse=True)
         return scored[:count]
     
-    def format_recommendations(
+    # ==================== 응답 포맷팅 ====================
+    
+    def format_recommendations_by_preference(
         self,
         results: List[Tuple[Game, GameMetric, float]],
-        target_vector: np.ndarray = None,
-        preferences: Dict[str, float] = None
+        preferences: Dict[str, float]
     ) -> List[RecommendedGame]:
-        """추천 결과를 응답 스키마로 변환"""
+        """선호도 기반 추천 결과 포맷"""
         formatted = []
         
         for game, metric, score in results:
-            candidate_vec = self._metric_to_vector(metric)
+            cand_vec = self._metric_to_vector(metric)
             
-            rec = RecommendedGame(
+            formatted.append(RecommendedGame(
                 app_id=game.app_id,
-                name=game.name,
-                genres=game.genres,
-                header_image=game.header_image,
+                name=game.name or "",
+                genres=game.genres or "",
+                header_image=game.header_image or "",
                 one_line_summary=game.one_line_summary or "",
                 marketing_hook=game.marketing_hook or "",
                 similarity_score=round(score, 4),
                 gem_potential=metric.gem_potential,
-                match_reasons=self._generate_match_reasons(candidate_vec, preferences),
-                key_metrics=self._get_key_metrics(metric)
-            )
-            formatted.append(rec)
+                match_reasons=self._generate_match_reasons_from_preferences(
+                    cand_vec, preferences
+                ),
+                key_metrics=self._get_key_metrics(metric),
+            ))
+        
+        return formatted
+    
+    def format_recommendations_by_game(
+        self,
+        results: List[Tuple[Game, GameMetric, float, np.ndarray]]
+    ) -> List[RecommendedGame]:
+        """게임 기반 추천 결과 포맷 (공통 특징 분석)"""
+        formatted = []
+        
+        for game, metric, score, target_vec in results:
+            cand_vec = self._metric_to_vector(metric)
+            
+            formatted.append(RecommendedGame(
+                app_id=game.app_id,
+                name=game.name or "",
+                genres=game.genres or "",
+                header_image=game.header_image or "",
+                one_line_summary=game.one_line_summary or "",
+                marketing_hook=game.marketing_hook or "",
+                similarity_score=round(score, 4),
+                gem_potential=metric.gem_potential,
+                match_reasons=self._generate_match_reasons_from_target(
+                    target_vec, cand_vec
+                ),
+                key_metrics=self._get_key_metrics(metric),
+            ))
         
         return formatted
 

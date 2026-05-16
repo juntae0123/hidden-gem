@@ -1,19 +1,23 @@
-# fastapi_app/database.py
 """
 SQLAlchemy 비동기 DB 연결 - Django가 생성한 테이블 읽기 전용
 """
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import (
+    create_async_engine, 
+    AsyncSession, 
+    async_sessionmaker
+)
 from sqlalchemy.orm import declarative_base
 from config import settings
 
-# 비동기 엔진 생성
+# 비동기 엔진
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
     pool_size=10,
     max_overflow=20,
     pool_pre_ping=True,
+    pool_recycle=3600,
 )
 
 # 세션 팩토리
