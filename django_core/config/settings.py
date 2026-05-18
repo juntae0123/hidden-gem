@@ -13,9 +13,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = BASE_DIR.parent
 load_dotenv(PROJECT_ROOT / '.env')
 
+# 운영 환경에서는 반드시 .env에서 강력한 SECRET_KEY 설정 필요
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-secret-key-12345')
 DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '*']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '*']  # 운영 시 실제 도메인으로 제한
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -84,11 +85,13 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
+# DRF 기본 설정 - 페이지네이션(20개/페이지)
 REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
 }
 
+# CORS 전체 허용 - 개발용. 운영 시 CORS_ALLOWED_ORIGINS로 구체적 도메인 지정
 CORS_ALLOW_ALL_ORIGINS = True
 
 STATIC_URL = '/static/'

@@ -1,5 +1,16 @@
 """
-🔧 실패한 게임들 Steam API로 header_image 복구
+Steam API를 이용한 header_image 복구 스크립트 (Failed Header Image Fixer)
+
+fill_header_images.py + verify_header_images.py 이후에도 header_image가
+빈 게임들을 Steam Store API(/api/appdetails)로 직접 조회하여 복구.
+
+대상: header_image == "" 또는 null 인 활성 게임
+전략: Steam API에서 data.header_image 필드 추출 후 DB 업데이트
+     API도 실패하면 삭제/비공개 게임으로 간주 (header_image="" 유지)
+
+실행:
+    python scripts/fix_failed_headers.py
+    python scripts/fix_failed_headers.py --concurrency 10 --dry-run
 """
 
 import argparse
@@ -27,8 +38,22 @@ async def fetch_steam_header(
     app_id: int,
     sem: asyncio.Semaphore,
 ) -> Optional[str]:
+    """
+    Steam Store API에서 단일 게임의 header_image URL 조회 (Steam API Fetch)
+
+    Semaphore로 동시 요청 수를 제한하여 Steam API 레이트 리밋 방지.
+    API 응답에서 success=false(삭제/비공개)이면 None 반환.
+
+    Args:
+        session: 재사용 aiohttp 클라이언트 세션
+        app_id: 조회할 Steam App ID
+        sem: 동시 요청 제한 Semaphore
+
+    Returns:
+        header_image URL 문자열 또는 None (실패/비공개 게임)
+    """
     url = STEAM_API.format(app_id=app_id)
-    async with sem:
+    async with sem:  # 동시 요청 수 제한 (Steam CDN 매너)
         try:
             async with session.get(
                 url,
@@ -39,7 +64,7 @@ async def fetch_steam_header(
                 data = await resp.json(content_type=None)
                 app_data = data.get(str(app_id), {})
                 if not app_data.get("success"):
-                    return None
+                    return None  # 삭제된 게임 또는 비공개 앱
                 return app_data.get("data", {}).get("header_image")
         except Exception as e:
             print(f"\n⚠️  app_id={app_id} 요청 실패: {e}")

@@ -1,5 +1,22 @@
 """
-Pydantic 스키마 - API 요청/응답 모델
+Pydantic API 스키마 모듈 (Pydantic Request/Response Schemas)
+
+FastAPI 엔드포인트의 요청 본문 검증과 응답 직렬화에 사용되는 Pydantic 모델 정의.
+
+스키마 구조:
+    응답 모델:
+        GameMetricResponse  - 60개 지표 전체 응답
+        GameResponse        - 게임 기본 정보 응답
+        GameWithMetrics     - 게임 + 지표 통합 응답
+        GameSearchResult    - 검색 결과 간략 응답
+
+    요청 모델:
+        RecommendByGameRequest       - by-game 추천 요청 (app_id + count)
+        RecommendByPreferenceRequest - by-preference 추천 요청 (preferences + tags)
+
+    추천 응답:
+        RecommendedGame        - 추천 결과 단일 게임
+        RecommendationResponse - 추천 최종 응답 (메타 + 결과 목록)
 """
 
 from pydantic import BaseModel, Field, ConfigDict
@@ -188,24 +205,35 @@ class RecommendByPreferenceRequest(BaseModel):
 # ==================== 추천 응답 ====================
 
 class RecommendedGame(BaseModel):
-    """추천 결과 단일 게임"""
+    """
+    추천 결과 단일 게임 (Single Recommended Game)
+
+    similarity_score: 0~1 사이의 최종 유사도 점수 (하이브리드 + gem 보너스)
+    match_reasons: 추천 이유 텍스트 목록 (최대 5개)
+    key_metrics: 이 게임의 특징적인 지표 {지표명: 값} (최대 5개)
+    """
     app_id: int
     name: str
     genres: str = ""
     header_image: str = ""
     one_line_summary: str = ""
     marketing_hook: str = ""
-    
-    similarity_score: float
-    gem_potential: Optional[float] = None
-    
-    match_reasons: List[str] = []
-    key_metrics: Dict[str, float] = {}
+
+    similarity_score: float              # 0.0 ~ 1.0 (높을수록 유사)
+    gem_potential: Optional[float] = None  # AI 평가 잠재력 (0~100 스케일)
+
+    match_reasons: List[str] = []        # 추천 이유 한국어 텍스트 목록
+    key_metrics: Dict[str, float] = {}   # 특징 지표 딕셔너리
 
 
 class RecommendationResponse(BaseModel):
-    """추천 응답"""
-    query_type: str
-    reference_game: Optional[str] = None
-    total_candidates: int
+    """
+    추천 API 최종 응답 (Recommendation API Response)
+
+    query_type: "by_game" 또는 "by_preference"로 추천 방식 표시
+    reference_game: by-game 추천 시 기준 게임명 (by-preference 시 null)
+    """
+    query_type: str                       # "by_game" | "by_preference"
+    reference_game: Optional[str] = None  # by-game: 기준 게임명, by-preference: null
+    total_candidates: int                 # 실제 반환된 추천 게임 수
     recommendations: List[RecommendedGame]

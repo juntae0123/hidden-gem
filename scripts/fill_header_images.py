@@ -1,12 +1,13 @@
 """
-🖼️ Steam Header Image 일괄 채우기 (Phase A)
+Steam Header Image URL 일괄 채우기 스크립트 Phase A (Header Image Filler)
 
-전략:
-- app_id 기반 표준 Steam CDN URL 생성
-- 4,190개 게임에 일괄 UPDATE
-- 이미 채워진 게임은 스킵 (--force로 덮어쓰기 가능)
-- 트랜잭션 단위 커밋 + 실패 시 롤백
-- tqdm 진행률 표시
+app_id를 기반으로 표준 Steam CDN URL을 생성하여 games.header_image 컬럼을 채움.
+CDN URL은 실제 요청 없이 app_id만으로 결정론적으로 생성 (네트워크 없이 빠른 처리).
+URL 유효성 검증은 Phase B(verify_header_images.py)에서 별도 수행.
+
+사용 흐름:
+    Phase A: [fill_header_images.py]  - CDN URL 규칙으로 일괄 생성 (빠름)
+    Phase B: verify_header_images.py  - HEAD 요청으로 404 확인 및 대체 URL 탐색
 
 실행:
     cd C:\\Hidden-Gem-project
@@ -48,20 +49,27 @@ async def fetch_targets(
     force: bool,
 ) -> List[Tuple[int, int, str]]:
     """
-    업데이트 대상 조회
-    
+    업데이트 대상 게임 조회 (Fetch Target Games)
+
+    기본적으로 header_image가 빈 게임만 조회.
+    --force 옵션 시 이미 채워진 게임도 포함하여 전체 덮어쓰기.
+
+    Args:
+        db: 비동기 DB 세션
+        force: True면 기존 header_image 있어도 포함
+
     Returns:
-        [(id, app_id, current_header_image), ...]
+        [(game.id, app_id, current_header_image), ...] 리스트
     """
     stmt = select(Game.id, Game.app_id, Game.header_image).where(
         Game.is_active == True
     )
     if not force:
-        # 비어있는 것만
+        # 기본: header_image가 비어있거나 null인 게임만 대상
         stmt = stmt.where(
             (Game.header_image == "") | (Game.header_image.is_(None))
         )
-    
+
     stmt = stmt.order_by(Game.id)
     result = await db.execute(stmt)
     return [(row.id, row.app_id, row.header_image or "") for row in result]
@@ -74,10 +82,19 @@ async def bulk_update_headers(
     dry_run: bool = False,
 ) -> int:
     """
-    배치 단위로 UPDATE 실행
-    
+    배치 단위로 header_image UPDATE 실행 (Bulk Update Headers)
+
+    batch_size 단위로 커밋하여 트랜잭션 범위를 제한.
+    배치 실패 시 해당 배치만 롤백하고 예외를 다시 던져 전파.
+
+    Args:
+        db: 비동기 DB 세션
+        targets: fetch_targets()의 반환값
+        batch_size: 1회 커밋당 처리 게임 수 (기본 500)
+        dry_run: True면 실제 DB 변경 없이 카운트만 증가
+
     Returns:
-        실제 업데이트된 row 수
+        실제 업데이트된(또는 dry-run 집계) row 수
     """
     updated = 0
     

@@ -1,145 +1,423 @@
-# 🎮 Hidden-Gem Finder
+# Hidden Gem
 
-**Steam이 못 찾는 숨겨진 명작을 찾아주는 AI 기반 개인화 게임 추천 서비스**
+> Steam 인디 게임 AI 추천 서비스 — 4,190개 게임 × 60개 지표 분석
 
-[alt text](image.png)
-
----
-
-## 📌 1. 프로젝트 개요 (Overview)
-
-**Hidden-Gem Finder**는 단순한 장르 매칭이나 인기순 추천을 넘어, 사용자의 세밀한 플레이 스타일과 텍스트 리뷰(메타데이터)를 분석하여 '숨겨진 취향 저격 게임'을 찾아주는 AI 추천 웹 서비스입니다.
-
-자연어 처리(NLP) 임베딩 기술을 활용해 게임 간의 딥러닝 기반 유사도를 측정하고, LLM(거대 언어 모델)을 통해 **"왜 이 게임이 당신에게 맞는지"**를 사람의 언어로 설명해 주는 **XAI(설명 가능한 AI)** 시스템을 구현하는 것을 목표로 합니다.
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Django](https://img.shields.io/badge/Django-5.0+-092E20?style=flat-square&logo=django&logoColor=white)](https://www.djangoproject.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![pgvector](https://img.shields.io/badge/pgvector-HNSW-orange?style=flat-square)](https://github.com/pgvector/pgvector)
+[![OpenAI](https://img.shields.io/badge/OpenAI-GPT--5.4%20%7C%20Embeddings-412991?style=flat-square&logo=openai&logoColor=white)](https://openai.com/)
+[![Docker](https://img.shields.io/badge/Docker-PostgreSQL-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
 
 ---
 
-## ❗ 2. 문제 정의 (Problem Statement)
+## 개요
 
-기존 대형 플랫폼(Steam 등)의 게임 추천 알고리즘은 다음과 같은 고질적인 한계(Filter Bubble)를 지니고 있습니다.
+Hidden Gem은 Steam 인디 게임을 **60개 AI 분석 지표**로 평가하고, **49차원 지표 벡터 + 1536차원 임베딩**을 결합한 하이브리드 알고리즘으로 숨은 명작을 추천하는 서비스입니다.
 
-- **인기도 편향 (Popularity Bias):** 사용자의 세부 취향과 무관하게, 결국 GTA5, 배틀그라운드 같은 유명 게임만 반복 추천됨.
-- **단순 메타데이터 매칭:** "RPG"를 좋아한다고 해서 모든 RPG를 좋아하는 것이 아님. (예: 다크 판타지 RPG vs 캐주얼 RPG의 차이를 구분하지 못함)
-- **블랙박스 현상:** "이 게임을 왜 나에게 추천했는지" 이유를 알 수 없어 사용자의 클릭률(CTR) 및 신뢰도가 떨어짐.
-
-👉 **해결책:** 본 프로젝트는 **'유명 게임 패널티 부여', '게임 설명 텍스트의 벡터화(Vectorization)', 'LLM 기반 추천 이유 생성'**을 통해 인지도 높은 게임에 가려진 **나만의 명작(Hidden Gem)**을 발굴합니다.
+- **데이터**: GPT-5.4 Batch API로 4,190개 게임 × 60개 지표 추출
+- **추천**: 코사인 유사도 + 유클리디안 거리 + 벡터 임베딩 하이브리드
+- **관리**: Django Admin으로 게임 데이터 관리, FastAPI로 추천 API 서빙
 
 ---
 
-## 💡 3. 핵심 기능 (Core Features)
+## 아키텍처
 
-### 🎯 1) 취향 프로파일링 (User Profiling)
-단순 장르 선택이 아닌, **선호/비선호 키워드** (예: "스토리 중심", "어두운 분위기", "멀티플레이 비선호") 및 **'가장 재밌게 한 인생 게임 3개'**를 입력받아 유저 벡터(User Vector)를 생성합니다.
-
-### 🧠 2) 하이브리드 추천 엔진 (Hybrid Recommendation)
-- **콘텐츠 기반 필터링 (임베딩 검색):** RAWG API에서 수집한 게임의 Description(설명)을 `Sentence-Transformers` 모델을 사용해 다차원 벡터로 변환합니다. FAISS(또는 pgvector)를 활용해 유저 취향 벡터와 코사인 유사도(Cosine Similarity)가 가장 높은 게임을 탐색합니다.
-- **인기도 패널티 (Long-tail 알고리즘):** 너무 뻔한 AAA급 게임이 추천을 도배하지 않도록, 리뷰 수가 일정 기준을 초과하는 게임은 추천 가중치를 낮춥니다.
-
-### 💬 3) XAI: 설명 가능한 추천 (LLM Integration)
-검색된 결과값(게임 메타데이터)과 사용자의 초기 입력 데이터를 조합하여 LLM(OpenAI/Claude API)에 프롬프트로 전달합니다.
-- **출력 예시:** *"이 게임은 [어두운 다크 판타지] 요소가 강하며, 당신이 인생 게임으로 꼽은 [다크소울 3]와 유사한 [패링 액션] 시스템을 갖추고 있어 추천합니다."*
-
-### 🔄 4) 피드백 루프 (Data Flywheel)
-추천 결과에 대한 사용자의 **좋아요(Like) / 싫어요(Dislike)** 데이터를 DB에 축적합니다. 향후 데이터가 쌓이면 협업 필터링(Collaborative Filtering)을 도입하여 추천 모델을 고도화할 수 있도록 설계했습니다.
-
----
-
-## ⚙️ 4. 시스템 흐름 및 아키텍처 (System Architecture)
-
-### Core Flow
-> **User Input** → **User Profile Text 생성** → **Embedding 변환** → **Vector DB 유사도 검색** → **Popularity Penalty 적용** → **Top-K 게임 선정** → **LLM 추천 이유 생성** → **결과 반환**
-
-### Architecture Diagram
-```text
-[ Client (Next.js) ]    │   1. 유저 취향 데이터 전송 (인생게임, 키워드)
-   ▼
-[ Backend API (FastAPI) ] 
-   │   2. 텍스트 데이터를 벡터화 (Embedding)
-   │   3. Vector DB에서 유사도 검색 (Cosine Similarity)
-   ▼
-[ Vector DB (pgvector / FAISS) ] -> (가장 유사한 인디/명작 게임 Top 3 반환)
-   │
-   │   4. 검색된 게임 정보 + 유저 취향 텍스트 묶음
-   ▼
-[ LLM (OpenAI API) ] -> ("추천 이유" 자연어 문장 생성)
-   │
-   │   5. 최종 JSON (게임 데이터 + 추천 이유) 반환
-   ▼
-[ Client (Next.js) ] -> (사용자에게 예쁜 UI로 렌더링)
+```
+┌───────────────────────────────────────────────────────────────┐
+│                      클라이언트 (Frontend)                     │
+│                   Next.js / React (예정)                      │
+└──────────────────────────┬────────────────────────────────────┘
+                           │ HTTP
+         ┌─────────────────┼─────────────────┐
+         ▼                                   ▼
+┌─────────────────┐               ┌──────────────────────┐
+│  FastAPI :8000  │               │   Django :8001        │
+│  (추천 API)     │               │   (Admin 전용)        │
+│                 │               │                       │
+│  /api/v1/games/ │               │  /admin/              │
+│    search       │               │  /admin/games/        │
+│    recommend    │               │  /admin/users/        │
+│    by-game      │               │                       │
+│    by-preference│               │  Few-Shot 분석        │
+│    /{app_id}    │               │  (새 게임 추가 시)    │
+└───────┬─────────┘               └──────────┬────────────┘
+        │ SQLAlchemy (async)       Django ORM │
+        │ read-only                read/write │
+        └────────────┬────────────────────────┘
+                     ▼
+       ┌─────────────────────────┐
+       │  PostgreSQL + pgvector  │
+       │  Docker :5432           │
+       │                         │
+       │  games (4,190행)        │
+       │  game_metrics (60개)    │
+       │  embedding vector(1536) │
+       │  HNSW index             │
+       └─────────────────────────┘
+                     ▲
+       ┌─────────────┴─────────────┐
+       │      Redis Pub/Sub        │
+       │  hidden_gem:game_updates  │
+       └───────────────────────────┘
+            ▲                   ▲
+   Django Signal          FastAPI Subscriber
+ (게임 추가/수정 시)      (캐시 무효화 등)
 ```
 
-### Recommendation Logic (추천 점수 수식)
-유명 게임 편향을 줄이고 Hidden Gem 노출을 강화하기 위해 아래 수식을 사용합니다.
+---
 
-$$Final\ Score = \alpha \times Similarity - \beta \times \log(review\_count + 1)$$
+## 데이터 파이프라인
 
-* **$Similarity$**: 유저 취향 ↔ 게임 설명 간의 의미적 유사도 (Cosine Similarity)
-* **$review\_count$**: 게임 인기도 (리뷰 수)
-* **$\alpha, \beta$**: 하이퍼파라미터
+```
+Steam CSV 원본 데이터
+        │
+        ▼
+[1] make_diet_batch.py   ─── JSONL → GPT Batch 요청 파일 (토큰 최적화)
+        │
+        ▼
+[2] split_batch.py       ─── 1,000개 단위 분할 (OpenAI 파일 크기 제한)
+        │
+        ▼
+[3] submit_batches.py    ─── OpenAI Batch API 제출 (비동기, ~50% 비용 절감)
+        │
+        ▼
+[4] check_batches.py     ─── 완료 상태 폴링 + output_file_id 수집
+        │
+        ▼
+[5] download_outputs.py  ─── 완료된 Batch 결과 파일 다운로드
+        │
+        ▼
+[6] combine_outputs.py   ─── 분할된 결과 단일 JSONL로 통합
+        │
+        ▼
+[7] merge_metrics.py     ─── 기존 42개 + 신규 18개 = 60개 지표 병합
+        │
+        ▼
+[8] validate_merge.py    ─── 결측치 리포트, 데이터 품질 검증
+        │
+        ▼
+[9] fix_data.py          ─── CSV + JSONL 병합, gem_potential 주입
+        │
+        ▼
+[Django] load_games.py   ─── PostgreSQL 적재 (bulk_create, upsert)
+        │
+        ▼
+[scripts] load_embeddings.py ─── text-embedding-3-small → pgvector(1536)
+        │
+        ▼
+     완성 DB ✅
+
+헤더 이미지 파이프라인 (별도):
+fill_header_images → verify_header_images → fix_failed_headers
+```
 
 ---
 
-## 🛠️ 5. 기술 스택 (Tech Stack)
+## 추천 알고리즘
 
-### 🎨 Frontend
-- **Next.js (React):** SEO 최적화 및 빠른 렌더링
-- **Tailwind CSS:** 직관적이고 반응형인 UI 구현
-- **Zustand:** 가벼운 전역 상태 관리 (유저 취향 데이터 임시 저장)
+### by-game (특정 게임 기반)
 
-### ⚙️ Backend & DB
-- **FastAPI (Python):** 비동기 처리(Async)를 통한 빠르고 가벼운 AI 추론 API 서버
-- **PostgreSQL (Supabase):** 관계형 데이터 및 유저 피드백 저장
-- **pgvector (또는 FAISS):** 게임 설명 텍스트의 임베딩 벡터 저장 및 초고속 유사도 검색
+임베딩이 있을 때:
+```
+score = cosine_similarity(49D) × 0.35
+      + euclidean_similarity(49D) × 0.35
+      + cosine_similarity(1536D embedding) × 0.30
+      + gem_bonus
+```
 
-### 🤖 AI / ML Pipeline
-- **Data Collection:** RAWG API (게임 메타데이터 크롤링)
-- **Embedding Model:** `Sentence-Transformers` (오픈소스 텍스트 임베딩)
-- **LLM:** OpenAI GPT-4o-mini / Claude 3.5 API (추천 이유 자연어 생성)
+임베딩 없을 때 (fallback):
+```
+score = cosine_similarity(49D) × 0.50
+      + euclidean_similarity(49D) × 0.50
+      + gem_bonus
+```
+
+### by-preference (선호도 기반)
+
+```
+score = euclidean_similarity(user_pref → game_metrics) × 0.60
+      + cosine_similarity(user_pref → game_metrics) × 0.40
+      + gem_bonus
+
+※ 사용자가 명시한 지표에 2.5× 가중치 적용
+```
+
+### 유클리디안 유사도 정규화
+
+```
+euclidean_similarity = max(0, 1 - distance / max_distance)
+# max_distance = 30.0  (49D 벡터 실험적 최대값)
+```
+
+### Hidden Gem 보너스
+
+```
+gem_bonus = (gem_potential/100 × 0.10 + review_bonus) × confidence_score
+
+review_bonus:
+  리뷰 < 500    → +0.05  (숨은 명작 보너스)
+  리뷰 < 2,000  → +0.02
+  리뷰 >= 2,000 → 0
+```
+
+### 60개 지표 구성
+
+| 카테고리 | 개수 | 예시 |
+|----------|------|------|
+| VIBE | 7 | cozy_factor, horror_factor, gore_level |
+| DEMANDS | 5 | reflex_demand, strategic_depth, learning_curve |
+| MECHANICS | 11 | freedom_level, action_pacing, rng_dependency |
+| SOCIAL | 5 | coop_synergy, competitive_stress, npc_interaction |
+| PRESENTATION | 5 | lore_richness, choice_consequence, visual_spectacle |
+| SYSTEM/UX | 7 | build_variety, save_flexibility, ui_ux_polish |
+| ART/AUDIO | 3 | art_style_uniqueness, audio_design, animation_quality |
+| OTHER | 2 | world_reactivity, community_dependency |
+| NEW | 4 | narrative_depth, replay_value, monetization_fairness |
+| TAGS (bool) | 9 | is_turn_based, has_crafting, has_permadeath |
+| EVAL | 2 | gem_potential (0~100), confidence_score (0~1) |
 
 ---
 
-## 🔌 6. API Example
+## API 엔드포인트
 
-**`POST /api/recommend`**
+Base URL: `http://localhost:8000/api/v1`
 
-**Request**
+| Method | Path | 설명 |
+|--------|------|------|
+| `GET` | `/games/search` | 이름/장르/개발사 텍스트 검색 |
+| `GET` | `/games/stats/overview` | DB 통계 (게임 수, 평균 gem_potential) |
+| `GET` | `/games/metrics/list` | 사용 가능한 지표 목록 (49개 수치 + 9개 태그) |
+| `GET` | `/games/{app_id}` | 게임 상세 + 60개 지표 전체 |
+| `POST` | `/games/recommend/by-game` | 특정 게임 기반 유사 게임 추천 |
+| `POST` | `/games/recommend/by-preference` | 유저 선호도 기반 맞춤 추천 |
+
+### 요청 예시
+
+**by-game 추천**
 ```json
+POST /api/v1/games/recommend/by-game
 {
-  "favorite_games": ["Dark Souls 3", "Hades"],
-  "preferred_keywords": ["dark atmosphere", "impactful combat"],
-  "disliked_keywords": ["multiplayer"]
+  "app_id": 1086940,
+  "count": 5,
+  "exclude_same_developer": false
 }
 ```
 
-**Response**
+**by-preference 추천**
 ```json
+POST /api/v1/games/recommend/by-preference
 {
-  "recommendations": [
-    {
-      "title": "Blasphemous",
-      "score": 0.81,
-      "reason": "어두운 분위기와 높은 전투 몰입감이 Dark Souls 3와 유사하여 추천됩니다."
-    }
-  ]
+  "preferences": {
+    "cozy_factor": 8,
+    "strategic_depth": 7,
+    "horror_factor": 1
+  },
+  "required_tags": ["has_crafting"],
+  "excluded_tags": ["has_permadeath"],
+  "count": 5,
+  "min_gem_potential": 60
 }
+```
+
+**검색**
+```
+GET /api/v1/games/search?q=hollow&min_gem=70&limit=10
+```
+
+Swagger UI: `http://localhost:8000/docs`
+
+---
+
+## 설치 및 실행
+
+### 사전 요구사항
+
+- Python 3.11+
+- Docker Desktop
+- OpenAI API Key (데이터 파이프라인 재실행 시)
+
+### 1. 환경 설정
+
+```bash
+git clone https://github.com/your-username/hidden-gem-project.git
+cd Hidden-Gem-project
+
+# 가상환경 생성 및 활성화
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # Mac/Linux
+
+# 의존성 설치
+pip install -r fastapi_app/requirements.txt
+pip install -r django_core/requirements.txt
+```
+
+### 2. 환경변수 (.env)
+
+```env
+# DB
+DB_NAME=hidden_gem_db
+DB_USER=juntae
+DB_PASSWORD=0312
+DB_HOST=localhost
+DB_PORT=5432
+
+# FastAPI
+DATABASE_URL=postgresql+asyncpg://juntae:0312@localhost:5432/hidden_gem_db
+SECRET_KEY=your-secret-key
+
+# Django
+DJANGO_SECRET_KEY=your-django-secret-key
+DJANGO_DEBUG=True
+
+# OpenAI (데이터 파이프라인용)
+OPENAI_API_KEY=sk-...
+
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+```
+
+### 3. PostgreSQL + pgvector (Docker)
+
+```bash
+# PostgreSQL + pgvector 컨테이너 시작
+docker run -d \
+  --name hidden_gem_db \
+  -e POSTGRES_DB=hidden_gem_db \
+  -e POSTGRES_USER=juntae \
+  -e POSTGRES_PASSWORD=0312 \
+  -p 5432:5432 \
+  pgvector/pgvector:pg16
+
+# pgvector 확장 활성화
+docker exec -it hidden_gem_db psql -U juntae -d hidden_gem_db \
+  -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+### 4. Django 마이그레이션
+
+```bash
+cd django_core
+python manage.py migrate
+python manage.py createsuperuser
+```
+
+### 5. 데이터 적재
+
+```bash
+# 게임 데이터 + 지표 적재 (Django)
+cd django_core
+python manage.py load_games --input ../data/final/final_master_games_fixed.jsonl
+
+# 임베딩 생성 + 적재 (scripts)
+cd ..
+python scripts/load_embeddings.py
+```
+
+### 6. 서버 실행
+
+**FastAPI** (추천 API, 포트 8000)
+```bash
+cd fastapi_app
+uvicorn main:app --reload --port 8000
+```
+
+**Django** (Admin, 포트 8001)
+```bash
+cd django_core
+python manage.py runserver 8001
+```
+
+**Redis** (Django↔FastAPI 동기화)
+```bash
+docker run -d --name redis -p 6379:6379 redis:alpine
 ```
 
 ---
 
-## 🚀 7. 개발 로드맵 (Roadmap)
+## 폴더 구조
 
-- **Phase 1: 데이터 파이프라인 구축 (Data Engineering)**
-  - RAWG API 연동 및 게임 데이터 5,000건 추출 (CSV 저장)
-  - 결측치 처리 및 데이터 정제 (Pandas 활용)
-- **Phase 2: 코어 AI 모델링 (ML/AI)**
-  - 게임 텍스트 설명 임베딩 변환 및 FAISS 로컬 검색 테스트
-  - 유명 게임 패널티 로직(Long-tail) 수식 적용
-- **Phase 3: 백엔드 API 개발 (Backend)**
-  - FastAPI 세팅 및 추천 로직 API화 (`/api/recommend`)
-  - 프롬프트 엔지니어링을 통한 LLM 추천 이유 생성 연동
-- **Phase 4: 프론트엔드 UI/UX (Frontend)**
-  - Next.js 화면 구현 (선호도 조사 뷰, 결과 페이지 뷰)
-  - API 연동 및 에러/로딩 상태(Skeleton) 처리
-- **Phase 5: 배포 및 피드백 루프 (DevOps)**
-  - Vercel(Front) 및 Render(Back) 클라우드 배포
-  - Supabase 연동하여 사용자 '좋아요/싫어요' DB 적재
+```
+Hidden-Gem-project/
+├── fastapi_app/                 # FastAPI 추천 API 서버 (포트 8000)
+│   ├── main.py                  # 앱 엔트리포인트, CORS, lifespan
+│   ├── config.py                # 환경변수 설정 (pydantic-settings)
+│   ├── database.py              # 비동기 DB 연결 (SQLAlchemy async)
+│   ├── models/
+│   │   └── game.py              # SQLAlchemy ORM (Game, GameMetric)
+│   ├── schemas/
+│   │   └── game.py              # Pydantic 요청/응답 스키마
+│   ├── routers/
+│   │   └── games.py             # API 엔드포인트 6개
+│   └── services/
+│       └── recommender.py       # 하이브리드 추천 엔진 (핵심 로직)
+│
+├── django_core/                 # Django 관리 서버 (포트 8001)
+│   ├── config/
+│   │   ├── settings.py          # Django 설정
+│   │   └── urls.py              # URL 라우팅 (admin only)
+│   └── apps/
+│       ├── games/
+│       │   ├── models.py        # Game, GameMetric ORM
+│       │   ├── admin.py         # 게임 관리 Admin UI
+│       │   ├── signals.py       # Redis Pub/Sub 동기화 시그널
+│       │   └── management/commands/
+│       │       ├── load_games.py         # JSONL → DB 적재
+│       │       └── analyze_new_games.py  # Few-Shot 신규 게임 분석
+│       └── users/
+│           ├── models.py        # CustomUser (Steam OAuth 예정)
+│           └── admin.py         # 유저 관리 Admin
+│
+├── scripts/                     # 데이터 파이프라인 스크립트 (14개)
+│   ├── make_diet_batch.py       # [1] GPT Batch 요청 파일 생성
+│   ├── split_batch.py           # [2] 1,000개 단위 분할
+│   ├── submit_batches.py        # [3] OpenAI Batch API 제출
+│   ├── check_batches.py         # [4] 완료 상태 확인
+│   ├── download_outputs.py      # [5] 결과 다운로드
+│   ├── combine_outputs.py       # [6] 결과 통합
+│   ├── merge_metrics.py         # [7] 60개 지표 병합
+│   ├── validate_merge.py        # [8] 데이터 검증
+│   ├── fix_data.py              # [9] CSV+JSONL 병합 및 보정
+│   ├── load_embeddings.py       # 임베딩 생성 및 pgvector 적재
+│   ├── fill_header_images.py    # 헤더 이미지 CDN URL 생성
+│   ├── verify_header_images.py  # 이미지 URL 유효성 검증 (HEAD)
+│   ├── fix_failed_headers.py    # Steam API로 이미지 URL 복구
+│   ├── extract_sample.py        # gem_potential 상위 샘플 추출
+│   └── README.md                # 스크립트 상세 가이드
+│
+├── data/                        # 데이터 파일 (gitignore)
+│   └── final/
+│       └── final_master_games_fixed.jsonl
+│
+├── .env                         # 환경변수 (gitignore)
+└── README.md                    # 이 파일
+```
+
+---
+
+## 기술 스택
+
+| 레이어 | 기술 | 용도 |
+|--------|------|------|
+| API | FastAPI 0.115 | 추천 API, 비동기 처리 |
+| Admin | Django 5.0 | 게임 데이터 관리 UI |
+| DB | PostgreSQL 16 + pgvector | 게임 데이터 + 벡터 저장 |
+| Vector Index | HNSW (m=16, ef=64) | 근사 최근접 이웃 검색 |
+| ORM | SQLAlchemy 2.0 async / Django ORM | FastAPI / Django 각각 |
+| AI 분석 | OpenAI GPT-5.4 Batch | 4,190개 60지표 추출 |
+| AI 신규 | GPT-4o-mini Few-Shot | 신규 게임 분석 (~1/60 비용) |
+| Embedding | text-embedding-3-small | 1536차원 게임 임베딩 |
+| Cache/MQ | Redis Pub/Sub | Django→FastAPI 실시간 동기화 |
+| Validation | Pydantic v2 | 요청/응답 스키마 검증 |
+
+---
+
+## 데이터 현황
+
+- **총 게임**: 4,190개 (Steam 인디 게임)
+- **60개 지표**: 49개 수치(0~10) + 9개 불리언 태그 + gem_potential + confidence_score
+- **임베딩**: 1,536차원 OpenAI 벡터 (pgvector HNSW 인덱스)
+- **분석 방법**: GPT-5.4 Batch (원본 4,190개) → Few-Shot gpt-4o-mini (신규 추가)

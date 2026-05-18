@@ -68,12 +68,24 @@ SYSTEM_PROMPT = """너는 게임 분석 전문가야. 아래 게임 정보를 �
 
 
 def extract_diet_text(data: Dict[str, Any]) -> str:
+    """
+    게임 데이터에서 GPT 프롬프트용 압축 텍스트 생성 (Diet Text Extractor)
+
+    원본 JSONL의 핵심 정보만 추출하여 토큰 절약.
+    포함 항목: 이름, 분석요약, 코어루프, 마케팅훅, 한줄요약, 높은 지표(≥7), 활성 태그
+
+    Args:
+        data: 게임 JSONL 레코드 딕셔너리
+
+    Returns:
+        줄바꿈으로 구분된 핵심 정보 텍스트 (GPT 프롬프트의 user 파트)
+    """
     texts = []
-    
+
     name = data.get("name", "Unknown")
     app_id = data.get("app_id", 0)
     texts.append(f"게임: {name} (app_id: {app_id})")
-    
+
     reasoning = data.get("reasoning", {})
     if reasoning.get("analysis_summary"):
         texts.append(f"분석 요약: {reasoning['analysis_summary']}")
@@ -81,9 +93,10 @@ def extract_diet_text(data: Dict[str, Any]) -> str:
         texts.append(f"코어 루프: {reasoning['core_loop']}")
     if reasoning.get("genre_classification"):
         texts.append(f"장르: {reasoning['genre_classification']}")
-    
+
     content = data.get("content", {})
-    
+
+    # marketing_hook은 dict 또는 str 형태 모두 처리
     hook = content.get("marketing_hook", "")
     if isinstance(hook, dict):
         hook_text = hook.get("primary", "") or hook.get("emotional", "") or hook.get("mechanical", "")
@@ -91,17 +104,17 @@ def extract_diet_text(data: Dict[str, Any]) -> str:
             texts.append(f"마케팅 훅: {hook_text}")
     elif hook:
         texts.append(f"마케팅 훅: {hook}")
-    
+
     if content.get("one_line_summary"):
         texts.append(f"한줄 요약: {content['one_line_summary']}")
-    
+
     usps = content.get("unique_selling_points", [])
     if usps:
-        texts.append(f"USP: {', '.join(usps[:3])}")
-    
+        texts.append(f"USP: {', '.join(usps[:3])}")  # 최대 3개로 토큰 절약
+
+    # 높은 지표(≥7)만 포함 - 게임 개성을 효율적으로 전달
     metrics = data.get("metrics", {})
     metric_summary = []
-    
     for category in ["vibe", "demands", "mechanics", "social", "presentation"]:
         cat_data = metrics.get(category, {})
         if cat_data:
@@ -109,21 +122,35 @@ def extract_diet_text(data: Dict[str, Any]) -> str:
             for k, v in sorted_items:
                 if v is not None and v >= 7:
                     metric_summary.append(f"{k}={v}")
-    
+
     if metric_summary:
         texts.append(f"주요 지표: {', '.join(metric_summary)}")
-    
+
+    # 활성화된 Boolean 태그만 포함
     tags = data.get("tags", {})
     active_tags = [k for k, v in tags.items() if v]
     if active_tags:
         texts.append(f"태그: {', '.join(active_tags)}")
-    
+
     return "\n".join(texts)
 
 
 def create_batch_request(app_id: int, diet_text: str) -> Dict[str, Any]:
+    """
+    OpenAI Batch API 단일 요청 객체 생성 (Batch Request Builder)
+
+    Batch API 형식: custom_id + method + url + body 구조.
+    custom_id = "diet-{app_id}" 형식으로 merge_metrics.py에서 app_id 역추출 가능.
+
+    Args:
+        app_id: Steam App ID (결과 매핑용)
+        diet_text: extract_diet_text()로 생성한 압축 게임 정보 텍스트
+
+    Returns:
+        Batch API 요청 딕셔너리 (JSONL 한 줄로 직렬화됨)
+    """
     return {
-        "custom_id": f"diet-{app_id}",
+        "custom_id": f"diet-{app_id}",  # 응답에서 app_id 식별용
         "method": "POST",
         "url": "/v1/chat/completions",
         "body": {
@@ -132,14 +159,21 @@ def create_batch_request(app_id: int, diet_text: str) -> Dict[str, Any]:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": diet_text}
             ],
-            "temperature": 0.3,
-            "max_completion_tokens": 500,
-            "response_format": {"type": "json_object"}
+            "temperature": 0.3,            # 낮은 온도로 일관된 JSON 출력 유도
+            "max_completion_tokens": 500,  # 18개 지표 JSON은 500토큰이면 충분
+            "response_format": {"type": "json_object"}  # JSON 강제 출력
         }
     }
 
 
 def main():
+    """
+    Batch 요청 파일 생성 메인 로직 (Batch Request File Generator)
+
+    원본 merged_games.jsonl을 읽어 각 게임의 핵심 정보(diet_text)를 추출하고
+    Batch API 형식의 단일 JSONL 파일로 저장. 이후 split_batch.py로 분할.
+    --preview로 실제 GPT에 보내는 텍스트를 미리 확인 가능.
+    """
     parser = argparse.ArgumentParser(description="토큰 다이어트 Batch 요청 파일 생성")
     parser.add_argument("--input", "-i", type=str, required=True, help="기존 merged_games.jsonl 경로")
     parser.add_argument("--output", "-o", type=str, default="diet_batch_requests.jsonl", help="출력 Batch 요청 파일 경로")

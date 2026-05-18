@@ -48,7 +48,19 @@ async def check_url(
     url: str,
     timeout: float = 5.0,
 ) -> bool:
-    """HEAD 요청으로 이미지 존재 확인"""
+    """
+    HTTP HEAD 요청으로 이미지 URL 유효성 확인 (URL Validity Check)
+
+    GET 대신 HEAD를 사용하여 이미지 본문 다운로드 없이 상태 코드만 확인.
+    타임아웃 또는 네트워크 오류 시 False 반환 (조용히 실패).
+
+    Args:
+        url: 확인할 이미지 URL
+        timeout: 요청 타임아웃 (초, 기본 5.0)
+
+    Returns:
+        True = HTTP 200 (이미지 존재), False = 그 외 (404, 타임아웃 등)
+    """
     try:
         async with session.head(
             url, timeout=aiohttp.ClientTimeout(total=timeout), allow_redirects=True
@@ -62,7 +74,19 @@ async def find_valid_url(
     session: aiohttp.ClientSession,
     app_id: int,
 ) -> Optional[str]:
-    """app_id에 대해 유효한 이미지 URL을 순차 탐색"""
+    """
+    app_id에 대해 유효한 이미지 URL을 우선순위 순으로 탐색 (URL Candidate Search)
+
+    URL_CANDIDATES 목록 순서대로 HEAD 요청을 보내 200 응답이 오면 즉시 반환.
+    header.jpg → capsule_616x353.jpg → ... 순으로 시도하며 모두 실패하면 None.
+
+    Args:
+        session: 재사용 aiohttp 세션
+        app_id: Steam App ID
+
+    Returns:
+        유효한 이미지 URL 또는 None (모든 후보 실패)
+    """
     base = CDN_BASE.format(app_id=app_id)
     for suffix in URL_CANDIDATES:
         url = base + suffix
@@ -78,15 +102,29 @@ async def process_game(
     app_id: int,
     game_id: int,
 ) -> Tuple[int, Optional[str]]:
-    """단일 게임 처리"""
+    """
+    단일 게임 처리 - URL 탐색 + DB 업데이트 (Single Game Processing)
+
+    Semaphore로 동시 요청을 제한하여 Steam CDN 레이트 리밋 방지.
+    유효 URL 발견 시 즉시 DB UPDATE 처리 (배치가 아닌 개별 처리로 빠른 반영).
+
+    Args:
+        sem: 동시 요청 제한 Semaphore
+        http: aiohttp 세션
+        db_session_factory: AsyncSessionLocal 팩토리
+        app_id: 처리할 Steam App ID
+        game_id: games 테이블의 PK
+
+    Returns:
+        (game_id, 유효URL or None) 튜플
+    """
     async with sem:
         valid_url = await find_valid_url(http, app_id)
-    
+
     if valid_url is None:
         return game_id, None
-    
-    # 검증된 URL이 기본 header.jpg가 아니라면 DB 업데이트
-    # 기본이라면 이미 같은 값이라 스킵
+
+    # 유효 URL이 확인된 게임만 DB 업데이트 (실패 게임은 main에서 일괄 처리)
     async with db_session_factory() as db:
         stmt = (
             update(Game)
@@ -95,7 +133,7 @@ async def process_game(
         )
         await db.execute(stmt)
         await db.commit()
-    
+
     return game_id, valid_url
 
 

@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+OpenAI Batch API 결과 다운로드 스크립트 (Batch Output Downloader)
+
+check_batches.py 실행 후 output_file_id가 채워진 batch_jobs.json을 기반으로
+완료된 배치의 결과 파일을 로컬 폴더에 저장.
+미완료(status != completed) 배치는 건너뜀.
+
+사용법:
+    python scripts/download_outputs.py
+    python scripts/download_outputs.py --jobs batch_jobs.json --output-dir batch_outputs/
+
+Pipeline 위치:
+    submit_batches.py → check_batches.py → [download_outputs.py] → combine_outputs.py
+"""
 import json
 import os
 import argparse
@@ -18,6 +32,12 @@ from openai import OpenAI
 
 
 def main():
+    """
+    배치 결과 다운로드 메인 로직 (Download Batch Outputs)
+
+    batch_jobs.json의 각 항목에서 batch_id를 조회하고,
+    completed 상태의 배치만 output_NNN.jsonl 형식으로 저장.
+    """
     parser = argparse.ArgumentParser(description="Batch 결과 다운로드")
     parser.add_argument("--jobs", "-j", type=str, default="batch_jobs.json", help="배치 작업 정보 파일")
     parser.add_argument("--output-dir", "-o", type=str, default="batch_outputs", help="결과 저장 폴더")

@@ -34,10 +34,17 @@ class Command(BaseCommand):
         parser.add_argument('--model', type=str, default='gpt-4o-mini', help='사용할 모델')
 
     def handle(self, *args, **options):
+        """
+        커맨드 메인 실행 (Command Entry Point)
+
+        단일 게임(--app-id) 또는 미분석 전체(--pending)를 대상으로 Few-Shot 분석.
+        각 게임에 대해: 유사 게임 탐색 → GPT 분석 → DB 저장 3단계 실행.
+        --dry-run이면 유사 게임 탐색만 수행하고 실제 API 호출은 건너뜀.
+        """
         self.client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         self.model = options['model']
-        
-        # 분석 대상 선택
+
+        # 분석 대상 선택 - 단일 게임 또는 미분석 전체
         if options['app_id']:
             games = Game.objects.filter(app_id=options['app_id'])
         elif options['pending']:
@@ -97,28 +104,52 @@ class Command(BaseCommand):
 
     def _find_similar_games(self, game, top_k=5):
         """
-        GPT-5.4로 분석된 4,190개 중에서 유사한 게임 찾기
-        (향후 임베딩 + pgvector로 개선 가능)
+        신규 게임의 Few-Shot 예시용 유사 게임 탐색 (Similar Game Finder)
+
+        GPT-5.4로 분석된 4,190개 원본 중에서 장르 일치 게임을 우선 탐색.
+        장르 일치 top_k개 확보 실패 시 전체 분석 완료 게임에서 폴백.
+
+        Note:
+            현재는 장르 텍스트 매칭만 사용하며, 향후 임베딩 + pgvector로
+            의미적 유사도 기반 탐색으로 개선 예정.
+
+        Args:
+            game: 분석할 신규 게임 Game 인스턴스
+            top_k: 반환할 유사 게임 수 (기본 5)
+
+        Returns:
+            유사 게임 Game 인스턴스 리스트 (metrics 포함)
         """
         genres = game.genres.split(',')[0].strip() if game.genres else ''
-        
+
         similar = Game.objects.filter(
             is_analyzed=True,
-            analysis_method='gpt5.4_batch',
+            analysis_method='gpt5.4_batch',  # 원본 고품질 데이터만 사용
         ).exclude(
             app_id=game.app_id
         ).select_related('metrics')
-        
+
         if genres:
             genre_matched = similar.filter(genres__icontains=genres)[:top_k]
             if genre_matched.count() >= top_k:
                 return list(genre_matched)
-        
+
+        # 장르 매칭 부족 시 폴백: 전체 분석 완료 게임에서 상위 top_k
         return list(similar[:top_k])
 
     def _analyze_with_fewshot(self, game, similar_games):
         """
-        GPT-5.4 데이터를 Few-Shot 예시로 사용해서 분석
+        Few-Shot 방식으로 신규 게임 분석 (Few-Shot Analysis)
+
+        GPT-5.4 원본 분석 결과를 예시로 제공하여 저렴한 모델(gpt-4o-mini)로
+        동일 품질의 분석 결과를 생성. 1/60 비용으로 GPT-5.4급 품질 달성.
+
+        Args:
+            game: 분석할 신규 게임
+            similar_games: _find_similar_games()에서 찾은 유사 게임들
+
+        Returns:
+            GPT가 생성한 분석 결과 딕셔너리 (metrics, tags, content, reasoning 포함)
         """
         examples = self._build_examples(similar_games)
         
@@ -231,7 +262,18 @@ class Command(BaseCommand):
         return json.loads(content)
 
     def _build_examples(self, similar_games):
-        """GPT-5.4 분석 결과를 Few-Shot 예시로 포맷"""
+        """
+        유사 게임의 GPT-5.4 분석 결과를 Few-Shot 예시 텍스트로 포맷 (Example Builder)
+
+        각 게임의 지표/태그/콘텐츠를 JSON 형식으로 직렬화하여 프롬프트에 삽입.
+        GPT가 이 예시들의 패턴을 학습하여 동일한 형식과 수준으로 신규 게임을 분석.
+
+        Args:
+            similar_games: 유사 게임 Game 인스턴스 리스트
+
+        Returns:
+            예시 텍스트 문자열 (프롬프트에 직접 삽입됨)
+        """
         examples = ""
         
         for i, game in enumerate(similar_games, 1):
