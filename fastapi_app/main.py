@@ -1,8 +1,13 @@
 """
-Hidden Gem API Server
-- 4,190개 인디 게임
+Hidden Gem API 서버 진입점 (FastAPI Application Entry Point)
+
+Steam 인디 게임 AI 추천 서비스의 FastAPI 앱 설정.
+- 4,190개 인디 게임 데이터 (GPT-5.4 Batch 분석)
 - 60개 지표 (49 수치 + 9 태그 + 2 평가)
-- 49차원 벡터 유사도 기반 추천
+- 49차원 벡터 유사도 기반 추천 엔진
+
+실행:
+    uvicorn main:app --reload --port 8000
 """
 
 from fastapi import FastAPI
@@ -15,13 +20,20 @@ from routers import games_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """
+    앱 생명주기 관리 (Application Lifespan)
+
+    FastAPI 0.95+ 에서 @app.on_event 대신 권장되는 방식.
+    서버 시작/종료 시 로그 출력 및 추후 리소스 초기화/정리에 활용.
+    """
+    # 서버 시작 시 연결 정보 및 접근 URL 출력
     print("=" * 60)
     print("🚀 Hidden Gem API Server (49D) starting...")
     print(f"📊 Database: {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
     print(f"📖 Docs:     http://localhost:8000/docs")
     print(f"🩺 Health:   http://localhost:8000/health")
     print("=" * 60)
-    yield
+    yield  # 앱 실행 구간 (요청 처리)
     print("👋 Shutting down...")
 
 
@@ -41,21 +53,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS
+# CORS 미들웨어 - 프론트엔드(Next.js 등)에서 크로스 오리진 요청 허용
+# 운영 환경에서는 allow_origins를 구체적인 도메인으로 제한 권장
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],        # 모든 출처 허용 (개발용 - 운영 시 변경)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 라우터
+# /api/v1 접두사로 게임 관련 라우터 등록
 app.include_router(games_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/")
 async def root():
+    """서비스 기본 정보 반환 (Service Info)"""
     return {
         "service": "Hidden Gem API",
         "version": "2.0.0",
@@ -67,6 +81,7 @@ async def root():
 
 @app.get("/health")
 async def health_check():
+    """헬스 체크 엔드포인트 - Docker/k8s 컨테이너 상태 확인용 (Health Check)"""
     return {"status": "healthy", "dimension": 49}
 
 

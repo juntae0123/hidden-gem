@@ -5,7 +5,7 @@ SQLAlchemy ORM 모델 - Django의 games, game_metrics 테이블 매핑
 - games 테이블: 4,190개 게임
 - game_metrics 테이블: 60개 지표 (49 수치 + 9 태그 + 2 평가)
 """
-
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Column, Integer, String, Text, Float, Boolean,
     Date, DateTime, JSON, ForeignKey, Numeric
@@ -167,6 +167,9 @@ class GameMetric(Base):
     raw_content = Column(JSON, default=dict)
     raw_reasoning = Column(JSON, default=dict)
     
+    # ========== EMBEDDING ==========
+    embedding = Column(Vector(1536), nullable=True)
+
     # ========== META ==========
     extraction_version = Column(String(50), default='gpt5.4-batch-v1')
     extracted_at = Column(DateTime)

@@ -1,5 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+OpenAI Batch API 제출 스크립트 (Batch Submission Script)
+
+split_batch.py로 분할된 diet_batch_NNN.jsonl 파일들을
+OpenAI Batch API에 순서대로 제출하고 배치 ID를 batch_jobs.json에 저장.
+
+Batch API 특징:
+    - 24시간 완료 보장 (completion_window="24h")
+    - 동기 API 대비 50% 비용 절감
+    - 제출 간 delay로 레이트 리밋 방지
+
+사용법:
+    python scripts/submit_batches.py -i batch_requests/ -o batch_jobs.json
+
+Pipeline 위치:
+    make_diet_batch.py → split_batch.py → [submit_batches.py] → check_batches.py
+"""
 import json
 import time
 import os
@@ -23,23 +40,39 @@ from openai import OpenAI
 
 
 def submit_batch(client: OpenAI, file_path: Path) -> dict:
+    """
+    단일 JSONL 파일을 OpenAI Batch API에 제출 (Single Batch Submission)
+
+    파일 업로드 → 배치 생성 두 단계로 처리.
+    업로드된 파일은 OpenAI Files API에 보관되며 배치 ID로 추적.
+
+    Args:
+        client: OpenAI 클라이언트 인스턴스
+        file_path: 제출할 diet_batch_NNN.jsonl 파일 경로
+
+    Returns:
+        {file_name, file_id, batch_id, status} 딕셔너리
+        이후 check_batches.py에서 batch_id로 상태 조회
+    """
     print(f"\n파일 업로드 중: {file_path.name}")
-    
+
+    # 1단계: 파일을 OpenAI Files API에 업로드 (purpose="batch" 필수)
     with open(file_path, "rb") as f:
         uploaded_file = client.files.create(file=f, purpose="batch")
-    
+
     print(f"  파일 ID: {uploaded_file.id}")
-    
+
+    # 2단계: 업로드된 파일로 배치 작업 생성
     batch = client.batches.create(
         input_file_id=uploaded_file.id,
         endpoint="/v1/chat/completions",
-        completion_window="24h",
+        completion_window="24h",  # 최대 24시간 내 완료 보장
         metadata={"description": f"Hidden Gem Diet Batch - {file_path.name}"}
     )
-    
+
     print(f"  배치 ID: {batch.id}")
     print(f"  상태: {batch.status}")
-    
+
     return {
         "file_name": file_path.name,
         "file_id": uploaded_file.id,
@@ -49,6 +82,12 @@ def submit_batch(client: OpenAI, file_path: Path) -> dict:
 
 
 def main():
+    """
+    배치 파일 일괄 제출 메인 로직 (Batch Files Submission Main)
+
+    batch_requests/ 폴더의 diet_batch_*.jsonl 파일을 순서대로 제출.
+    제출 전 확인 프롬프트로 실수 방지, 제출 간 delay로 레이트 리밋 대응.
+    """
     parser = argparse.ArgumentParser(description="분할된 Batch 파일들 제출")
     parser.add_argument("--input-dir", "-i", type=str, required=True, help="batch_requests 폴더")
     parser.add_argument("--output", "-o", type=str, default="batch_jobs.json", help="배치 작업 정보 저장 파일")

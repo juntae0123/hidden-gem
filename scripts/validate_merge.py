@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+병합 결과 검증 스크립트 (Merge Validation Script)
+
+merge_metrics.py가 생성한 final_master_games.jsonl의 데이터 완전성을 검증.
+무작위 샘플 출력 + 전체 통계 리포트로 지표 결측치 현황 파악.
+
+검증 항목:
+    - 기존 31개 지표 존재 여부 (vibe/demands/mechanics 등)
+    - 신규 18개 지표 존재 여부 (extended)
+    - 완전 병합(Batch 결과 있음) vs 중립값 채움 비율
+
+사용법:
+    python scripts/validate_merge.py -i final_master_games.jsonl
+    python scripts/validate_merge.py -i final_master_games.jsonl --detailed
+"""
 import json
 import argparse
 import random
@@ -86,19 +101,32 @@ ORIGINAL_CATEGORIES: Dict[str, List[str]] = {
 
 
 def extract_all_metrics(data: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """
+    게임 데이터에서 기존/신규 지표를 분리 추출 (Metric Extraction Helper)
+
+    Args:
+        data: 게임 JSONL 레코드 딕셔너리
+
+    Returns:
+        (original, new) 튜플:
+            original = {지표명: 값} - 기존 31개 지표 (카테고리별 평탄화)
+            new = {지표명: 값}       - 신규 18개 지표 (metrics.extended에서 추출)
+    """
     metrics = data.get("metrics", {})
-    
+
+    # 기존 31개: vibe/demands/mechanics/social/presentation 카테고리에서 평탄화
     original = {}
     for category, metric_names in ORIGINAL_CATEGORIES.items():
         category_data = metrics.get(category, {})
         for name in metric_names:
             original[name] = category_data.get(name)
-    
+
+    # 신규 18개: metrics.extended 하위에 위치 (merge_metrics.py가 이 위치에 저장)
     extended = metrics.get("extended", {})
     new = {}
     for name in NEW_METRICS:
         new[name] = extended.get(name)
-    
+
     return original, new
 
 
@@ -149,6 +177,18 @@ def print_sample(data: Dict[str, Any], sample_num: int):
 
 
 def generate_report(all_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    전체 데이터에 대한 검증 통계 리포트 생성 (Validation Report Generator)
+
+    complete_merge(실제 배치 결과) vs filled_merge(중립값) 비율과
+    지표별 결측치 카운트를 집계하여 반환.
+
+    Args:
+        all_data: 전체 게임 레코드 리스트
+
+    Returns:
+        통계 딕셔너리 {total_count, complete_merge, perfect_games, original_nulls, ...}
+    """
     total_count = len(all_data)
     
     original_nulls: Dict[str, int] = defaultdict(int)
@@ -248,6 +288,12 @@ def print_report(report: Dict[str, Any]):
 
 
 def main():
+    """
+    병합 검증 메인 로직 (Validation Main)
+
+    JSONL을 전부 메모리에 로드 후 무작위 샘플 출력 → 전체 리포트 순으로 실행.
+    --detailed 옵션으로 49개 지표 전체의 결측치 현황을 상세 출력.
+    """
     parser = argparse.ArgumentParser(description="병합된 마스터 파일 검증")
     parser.add_argument("--input", "-i", type=str, required=True, help="final_master_games.jsonl 경로")
     parser.add_argument("--samples", "-s", type=int, default=3, help="출력할 샘플 수")
