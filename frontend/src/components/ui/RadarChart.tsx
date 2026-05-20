@@ -8,7 +8,7 @@ import { useEffect, useRef } from 'react';
 import { METRIC_LABELS } from '@/lib/utils';
 
 interface RadarChartProps {
-  data: { metric: string; value: number }[]; // value 0~1 or 0~100
+  data: { metric: string; value: number }[]; // value 0~10 스케일 / 0~10 scale
   size?: number;
   className?: string;
 }
@@ -76,7 +76,8 @@ export function RadarChart({ data, size = 280, className }: RadarChartProps) {
     for (let i = 0; i < axes; i++) {
       const angle = (Math.PI * 2 * i) / axes - Math.PI / 2;
       const raw = data[i]?.value ?? 0;
-      const norm = raw <= 1 ? raw : raw / 100;
+      // 0~10 스케일을 0~1로 정규화 / Normalize 0~10 to 0~1
+      const norm = raw / 10;
       const clamped = Math.max(0, Math.min(1, norm));
       const r = radius * clamped;
       const x = cx + Math.cos(angle) * r;
@@ -93,7 +94,8 @@ export function RadarChart({ data, size = 280, className }: RadarChartProps) {
     for (let i = 0; i < axes; i++) {
       const angle = (Math.PI * 2 * i) / axes - Math.PI / 2;
       const raw = data[i]?.value ?? 0;
-      const norm = raw <= 1 ? raw : raw / 100;
+      // 0~10 스케일을 0~1로 정규화 / Normalize 0~10 to 0~1
+      const norm = raw / 10;
       const clamped = Math.max(0, Math.min(1, norm));
       const r = radius * clamped;
       const x = cx + Math.cos(angle) * r;

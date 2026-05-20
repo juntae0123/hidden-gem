@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     Attributes:
         DB_HOST: PostgreSQL 호스트 (Docker 네트워크에서는 컨테이너명 사용)
         GEM_POTENTIAL_SCALE: gem_potential 정규화 기준값 (CSV는 0~100, 내부 로직은 100 기준)
+        OPENAI_API_KEY: 시맨틱 검색용 임베딩 생성 API 키 / API key for semantic search embedding
     """
 
     # ---- DB 연결 설정 (Docker hidden_gem_db 컨테이너) ----
@@ -42,6 +43,10 @@ class Settings(BaseSettings):
 
     # gem_potential 스케일 - CSV 원본은 0~100, 하이브리드 점수 계산 시 나눗값으로 사용
     GEM_POTENTIAL_SCALE: float = 100.0
+
+    # ---- OpenAI 설정 (.env에서 주입, 코드에 키 값 절대 하드코딩 금지) ----
+    # OpenAI API key - injected from .env, never hardcode the actual key
+    OPENAI_API_KEY: str = ""  # 시맨틱 검색용 임베딩 생성 / For semantic search embedding
 
     @property
     def DATABASE_URL(self) -> str:

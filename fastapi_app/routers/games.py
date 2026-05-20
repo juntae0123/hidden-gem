@@ -1,14 +1,15 @@
 """
-게임 API 라우터 v2 (Games API Router)
+게임 API 라우터 v3 (Games API Router)
 
 /api/v1/games 하위 모든 엔드포인트 정의.
-검색/상세 조회와 두 가지 추천 방식(by-game, by-preference)을 제공.
+검색/상세 조회와 세 가지 추천 방식(by-game, by-preference, semantic)을 제공.
 
 Endpoints:
-    GET  /games/search              - 이름/장르/개발사 텍스트 검색
-    GET  /games/stats/overview      - DB 통계 (전체 게임 수, 평균 gem_potential 등)
-    GET  /games/metrics/list        - 사용 가능한 지표 목록
-    GET  /games/{app_id}            - 게임 상세 + 60개 지표
+    GET  /games/search                   - 이름/장르/개발사 텍스트 검색
+    POST /games/search/semantic          - 자연어 시맨틱 검색 (임베딩 기반)
+    GET  /games/stats/overview           - DB 통계 (전체 게임 수, 평균 gem_potential 등)
+    GET  /games/metrics/list             - 사용 가능한 지표 목록
+    GET  /games/{app_id}                 - 게임 상세 + 60개 지표
     POST /games/recommend/by-game        - 특정 게임 기반 유사 게임 추천
     POST /games/recommend/by-preference  - 유저 선호도 기반 맞춤 추천
 """
@@ -18,10 +19,11 @@ from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
+from pydantic import BaseModel, Field
 
 from database import get_db
 from models.game import (
-    Game, GameMetric, 
+    Game, GameMetric,
     NUMERIC_METRIC_FIELDS, BOOLEAN_TAG_FIELDS, METRIC_CATEGORIES
 )
 from schemas.game import (
@@ -34,7 +36,40 @@ from services.recommender import recommender
 router = APIRouter(prefix="/games", tags=["Games"])
 
 
-# ==================== 검색 / 상세 ====================
+# ==================== 요청 스키마 / Request Schemas ====================
+
+class SemanticSearchRequest(BaseModel):
+    """
+    시맨틱 검색 요청 스키마 (Semantic Search Request Schema)
+
+    자연어 쿼리와 검색 옵션을 담는 Pydantic 모델.
+    query에 게임 이름 대신 느낌, 분위기, 유사 게임 설명 등 자유 형식 입력 가능.
+
+    Example:
+        {"query": "혼자 조용히 즐기는 전략 게임", "limit": 12}
+        {"query": "Stardew Valley 같은 힐링겜", "limit": 9}
+    """
+    query: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="자연어 검색어 / Natural language search query",
+    )
+    limit: int = Field(
+        default=12,
+        ge=1,
+        le=50,
+        description="반환할 최대 게임 수 / Max number of results",
+    )
+    min_gem_potential: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=100.0,
+        description="최소 gem_potential 필터 / Minimum gem potential filter",
+    )
+
+
+# ==================== 검색 / Search ====================
 
 @router.get("/search", response_model=List[GameSearchResult])
 async def search_games(
@@ -46,9 +81,10 @@ async def search_games(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    게임 검색 엔드포인트 (Game Search)
+    텍스트 기반 게임 검색 (Text-based Game Search)
 
     이름/장르/개발사에 대해 대소문자 무관 부분 일치(ilike) 검색.
+    자연어/의미 기반 검색은 POST /search/semantic 사용.
     min_gem 필터는 DB 쿼리가 아닌 Python 레벨에서 처리 (JOIN 복잡성 회피).
     결과는 리뷰 수 내림차순 정렬 (인기 게임 우선).
     """
@@ -102,6 +138,45 @@ async def search_games(
     return results
 
 
+@router.post("/search/semantic", response_model=RecommendationResponse)
+async def semantic_search(
+    request: SemanticSearchRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    자연어 시맨틱 검색 (Natural Language Semantic Search)
+
+    쿼리를 OpenAI text-embedding-3-small로 임베딩 변환 후
+    pgvector 코사인 유사도(<=>)로 관련 게임 검색.
+
+    일반 검색과 달리 게임 이름이 아닌 느낌/분위기/설명으로 검색 가능:
+        - "혼자 조용히 즐기는 전략 게임"
+        - "Stardew Valley 같은 힐링겜"
+        - "죽으면 처음부터인데 중독되는 게임"
+        - "Dark Souls 분위기인데 좀 쉬운 거"
+    """
+    try:
+        results = await recommender.semantic_search(
+            db=db,
+            query=request.query,
+            limit=request.limit,
+            min_gem_potential=request.min_gem_potential,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"시맨틱 검색 실패: {str(e)}")
+
+    recommendations = recommender.format_semantic_results(results)
+
+    return RecommendationResponse(
+        query_type="semantic",
+        reference_game=None,
+        total_candidates=len(recommendations),
+        recommendations=recommendations,
+    )
+
+
+# ==================== 통계 / Stats ====================
+
 @router.get("/stats/overview")
 async def get_stats(db: AsyncSession = Depends(get_db)):
     """
@@ -126,8 +201,8 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         "total_games": total,
         "analyzed_games": analyzed,
         "average_gem_potential": round(float(avg_gem), 2) if avg_gem else None,
-        "dimension": len(NUMERIC_METRIC_FIELDS),          # 추천에 사용되는 수치 지표 수 (49)
-        "total_metrics": len(NUMERIC_METRIC_FIELDS) + len(BOOLEAN_TAG_FIELDS),  # 전체 지표 (58)
+        "dimension": len(NUMERIC_METRIC_FIELDS),
+        "total_metrics": len(NUMERIC_METRIC_FIELDS) + len(BOOLEAN_TAG_FIELDS),
         "data_source": "GPT-5.4 Batch + Steam CSV",
     }
 
@@ -148,6 +223,8 @@ async def list_metrics():
         "total_tags": len(BOOLEAN_TAG_FIELDS),
     }
 
+
+# ==================== 게임 상세 / Game Detail ====================
 
 @router.get("/{app_id}", response_model=GameWithMetrics)
 async def get_game_detail(app_id: int, db: AsyncSession = Depends(get_db)):
@@ -177,7 +254,7 @@ async def get_game_detail(app_id: int, db: AsyncSession = Depends(get_db)):
     return game
 
 
-# ==================== 추천 ====================
+# ==================== 추천 / Recommendation ====================
 
 @router.post("/recommend/by-game", response_model=RecommendationResponse)
 async def recommend_by_game(
@@ -274,7 +351,7 @@ async def recommend_by_preference(
 
     return RecommendationResponse(
         query_type="by_preference",
-        reference_game=None,   # 기준 게임 없음 (선호도 기반)
+        reference_game=None,
         total_candidates=len(results),
         recommendations=recommendations,
     )

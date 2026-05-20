@@ -12,12 +12,13 @@ import type { RecommendedGame } from '@/types/game';
 
 interface RankingListProps {
   items: RecommendedGame[];
-  hotIndices?: number[]; // 1-based ranks shown as HOT
+  hotIndices?: number[];
   className?: string;
 }
 
 /**
  * Steam header URL helper
+ * Steam 헤더 이미지 URL 생성
  */
 function steamHeader(appId: number, fallback?: string | null) {
   return fallback || `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/header.jpg`;
@@ -48,9 +49,15 @@ function RankingRow({
         'transition-colors'
       )}
     >
-      <span className="w-8 text-center font-mono text-[13px] text-zinc-500">
+      {/* 순위 / Rank number */}
+      <span className={cn(
+        'w-8 text-center font-mono text-[13px] flex-shrink-0',
+        rank <= 3 ? 'text-purple-600 font-semibold' : 'text-zinc-500'
+      )}>
         {String(rank).padStart(2, '0')}
       </span>
+
+      {/* 썸네일 / Thumbnail */}
       <div className="w-16 h-9 rounded overflow-hidden bg-zinc-100 dark:bg-zinc-800 flex-shrink-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -61,6 +68,8 @@ function RankingRow({
           loading="lazy"
         />
       </div>
+
+      {/* 게임 정보 / Game info */}
       <div className="flex-1 min-w-0">
         <div className="text-[13px] font-medium text-zinc-900 dark:text-zinc-100 truncate">
           {game.name}
@@ -69,26 +78,31 @@ function RankingRow({
           {(game.genres ?? '').split(',').map(g => g.trim()).filter(Boolean).slice(0, 3).join(' · ')}
         </div>
       </div>
+
+      {/* HOT 뱃지 / HOT badge */}
       {isHot && (
-        <span
-          className={cn(
-            'px-1.5 py-0.5 rounded text-[10px] font-medium',
-            'bg-orange-500/10 text-orange-700 dark:text-orange-400'
-          )}
-        >
+        <span className={cn(
+          'px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0',
+          'bg-orange-500/10 text-orange-700 dark:text-orange-400'
+        )}>
           HOT
         </span>
       )}
+
+      {/* gem 점수 / Gem score */}
       <GemBadge score={game.gem_potential ?? 0} showAlways />
     </Link>
   );
 }
 
 /**
- * Ranking list of games
- * 게임 랭킹 리스트
+ * Ranking list sorted by gem_potential descending
+ * gem_potential 기준 내림차순 정렬된 랭킹 리스트
  */
 export function RankingList({ items, hotIndices = [1, 2, 3], className }: RankingListProps) {
+  // gem_potential 기준 내림차순 정렬 / Sort by gem_potential descending
+  const sorted = [...items].sort((a, b) => (b.gem_potential ?? 0) - (a.gem_potential ?? 0));
+
   return (
     <div
       className={cn(
@@ -98,7 +112,7 @@ export function RankingList({ items, hotIndices = [1, 2, 3], className }: Rankin
         className
       )}
     >
-      {items.map((g, i) => (
+      {sorted.map((g, i) => (
         <RankingRow
           key={g.app_id}
           game={g}
