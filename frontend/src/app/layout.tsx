@@ -24,8 +24,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ko" suppressHydrationWarning>
-      <body className="min-h-screen bg-[#FAFAF7] dark:bg-[#0A0A0B] text-zinc-900 dark:text-zinc-100 antialiased">
+    <html lang="ko" suppressHydrationWarning className="dark">
+      <body className="min-h-screen bg-[#FAFAF7] dark:bg-[#0F0F13] text-zinc-900 dark:text-zinc-100 antialiased">
         <Providers>
           <Navbar />
           <main className="max-w-7xl mx-auto px-6 py-8">{children}</main>

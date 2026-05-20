@@ -27,7 +27,7 @@ interface UserStoreState {
 export const useUserStore = create<UserStoreState>()(
   persist(
     (set) => ({
-      theme: 'light',
+      theme: 'dark',
       favorites: [],
       isLoggedIn: false,
       steamId: null,

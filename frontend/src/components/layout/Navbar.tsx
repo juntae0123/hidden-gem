@@ -18,18 +18,6 @@ const TABS = [
 ];
 
 /**
- * Diamond logo SVG icon
- * 다이아몬드 로고 아이콘
- */
-function DiamondIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-      <path d="M7 0L14 7L7 14L0 7L7 0Z" fill="#7C3AED" />
-    </svg>
-  );
-}
-
-/**
  * Sticky navigation bar with theme toggle
  * 테마 토글 포함 sticky 네비게이션
  */
@@ -42,6 +30,7 @@ export function Navbar() {
   useEffect(() => {
     if (typeof document === 'undefined') return;
     document.documentElement.classList.toggle('dark', theme === 'dark');
+    document.body.style.backgroundColor = theme === 'dark' ? '#0F0F13' : '#FAFAF7';
   }, [theme]);
 
   return (
@@ -55,7 +44,7 @@ export function Navbar() {
       <nav className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
         {/* 로고 / Logo */}
         <Link href="/" className="flex items-center gap-2">
-          <DiamondIcon />
+          <span className="text-purple-600 text-lg leading-none">✦</span>
           <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
             Hidden Gem
           </span>
