@@ -154,6 +154,7 @@ class GameMetric(Base):
     
     # ========== EVAL (2) ==========
     gem_potential = Column(Float, nullable=True)
+    gem_percentile = Column(Float, nullable=True)  # 백분위 기반 정규화 점수 / Percentile-normalized gem score
     confidence_score = Column(Float, nullable=True)
     
     # ========== REASONING ==========

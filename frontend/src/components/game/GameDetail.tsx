@@ -144,7 +144,7 @@ export function GameDetail({ appId }: GameDetailProps) {
             세부 지표
           </h3>
           {topMetrics.map(({ key: metric, value }) => {
-            const norm = value <= 1 ? value : value / 100;
+            const norm = value <= 1 ? value : value / 10;
             const pct = Math.max(0, Math.min(100, norm * 100));
             return (
               <div key={metric}>
@@ -153,7 +153,7 @@ export function GameDetail({ appId }: GameDetailProps) {
                     {METRIC_LABELS[metric] || metric}
                   </span>
                   <span className="text-[11px] font-mono text-purple-600 dark:text-purple-400">
-                    {toPercent(norm)}
+                    {value.toFixed(0)} / 10
                   </span>
                 </div>
                 <div className="w-full h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">

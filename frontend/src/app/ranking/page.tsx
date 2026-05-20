@@ -14,7 +14,7 @@ import type { RecommendedGame } from '@/types/game';
 
 type Tab = 'all' | 'genre' | 'mine';
 
-// 실제 49개 지표명 기반 장르별 선호도 / Genre prefs using real metric fields
+// 실제 49개 수치 지표만 사용 (Boolean 태그 제외) / Only numeric metrics allowed
 const GENRE_PREFS: Record<string, Record<string, number>> = {
   RPG: { narrative_depth: 9, lore_richness: 9, choice_consequence: 8, growth_reward: 8 },
   액션: { action_pacing: 9, reflex_demand: 8, replay_value: 7 },
@@ -22,7 +22,7 @@ const GENRE_PREFS: Record<string, Record<string, number>> = {
   시뮬레이션: { management_complexity: 9, freedom_level: 8, replay_value: 8 },
   어드벤처: { exploration_reward: 9, narrative_depth: 8, environmental_storytelling: 8 },
   인디: { art_style_uniqueness: 9, narrative_depth: 7, audio_design: 7 },
-  로그라이크: { replay_value: 10, rng_dependency: 7, has_permadeath: 1 },
+  로그라이크: { replay_value: 10, rng_dependency: 7, learning_curve: 8 },
   공포: { horror_factor: 9, melancholy: 7, dark_fantasy_vibe: 7 },
   퍼즐: { puzzle_complexity: 9, strategic_depth: 7 },
 }

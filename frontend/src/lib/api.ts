@@ -34,8 +34,8 @@ apiClient.interceptors.response.use(
 );
 
 /**
- * Search games by natural language query
- * 자연어 쿼리로 게임을 검색
+ * Search games by name/genre/developer (text match)
+ * 이름/장르/개발사 텍스트 매칭으로 게임 검색
  */
 export async function searchGames(
   query: string,
@@ -44,6 +44,21 @@ export async function searchGames(
   const { data } = await apiClient.get<Game[]>('/games/search', {
     params: { q: query, limit },
   });
+  return data;
+}
+
+/**
+ * Search games by natural language query (semantic/embedding-based)
+ * 자연어 쿼리를 임베딩으로 변환해 의미 기반 게임 검색
+ */
+export async function semanticSearchGames(
+  query: string,
+  limit: number = 12
+): Promise<RecommendationResponse> {
+  const { data } = await apiClient.post<RecommendationResponse>(
+    '/games/search/semantic',
+    { query, limit }
+  );
   return data;
 }
 
