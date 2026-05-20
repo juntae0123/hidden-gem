@@ -70,7 +70,7 @@ export default function HomePage() {
       {/* Hero / 검색 영역 */}
       <section className="pt-8 pb-2 flex flex-col items-center text-center">
         <div className="mb-6">
-          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">
+          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
             <span className="text-purple-600">✦</span> Hidden Gem
           </h1>
           <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
@@ -91,7 +91,7 @@ export default function HomePage() {
         <h2 className="text-[13px] font-medium text-zinc-700 dark:text-zinc-300 mb-4">
           {showSearch
             ? `"${submittedQuery}" 검색 결과 ${searchGames.length}개`
-            : '오늘의 AI 추천'}
+            : `오늘의 AI 추천 · ${aiGames[0]?.match_reasons?.[0]?.replace('✓ ', '').replace(' 높음', ' 높은 게임').replace(/ \([^)]*\)/g, '') ?? '취향 분석 기반'}`}
         </h2>
         <GameGrid
           games={displayGames}
