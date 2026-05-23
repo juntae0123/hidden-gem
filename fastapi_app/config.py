@@ -9,6 +9,7 @@ Usage:
     print(settings.DATABASE_URL)
 """
 
+from typing import Optional
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
@@ -18,35 +19,54 @@ class Settings(BaseSettings):
     앱 전역 설정 클래스 (Application-wide Settings)
 
     .env 파일 또는 환경변수에서 자동으로 값을 주입받음.
-    pydantic-settings가 타입 변환 및 기본값 처리를 담당.
-
-    Attributes:
-        DB_HOST: PostgreSQL 호스트 (Docker 네트워크에서는 컨테이너명 사용)
-        GEM_POTENTIAL_SCALE: gem_potential 정규화 기준값 (CSV는 0~100, 내부 로직은 100 기준)
-        OPENAI_API_KEY: 시맨틱 검색용 임베딩 생성 API 키 / API key for semantic search embedding
+    Docker 환경에서는 REDIS_HOST=redis, 로컬에서는 REDIS_HOST=localhost.
     """
 
-    # ---- DB 연결 설정 (Docker hidden_gem_db 컨테이너) ----
+    # ==================== DB 연결 / Database ====================
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
     DB_USER: str = "juntae"
     DB_PASSWORD: str = "0312"
     DB_NAME: str = "hidden_gem_db"
 
-    # ---- 앱 기본 설정 ----
-    DEBUG: bool = False           # True 시 SQLAlchemy SQL 쿼리 로그 출력
-    API_V1_PREFIX: str = "/api/v1"  # 모든 게임 API 라우터의 접두사
+    # ==================== 앱 기본 / App Basic ====================
+    DEBUG: bool = False
+    API_V1_PREFIX: str = "/api/v1"
 
-    # ---- 추천 엔진 설정 ----
-    DEFAULT_RECOMMEND_COUNT: int = 5   # 기본 추천 개수
-    MAX_RECOMMEND_COUNT: int = 20      # API 요청 가능한 최대 추천 개수
-
-    # gem_potential 스케일 - CSV 원본은 0~100, 하이브리드 점수 계산 시 나눗값으로 사용
+    # ==================== 추천 엔진 / Recommender ====================
+    DEFAULT_RECOMMEND_COUNT: int = 5
+    MAX_RECOMMEND_COUNT: int = 20
     GEM_POTENTIAL_SCALE: float = 100.0
 
-    # ---- OpenAI 설정 (.env에서 주입, 코드에 키 값 절대 하드코딩 금지) ----
-    # OpenAI API key - injected from .env, never hardcode the actual key
-    OPENAI_API_KEY: str = ""  # 시맨틱 검색용 임베딩 생성 / For semantic search embedding
+    # ==================== OpenAI ====================
+    # .env에서 주입, 코드에 키 값 절대 하드코딩 금지
+    OPENAI_API_KEY: str = ""
+
+    # OpenAI 비용 가드 한도 / Cost Guard Limits
+    OPENAI_DAILY_LIMIT_USD: float = 50.0
+    OPENAI_DAILY_WARN_USD: float = 30.0
+    OPENAI_HOURLY_LIMIT_USD: float = 5.0
+    OPENAI_HOURLY_WARN_USD: float = 3.0
+
+    # ==================== Redis 캐시 / Redis Cache ====================
+    # Docker: REDIS_HOST=redis (컨테이너명), 로컬: REDIS_HOST=localhost
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_URL: str = ""  # 직접 지정 시 HOST+PORT 무시 / Overrides HOST+PORT if set
+
+    # 캐시 TTL (초) / Cache TTL in seconds
+    CACHE_TTL_SEMANTIC: int = 3600
+    CACHE_TTL_BY_GAME: int = 3600
+    CACHE_TTL_BY_PREFERENCE: int = 1800
+
+    # ==================== Rate Limiting ====================
+    RATE_LIMIT_SEARCH_ANON: str = "10/minute"
+    RATE_LIMIT_SEARCH_AUTH: str = "30/minute"
+    RATE_LIMIT_RECOMMEND_ANON: str = "20/minute"
+    RATE_LIMIT_DEFAULT: str = "60/minute"
+
+    # ==================== 알람 / Alerts ====================
+    DISCORD_WEBHOOK_URL: Optional[str] = None
 
     @property
     def DATABASE_URL(self) -> str:
@@ -56,10 +76,22 @@ class Settings(BaseSettings):
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         )
 
+    @property
+    def REDIS_CONNECTION_URL(self) -> str:
+        """
+        Redis 연결 URL 자동 조합 (Redis Connection URL)
+        REDIS_URL 직접 지정 시 그대로 사용.
+        없으면 REDIS_HOST + REDIS_PORT 조합.
+        Docker: redis://redis:6379, 로컬: redis://localhost:6379
+        """
+        if self.REDIS_URL:
+            return self.REDIS_URL
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}"
+
     class Config:
-        env_file = ".env"       # 프로젝트 루트의 .env 우선 적용
-        case_sensitive = True   # 환경변수명 대소문자 구분 (DB_HOST != db_host)
-        extra = "ignore"        # .env에 정의되지 않은 키는 무시
+        env_file = ".env"
+        case_sensitive = True
+        extra = "ignore"
 
 
 @lru_cache()
