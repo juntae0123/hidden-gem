@@ -1,28 +1,67 @@
 # django_core/apps/users/admin.py
-"""
-유저 관리자 설정 (User Admin Configuration)
-
-Django 기본 UserAdmin을 확장하여 Hidden Gem 전용 필드(nickname, steam_id)를
-관리자 페이지 수정 폼에 추가.
-"""
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser
+from .models import CustomUser, UserAction
 
 
 @admin.register(CustomUser)
 class CustomUserAdmin(UserAdmin):
-    """
-    커스텀 유저 관리자 (Custom User Admin)
+    list_display = [
+        'username',
+        'nickname',
+        'steam_id',
+        'total_searches',
+        'total_clicks',
+        'last_active_at',
+        'is_active',
+    ]
+    list_filter = ['is_active', 'is_staff', 'date_joined']
+    search_fields = ['username', 'nickname', 'steam_id', 'email']
 
-    기본 UserAdmin의 목록/폼에 서비스 전용 필드를 추가.
-    - list_display: 목록 페이지에 표시할 컬럼
-    - fieldsets: 수정 폼의 섹션 구성 (기존 섹션 + '추가 정보' 섹션)
-    """
-    # 목록 페이지 표시 컬럼 - username, 닉네임, 이메일, 관리자 여부
-    list_display = ['username', 'nickname', 'email', 'is_staff']
-
-    # 기존 UserAdmin fieldsets(계정 정보/권한 등)에 Hidden Gem 전용 필드 섹션 추가
     fieldsets = UserAdmin.fieldsets + (
-        ('추가 정보 (Hidden Gem)', {'fields': ('nickname', 'steam_id')}),
+        ('Hidden Gem 정보', {
+            'fields': (
+                'nickname',
+                'steam_id',
+                'total_searches',
+                'total_clicks',
+                'total_ratings',
+                'last_active_at',
+                'taste_dna_json',
+            )
+        }),
     )
+
+    readonly_fields = [
+        'total_searches',
+        'total_clicks',
+        'total_ratings',
+        'last_active_at',
+        'taste_dna_json',
+    ]
+
+
+@admin.register(UserAction)
+class UserActionAdmin(admin.ModelAdmin):
+    """
+    유저 행동 로그 관리자 (User Action Log Admin)
+    Phase 2에서 데이터 분석 시 여기서 확인.
+    """
+    list_display = [
+        'id',
+        'user',
+        'session_id',
+        'action_type',
+        'app_id',
+        'created_at',
+    ]
+    list_filter = ['action_type', 'created_at']
+    search_fields = ['session_id', 'user__username', 'app_id']
+    readonly_fields = ['created_at', 'context']
+
+    # 대량 데이터 대비 페이지네이션
+    list_per_page = 50
+
+    def has_add_permission(self, request):
+        # 관리자에서 직접 추가 불가 (FastAPI 엔드포인트로만 생성)
+        return False
