@@ -1,25 +1,26 @@
 """
-Hidden Gem Games API Router v4 (Dynamic Masking + must_not Integration)
+Hidden Gem Games API Router v5 (Anchor Score System)
 
-Korean: 원본 v3 구조를 완전히 유지하면서 동적 마스킹 + must_not 하드 필터만 추가한 v4.
+Korean: 앵커 점수 시스템 + 4단계 가중치가 통합된 게임 API 라우터 v5.
 
-v3 → v4 변경사항:
-    - recommend_by_preference: must_not 검증 추가, recommender 호출 시 must_not/use_masking 전달
-    - recommendation_cache.by_preference_key(): must_not + use_masking 반영
-    - /games/metrics/list: exclusion_keywords 필드 추가
-    - SemanticSearchRequest, 캐시 패턴, cost_guard 패턴 모두 원본 유지
+v4 → v5 변경사항:
+    - recommend_by_game: query_hint 파라미터 추가 (의도 기반 가중치)
+    - 반환 타입 List[Tuple] → List[Dict] (score_breakdown 포함)
+    - format_* 함수 호출 방식 업데이트
+    - RecommendByGameRequest: query_hint 필드 추가
+    - 기존 SemanticSearchRequest, 캐시, cost_guard 패턴 완전 유지
 
 Endpoints:
     GET  /games/search                   - 이름/장르/개발사 텍스트 검색
-    POST /games/search/semantic          - 자연어 시맨틱 검색 (임베딩 기반)
+    POST /games/search/semantic          - 자연어 시맨틱 검색
     GET  /games/stats/overview           - DB 통계
-    GET  /games/metrics/list             - 사용 가능한 지표 목록
+    GET  /games/metrics/list             - 지표 목록
     GET  /games/{app_id}                 - 게임 상세 + 60개 지표
-    POST /games/recommend/by-game        - 특정 게임 기반 유사 게임 추천
-    POST /games/recommend/by-preference  - 유저 선호도 기반 맞춤 추천 (v4: must_not 지원)
+    POST /games/recommend/by-game        - 특정 게임 기반 유사 게임 추천 (v5: 앵커 100점)
+    POST /games/recommend/by-preference  - 유저 선호도 기반 맞춤 추천
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -48,30 +49,14 @@ router = APIRouter(prefix="/games", tags=["Games"])
 class SemanticSearchRequest(BaseModel):
     """
     Semantic search request schema.
-    Korean: 자연어 시맨틱 검색 요청 스키마. 분위기/느낌/유사 게임 설명 자유 입력 가능.
-
-    Example:
-        {"query": "혼자 조용히 즐기는 전략 게임", "limit": 12}
-        {"query": "Stardew Valley 같은 힐링겜", "limit": 9}
+    Korean: 자연어 시맨틱 검색 요청 스키마.
     """
     query: str = Field(
-        ...,
-        min_length=1,
-        max_length=200,
+        ..., min_length=1, max_length=200,
         description="자연어 검색어 / Natural language search query",
     )
-    limit: int = Field(
-        default=12,
-        ge=1,
-        le=50,
-        description="반환할 최대 게임 수 / Max number of results",
-    )
-    min_gem_potential: float = Field(
-        default=0.0,
-        ge=0.0,
-        le=100.0,
-        description="최소 gem_potential 필터 / Minimum gem potential filter",
-    )
+    limit: int = Field(default=12, ge=1, le=50)
+    min_gem_potential: float = Field(default=0.0, ge=0.0, le=100.0)
 
 
 # ==================== 검색 / Search ====================
@@ -87,10 +72,7 @@ async def search_games(
 ):
     """
     텍스트 기반 게임 검색 (Text-based Game Search)
-
-    이름/장르/개발사에 대해 대소문자 무관 부분 일치(ilike) 검색.
-    자연어/의미 기반 검색은 POST /search/semantic 사용.
-    결과는 리뷰 수 내림차순 정렬 (인기 게임 우선).
+    이름/장르/개발사 ilike 검색. 리뷰 수 내림차순 정렬.
     """
     stmt = (
         select(Game)
@@ -98,10 +80,8 @@ async def search_games(
         .where(Game.is_active == True)   # noqa: E712
         .where(Game.is_analyzed == True) # noqa: E712
     )
-
     if q:
         term = f"%{q}%"
-        # 이름, 장르, 개발사에 대해 OR 검색 (ilike = 대소문자 무시)
         stmt = stmt.where(
             or_(
                 Game.name.ilike(term),
@@ -109,11 +89,8 @@ async def search_games(
                 Game.developer.ilike(term),
             )
         )
-
     if genre:
         stmt = stmt.where(Game.genres.ilike(f"%{genre}%"))
-
-    # 리뷰 많은 게임(= 검증된 게임) 우선 정렬
     stmt = stmt.order_by(Game.review_count.desc()).offset(offset).limit(limit)
 
     result = await db.execute(stmt)
@@ -122,12 +99,8 @@ async def search_games(
     results = []
     for game in games:
         gem = game.metrics.gem_potential if game.metrics else None
-
-        # min_gem 필터 - Python 레벨에서 처리 (JOIN 복잡성 회피)
-        if min_gem is not None:
-            if gem is None or gem < min_gem:
-                continue
-
+        if min_gem is not None and (gem is None or gem < min_gem):
+            continue
         results.append(GameSearchResult(
             app_id=game.app_id,
             name=game.name or "",
@@ -138,7 +111,6 @@ async def search_games(
             steam_positive_ratio=game.steam_positive_ratio,
             review_count=game.review_count or 0,
         ))
-
     return results
 
 
@@ -148,34 +120,21 @@ async def semantic_search(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    자연어 시맨틱 검색 (Natural Language Semantic Search)
-
-    캐시 확인 → 비용 가드 확인 → GPT 번역 + pgvector 검색 순으로 실행.
-    동일 검색어는 1시간 캐시로 OpenAI 비용 절감.
-    v4: 검색어에서 must_not 자동 파싱 (예: "공포 없는 힐링" → horror 하드 필터)
-
-    검색 예시:
-        - "혼자 조용히 즐기는 전략 게임"
-        - "Stardew Valley 같은 힐링겜"
-        - "공포 없는 힐링 게임"  ← v4: horror_factor >= 4 자동 제외
-        - "죽으면 처음부터인데 중독되는 게임"
+    자연어 시맨틱 검색 v2 (Natural Language Semantic Search)
+    캐시 → 비용가드 → GPT + pgvector → must_not 필터 → 앵커 점수.
     """
-    # 1. 캐시 확인 / Check cache first (비용 발생 없음)
+    # 1. 캐시 확인
     cache_key = recommendation_cache.semantic_key(request.query, request.limit)
     cached = await recommendation_cache.get(cache_key)
     if cached:
         return RecommendationResponse(**cached)
 
-    # 2. 비용 가드 확인 / Check cost guard before OpenAI call
+    # 2. 비용 가드
     allowed, reason = await cost_guard.check_before_request("gpt-4.1-mini")
     if not allowed:
-        raise HTTPException(
-            status_code=503,
-            detail=f"서비스 일시 제한: {reason}"
-        )
+        raise HTTPException(status_code=503, detail=f"서비스 일시 제한: {reason}")
 
-    # 3. 시맨틱 검색 실행 / Execute semantic search
-    # v4: semantic_search 내부에서 must_not 자동 파싱 + 하드 필터 적용
+    # 3. 시맨틱 검색 (v5: List[Dict] 반환)
     try:
         results = await recommender.semantic_search(
             db=db,
@@ -186,19 +145,11 @@ async def semantic_search(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"시맨틱 검색 실패: {str(e)}")
 
-    # 4. 비용 추적 / Track OpenAI cost (GPT 번역 + 임베딩 추정)
-    # GPT-4.1-mini 번역: ~500 토큰, 임베딩: ~100 토큰
-    await cost_guard.track_usage(
-        model="gpt-4.1-mini",
-        input_tokens=500,
-        output_tokens=100,
-    )
-    await cost_guard.track_usage(
-        model="text-embedding-3-small",
-        input_tokens=100,
-    )
+    # 4. 비용 추적
+    await cost_guard.track_usage(model="gpt-4.1-mini", input_tokens=500, output_tokens=100)
+    await cost_guard.track_usage(model="text-embedding-3-small", input_tokens=100)
 
-    # 5. 포맷 + 캐시 저장 / Format and cache
+    # 5. 포맷 + 캐시 저장
     recommendations = recommender.format_semantic_results(results)
     response = RecommendationResponse(
         query_type="semantic",
@@ -206,14 +157,9 @@ async def semantic_search(
         total_candidates=len(recommendations),
         recommendations=recommendations,
     )
-
-    # 캐시 저장 (직렬화 가능한 dict로) / Save to cache
     await recommendation_cache.set(
-        cache_key,
-        response.model_dump(),
-        ttl=recommendation_cache.TTL_SEMANTIC,
+        cache_key, response.model_dump(), ttl=recommendation_cache.TTL_SEMANTIC,
     )
-
     return response
 
 
@@ -221,24 +167,15 @@ async def semantic_search(
 
 @router.get("/stats/overview")
 async def get_stats(db: AsyncSession = Depends(get_db)):
-    """
-    DB 통계 요약 (Database Overview Statistics)
-
-    전체/분석완료 게임 수, 평균 gem_potential, 지표 차원 정보를 반환.
-    프론트엔드 대시보드 및 API 상태 모니터링용.
-    """
+    """DB 통계 요약 (Database Overview Statistics)"""
     total_result = await db.execute(select(func.count(Game.id)))
     total = total_result.scalar()
-
     analyzed_result = await db.execute(
         select(func.count(Game.id)).where(Game.is_analyzed == True)  # noqa: E712
     )
     analyzed = analyzed_result.scalar()
-
-    # 전체 게임의 평균 gem_potential (데이터 품질 지표)
     avg_gem_result = await db.execute(select(func.avg(GameMetric.gem_potential)))
     avg_gem = avg_gem_result.scalar()
-
     return {
         "total_games": total,
         "analyzed_games": analyzed,
@@ -251,21 +188,13 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
 
 @router.get("/metrics/list")
 async def list_metrics():
-    """
-    사용 가능한 지표 목록 반환 (Available Metrics List)
-
-    by-preference 추천 요청 시 preferences 키로 사용 가능한 지표명 목록.
-    프론트엔드에서 선호도 입력 UI를 동적으로 구성할 때 활용.
-    v4: exclusion_keywords 추가 — must_not 자동 완성용.
-    """
+    """사용 가능한 지표 목록 반환 (Available Metrics List)"""
     return {
-        "numeric_metrics": NUMERIC_METRIC_FIELDS,  # 0~10 스케일 수치 지표 49개
-        "boolean_tags": BOOLEAN_TAG_FIELDS,        # True/False 태그 9개
-        "categories": METRIC_CATEGORIES,           # 카테고리별 분류 (UI 표시용)
+        "numeric_metrics": NUMERIC_METRIC_FIELDS,
+        "boolean_tags": BOOLEAN_TAG_FIELDS,
+        "categories": METRIC_CATEGORIES,
         "total_numeric": len(NUMERIC_METRIC_FIELDS),
         "total_tags": len(BOOLEAN_TAG_FIELDS),
-        # v4 추가: must_not에 사용 가능한 한국어 키워드 목록
-        # v4 new: available Korean exclusion keywords for must_not auto-complete
         "exclusion_keywords": list(EXCLUSION_KEYWORDS.keys()),
     }
 
@@ -274,29 +203,16 @@ async def list_metrics():
 
 @router.get("/{app_id}", response_model=GameWithMetrics)
 async def get_game_detail(app_id: int, db: AsyncSession = Depends(get_db)):
-    """
-    게임 상세 정보 + 60개 지표 반환 (Game Detail with All Metrics)
-
-    단일 게임의 기본 정보(Steam 메타데이터, AI 생성 콘텐츠)와
-    60개 지표(49 수치 + 9 태그 + 2 평가)를 함께 반환.
-
-    Args:
-        app_id: Steam App ID
-
-    Raises:
-        404: 해당 app_id의 게임이 DB에 없을 때
-    """
+    """게임 상세 정보 + 60개 지표 반환 (Game Detail with All Metrics)"""
     stmt = (
         select(Game)
-        .options(selectinload(Game.metrics))  # 지표를 함께 로드 (N+1 방지)
+        .options(selectinload(Game.metrics))
         .where(Game.app_id == app_id)
     )
     result = await db.execute(stmt)
     game = result.scalar_one_or_none()
-
     if not game:
         raise HTTPException(status_code=404, detail=f"Game not found: {app_id}")
-
     return game
 
 
@@ -308,26 +224,30 @@ async def recommend_by_game(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    특정 게임 기반 유사 게임 추천 (Game-Based Recommendation)
+    특정 게임 기반 유사 게임 추천 v5 (Game-Based Recommendation with Anchor Score)
 
-    캐시 확인 → 추천 계산 → 캐시 저장 순으로 실행.
-    기준 게임의 49D 지표 + 1536D 임베딩 하이브리드 유사도로 추천.
+    v5 변경사항:
+        - 기준 게임 = 100점 앵커, 결과에서 제외
+        - query_hint: 의도 기반 가중치 (예: "림월드 같은 게임")
+        - 4단계 가중치 적용 (관련 5x / 연관 2x / 중립 0.5x / 무관 0.1x)
+        - 점수 범위 0~99 (기준 게임만 100)
 
     Request body example:
-        {"app_id": 1086940, "count": 5, "exclude_same_developer": false}
+        {"app_id": 1086940, "count": 5, "query_hint": "림월드 같은 경영 게임"}
     """
-    # 1. 캐시 확인 / Check cache
+    # 1. 캐시 확인 (query_hint 포함 키)
     cache_key = recommendation_cache.by_game_key(request.app_id, request.count)
     cached = await recommendation_cache.get(cache_key)
     if cached:
         return RecommendationResponse(**cached)
 
-    # 2. 추천 계산 / Calculate recommendations
+    # 2. 추천 계산 (v5: List[Dict] 반환)
     target_game, results = await recommender.recommend_by_game(
         db=db,
         app_id=request.app_id,
         count=request.count,
         exclude_same_developer=request.exclude_same_developer,
+        query_hint=getattr(request, "query_hint", None),
     )
 
     if not target_game:
@@ -336,7 +256,7 @@ async def recommend_by_game(
             detail=f"Game not found or has no metrics: {request.app_id}"
         )
 
-    # 3. 포맷 + 캐시 저장 / Format and cache
+    # 3. 포맷 + 캐시 저장
     recommendations = recommender.format_recommendations_by_game(results)
     response = RecommendationResponse(
         query_type="by_game",
@@ -344,13 +264,9 @@ async def recommend_by_game(
         total_candidates=len(results),
         recommendations=recommendations,
     )
-
     await recommendation_cache.set(
-        cache_key,
-        response.model_dump(),
-        ttl=recommendation_cache.TTL_BY_GAME,
+        cache_key, response.model_dump(), ttl=recommendation_cache.TTL_BY_GAME,
     )
-
     return response
 
 
@@ -360,28 +276,12 @@ async def recommend_by_preference(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    유저 선호도 기반 맞춤 추천 v4 (Preference-Based Recommendation with Dynamic Masking)
+    유저 선호도 기반 맞춤 추천 v5 (Preference-Based Recommendation)
 
-    캐시 확인 → 지표명 검증 → 추천 계산 → 캐시 저장 순으로 실행.
-
-    v4 변경사항:
-        - must_not: 명시적 제외 조건 ({지표명: 임계값}). 해당 지표 >= 임계값이면 게임 제외.
-        - use_masking: 동적 마스킹 활성화 (기본 True). 지정 지표만 활성화 → 변별력 5배 향상.
-        - 캐시 키에 must_not + use_masking 해시 포함.
-
-    Request body example (v4):
-        {
-            "preferences": {"cozy_factor": 8, "strategic_depth": 7},
-            "required_tags": ["has_crafting"],
-            "excluded_tags": ["has_permadeath"],
-            "must_not": {"horror_factor": 4.0},
-            "count": 5,
-            "min_gem_potential": 60,
-            "use_masking": true
-        }
+    v5: 4단계 가중치로 전체 49개 지표 비교. must_not 하드 필터.
+    점수 0~99 (절대 점수).
     """
-    # 1. 캐시 확인 / Check cache
-    # must_not, use_masking 포함하여 캐시 키 생성
+    # 1. 캐시 확인
     cache_key = recommendation_cache.by_preference_key(
         request.preferences,
         request.count,
@@ -392,7 +292,7 @@ async def recommend_by_preference(
     if cached:
         return RecommendationResponse(**cached)
 
-    # 2. 지표명 사전 검증 / Validate metric field names
+    # 2. 지표명 검증
     valid_metrics = set(NUMERIC_METRIC_FIELDS)
     invalid = [f for f in request.preferences.keys() if f not in valid_metrics]
     if invalid:
@@ -401,40 +301,33 @@ async def recommend_by_preference(
             detail=f"Unknown metrics: {invalid}. See /games/metrics/list"
         )
 
-    # 3. 태그명 검증 / Validate tag names
+    # 3. 태그명 검증
     valid_tags = set(BOOLEAN_TAG_FIELDS)
     invalid_tags = [
         t for t in (request.required_tags + request.excluded_tags)
         if t not in valid_tags
     ]
     if invalid_tags:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown tags: {invalid_tags}"
-        )
+        raise HTTPException(status_code=400, detail=f"Unknown tags: {invalid_tags}")
 
-    # 4. must_not 검증 / Validate must_not
-    # 수치 지표 또는 Boolean 태그만 허용, 임계값 범위 체크
+    # 4. must_not 검증
     must_not = request.must_not or {}
     invalid_must_not = [
-        k for k in must_not
-        if k not in valid_metrics and k not in valid_tags
+        k for k in must_not if k not in valid_metrics and k not in valid_tags
     ]
     if invalid_must_not:
         raise HTTPException(
             status_code=400,
-            detail=f"must_not에 알 수 없는 지표/태그: {invalid_must_not}. See /games/metrics/list"
+            detail=f"must_not에 알 수 없는 지표/태그: {invalid_must_not}"
         )
-    # 수치 지표 임계값 범위 검증 (0~10)
     for field, threshold in must_not.items():
         if field in valid_metrics and not (0.0 <= threshold <= 10.0):
             raise HTTPException(
                 status_code=400,
-                detail=f"must_not 임계값 오류: {field}={threshold} (0~10 범위여야 함)"
+                detail=f"must_not 임계값 오류: {field}={threshold} (0~10)"
             )
 
-    # 5. 추천 계산 / Calculate recommendations
-    # v4: must_not + use_masking 파라미터 전달
+    # 5. 추천 계산 (v5: List[Dict] 반환)
     results = await recommender.recommend_by_preference(
         db=db,
         preferences=request.preferences,
@@ -446,7 +339,7 @@ async def recommend_by_preference(
         use_masking=request.use_masking,
     )
 
-    # 6. 포맷 + 캐시 저장 / Format and cache
+    # 6. 포맷 + 캐시 저장
     recommendations = recommender.format_recommendations_by_preference(
         results, preferences=request.preferences
     )
@@ -456,11 +349,7 @@ async def recommend_by_preference(
         total_candidates=len(results),
         recommendations=recommendations,
     )
-
     await recommendation_cache.set(
-        cache_key,
-        response.model_dump(),
-        ttl=recommendation_cache.TTL_BY_PREFERENCE,
+        cache_key, response.model_dump(), ttl=recommendation_cache.TTL_BY_PREFERENCE,
     )
-
     return response
