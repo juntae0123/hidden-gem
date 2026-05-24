@@ -1,0 +1,14 @@
+# Hidden Gem - 개발/테스트 전용 패키지
+# 사용법: pip install -r requirements-dev.txt
+# 프로덕션 Docker 이미지에는 포함되지 않음
+
+-r requirements.txt
+
+# 테스트
+pytest==8.1.1
+pytest-asyncio==0.23.6
+pytest-mock==3.14.0
+
+# 코드 품질 (나중에 활성화)
+# black==24.3.0
+# ruff==0.3.4
