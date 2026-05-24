@@ -1,32 +1,30 @@
 /**
- * Ranking list component
- * 랭킹 리스트 컴포넌트
+ * Ranking list component.
+ * 랭킹 리스트 컴포넌트.
+ *
+ * v1 → v2:
+ *   - img → GameImage (next/image 최적화, AVIF/WebP 자동 변환)
+ *   - GemBadge size="sm" 명시
+ *   - 인라인 steamHeader 함수 제거 (GameImage가 처리)
  */
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { GemBadge } from '@/components/ui/GemBadge';
+import { GameImage } from '@/components/ui/GameImage';
 import type { RecommendedGame } from '@/types/game';
 
 interface RankingListProps {
   items: RecommendedGame[];
+  /** HOT 뱃지 표시할 순위 (기본 1~3위) */
   hotIndices?: number[];
   className?: string;
 }
 
 /**
- * Steam header URL helper
- * Steam 헤더 이미지 URL 생성
- */
-function steamHeader(appId: number, fallback?: string | null) {
-  return fallback || `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/header.jpg`;
-}
-
-/**
- * Single ranking row
- * 랭킹 한 줄 컴포넌트
+ * Single ranking row.
+ * 랭킹 한 줄 컴포넌트.
  */
 function RankingRow({
   game,
@@ -37,7 +35,12 @@ function RankingRow({
   rank: number;
   isHot: boolean;
 }) {
-  const [imgError, setImgError] = useState(false);
+  const genres = (game.genres ?? '')
+    .split(',')
+    .map((g) => g.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(' · ');
 
   return (
     <Link
@@ -49,59 +52,67 @@ function RankingRow({
         'transition-colors'
       )}
     >
-      {/* 순위 / Rank number */}
-      <span className={cn(
-        'w-8 text-center font-mono text-[13px] flex-shrink-0',
-        rank <= 3 ? 'text-purple-600 font-semibold' : 'text-zinc-500'
-      )}>
+      {/* 순위 */}
+      <span
+        className={cn(
+          'w-8 text-center font-mono text-[13px] flex-shrink-0',
+          rank <= 3
+            ? 'text-purple-600 font-semibold'
+            : 'text-zinc-500'
+        )}
+      >
         {String(rank).padStart(2, '0')}
       </span>
 
-      {/* 썸네일 / Thumbnail */}
+      {/* 썸네일 — GameImage 사용 */}
       <div className="w-16 h-9 rounded overflow-hidden bg-zinc-100 dark:bg-zinc-800 flex-shrink-0">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={imgError ? '/placeholder-game.png' : steamHeader(game.app_id, game.header_image)}
-          alt={game.name}
-          onError={() => setImgError(true)}
-          className="w-full h-full object-cover"
-          loading="lazy"
+        <GameImage
+          appId={game.app_id}
+          name={game.name}
+          fallback={game.header_image}
+          size="thumbnail"
         />
       </div>
 
-      {/* 게임 정보 / Game info */}
+      {/* 게임 정보 */}
       <div className="flex-1 min-w-0">
         <div className="text-[13px] font-medium text-zinc-900 dark:text-zinc-100 truncate">
           {game.name}
         </div>
-        <div className="text-[11px] text-zinc-500 truncate">
-          {(game.genres ?? '').split(',').map(g => g.trim()).filter(Boolean).slice(0, 3).join(' · ')}
-        </div>
+        <div className="text-[11px] text-zinc-500 truncate">{genres}</div>
       </div>
 
-      {/* HOT 뱃지 / HOT badge */}
+      {/* HOT 뱃지 */}
       {isHot && (
-        <span className={cn(
-          'px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0',
-          'bg-orange-500/10 text-orange-700 dark:text-orange-400'
-        )}>
+        <span
+          className={cn(
+            'px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0',
+            'bg-orange-500/10 text-orange-700 dark:text-orange-400'
+          )}
+        >
           HOT
         </span>
       )}
 
-      {/* gem 점수 / Gem score */}
-      <GemBadge score={game.gem_potential ?? 0} showAlways />
+      {/* gem 점수 */}
+      <GemBadge score={game.gem_potential ?? 0} showAlways size="sm" />
     </Link>
   );
 }
 
 /**
- * Ranking list sorted by gem_potential descending
- * gem_potential 기준 내림차순 정렬된 랭킹 리스트
+ * Ranking list sorted by gem_potential descending.
+ * gem_potential 기준 내림차순 정렬된 랭킹 리스트.
  */
-export function RankingList({ items, hotIndices = [1, 2, 3], className }: RankingListProps) {
-  // gem_potential 기준 내림차순 정렬 / Sort by gem_potential descending
-  const sorted = [...items].sort((a, b) => (b.gem_potential ?? 0) - (a.gem_potential ?? 0));
+export function RankingList({
+  items,
+  hotIndices = [1, 2, 3],
+  className,
+}: RankingListProps) {
+  // gem_potential 기준 내림차순 정렬
+  const sorted = [...items].sort(
+    (a, b) => (b.gem_potential ?? 0) - (a.gem_potential ?? 0)
+  );
 
   return (
     <div

@@ -1,73 +1,93 @@
 /**
- * Home page
- * 메인 페이지 - 검색바 + AI 추천 그리드
+ * Home page — semantic search + AI recommendations.
+ * 메인 페이지 — 시맨틱 검색 + AI 추천.
+ *
+ * v1 → v2:
+ *   - useEffect+mutation → useDefaultRecommendations (useQuery, 30분 캐싱)
+ *   - URL 기반 검색 (useSearchParams — 뒤로가기/공유 가능)
+ *   - 에러 → ErrorState (재시도 버튼)
+ *   - 로딩 → GameGridSkeleton (Spinner → Skeleton)
+ *   - match_reasons 파싱 버그 수정
  */
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useState, useTransition } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
+
 import { SearchBar } from '@/components/ui/SearchBar';
 import { GameGrid } from '@/components/game/GameGrid';
-import { useRecommendByPreference } from '@/hooks/useRecommend';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { GameGridSkeleton } from '@/components/ui/LoadingSkeleton';
+import { useDefaultRecommendations } from '@/hooks/useRecommend';
 import { semanticSearchGames } from '@/lib/api';
-import type { RecommendedGame } from '@/types/game';
-
-// 초기 AI 추천용 기본 선호도 벡터 / Default preference vector for cold start
-const DEFAULT_PREFS: Record<string, number> = {
-  narrative_depth: 8,
-  lore_richness: 7,
-  art_style_uniqueness: 7,
-  replay_value: 6,
-  exploration_reward: 7,
-  soundtrack_impact: 7,
-};
 
 /**
- * Home page component
- * 메인 페이지 - 자연어 시맨틱 검색 + AI 초기 추천
+ * Extract human-readable label from first match reason.
+ * 첫 번째 match_reason에서 사람이 읽기 좋은 라벨 추출.
+ *
+ * v5 포맷: "✓ 서사깊이 높음 (9.0)" → "서사깊이 높은 게임"
  */
-export default function HomePage() {
-  const [query, setQuery] = useState('');
-  const [submittedQuery, setSubmittedQuery] = useState('');
-  const recommendMutation = useRecommendByPreference();
-  const [aiGames, setAiGames] = useState<RecommendedGame[]>([]);
+function extractReasonLabel(reasons: string[] | undefined): string {
+  if (!reasons?.length) return '취향 분석 기반';
+  const match = reasons[0].match(/^✓\s*([^()]+?)\s*(높음|낮음|적절)?\s*\([^)]*\)$/);
+  if (!match) return '취향 분석 기반';
+  const [, metric, level] = match;
+  const suffix = level === '높음' ? '높은' : level === '낮음' ? '낮은' : '균형 잡힌';
+  return `${metric.trim()} ${suffix} 게임`;
+}
 
-  // 시맨틱 검색 쿼리 / Semantic search query
+export default function HomePage() {
+  const router        = useRouter();
+  const searchParams  = useSearchParams();
+  const [isPending, startTransition] = useTransition();
+
+  // URL을 진실의 원천으로 / URL as source of truth
+  const submittedQuery = searchParams.get('q') ?? '';
+  const [inputValue, setInputValue] = useState(submittedQuery);
+
+  // ==================== 시맨틱 검색 ====================
   const {
-    data: searchResult,
+    data:    searchResult,
     isLoading: searching,
-    isFetching,
+    error:   searchError,
+    refetch: refetchSearch,
   } = useQuery({
     queryKey: ['semantic-search', submittedQuery],
-    queryFn: () => semanticSearchGames(submittedQuery, 12),
-    enabled: submittedQuery.trim().length > 0,
-    staleTime: 1000 * 60 * 2,
+    queryFn:  () => semanticSearchGames(submittedQuery, 12),
+    enabled:  submittedQuery.trim().length > 0,
+    staleTime: 1000 * 60 * 5,
+    gcTime:    1000 * 60 * 30,
+    retry: 1,
   });
 
-  // 초기 AI 추천 로드 / Load initial AI recommendations on mount
-  useEffect(() => {
-    recommendMutation.mutate(
-      { preferences: DEFAULT_PREFS, count: 9 },
-      { onSuccess: (res) => setAiGames(res.recommendations ?? []) }
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // ==================== 기본 AI 추천 ====================
+  const {
+    data:    aiResult,
+    isLoading: aiLoading,
+    error:   aiError,
+    refetch: refetchAI,
+  } = useDefaultRecommendations(9);
 
-  // 검색 제출 핸들러 / Handle search submit
+  // ==================== 핸들러 ====================
   const handleSubmit = (value: string) => {
-    if (value.trim()) {
-      setSubmittedQuery(value.trim());
-    }
+    const trimmed = value.trim();
+    startTransition(() => {
+      router.push(trimmed ? `/?q=${encodeURIComponent(trimmed)}` : '/');
+    });
   };
 
-  const showSearch = submittedQuery.trim().length > 0;
-  const searchGames = searchResult?.recommendations ?? [];
+  // ==================== 상태 분기 ====================
+  const showSearch   = submittedQuery.trim().length > 0;
+  const searchGames  = searchResult?.recommendations ?? [];
+  const aiGames      = aiResult?.recommendations ?? [];
   const displayGames = showSearch ? searchGames : aiGames;
-  const isLoading = showSearch ? (searching || isFetching) : recommendMutation.isPending;
+  const isLoading    = showSearch ? (searching || isPending) : aiLoading;
+  const currentError = showSearch ? searchError : aiError;
 
   return (
     <div className="flex flex-col gap-12">
-      {/* Hero / 검색 영역 */}
+      {/* Hero + 검색 */}
       <section className="pt-8 pb-2 flex flex-col items-center text-center">
         <div className="mb-6">
           <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
@@ -78,28 +98,41 @@ export default function HomePage() {
           </p>
         </div>
         <div className="w-full max-w-2xl">
-          <SearchBar
-            value={query}
-            onChange={setQuery}
-            onSubmit={handleSubmit}
-          />
+          <SearchBar value={inputValue} onChange={setInputValue} onSubmit={handleSubmit} />
         </div>
       </section>
 
-      {/* 결과 그리드 / Results grid */}
+      {/* 결과 */}
       <section>
         <h2 className="text-[13px] font-medium text-zinc-700 dark:text-zinc-300 mb-4">
           {showSearch
             ? `"${submittedQuery}" 검색 결과 ${searchGames.length}개`
-            : `오늘의 AI 추천 · ${aiGames[0]?.match_reasons?.[0]?.replace('✓ ', '').replace(' 높음', ' 높은 게임').replace(/ \([^)]*\)/g, '') ?? '취향 분석 기반'}`}
+            : `오늘의 AI 추천 · ${extractReasonLabel(aiGames[0]?.match_reasons)}`}
         </h2>
-        <GameGrid
-          games={displayGames}
-          loading={isLoading}
-          emptyMessage={
-            showSearch ? '검색 결과가 없어요. 다른 표현으로 검색해보세요.' : '추천을 불러올 수 없어요.'
-          }
-        />
+
+        {currentError && (
+          <ErrorState
+            error={currentError as Error}
+            onRetry={() => showSearch ? refetchSearch() : refetchAI()}
+            variant="page"
+          />
+        )}
+
+        {isLoading && !currentError && <GameGridSkeleton count={9} />}
+
+        {!isLoading && !currentError && displayGames.length === 0 && (
+          <ErrorState
+            type="not-found"
+            variant="page"
+            title={showSearch ? '검색 결과가 없어요' : '추천을 불러올 수 없어요'}
+            description={showSearch ? '다른 표현으로 검색해보세요' : '잠시 후 다시 시도해주세요'}
+            onRetry={showSearch ? undefined : () => refetchAI()}
+          />
+        )}
+
+        {!isLoading && !currentError && displayGames.length > 0 && (
+          <GameGrid games={displayGames} />
+        )}
       </section>
     </div>
   );
