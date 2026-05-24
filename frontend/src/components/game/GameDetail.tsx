@@ -1,95 +1,90 @@
 /**
- * Game detail panel
- * 게임 상세 정보 패널
+ * Game detail panel.
+ * 게임 상세 정보 패널.
+ *
+ * v1 → v2:
+ *   - img → GameImage
+ *   - LoadingSpinner → GameDetailSkeleton
+ *   - 에러 → ErrorState (재시도 버튼 포함)
+ *   - getTopMetrics → getDistinctiveMetrics (편차 기반)
+ *   - 지표 카테고리 표시 (높음/낮음 뱃지)
  */
 'use client';
 
-import { useState } from 'react';
 import { ExternalLink, Heart } from 'lucide-react';
 import { useGameDetail } from '@/hooks/useGames';
 import { useUserStore } from '@/store/useUserStore';
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { GameDetailSkeleton } from '@/components/ui/LoadingSkeleton';
+import { GameImage } from '@/components/ui/GameImage';
 import { RadarChart } from '@/components/ui/RadarChart';
-import { getTopMetrics, METRIC_LABELS, cn, toPercent } from '@/lib/utils';
+import { getDistinctiveMetrics, METRIC_LABELS, cn } from '@/lib/utils';
 
 interface GameDetailProps {
   appId: number;
 }
 
-/**
- * Build Steam header URL
- * Steam 헤더 이미지 URL 생성
- */
-function steamHeader(appId: number, fallback?: string | null) {
-  return fallback || `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/header.jpg`;
-}
-
-/**
- * Detailed game view with radar chart and metrics bar list
- * 레이더 차트와 지표 바 리스트가 포함된 게임 상세 뷰
- */
 export function GameDetail({ appId }: GameDetailProps) {
-  const { data: game, isLoading, error } = useGameDetail(appId);
-  const favorites = useUserStore((s) => s.favorites);
-  const toggleFavorite = useUserStore((s) => s.toggleFavorite);
-  const [imgError, setImgError] = useState(false);
+  const { data: game, isLoading, error, refetch } = useGameDetail(appId);
+  const favorites      = useUserStore(s => s.favorites);
+  const toggleFavorite = useUserStore(s => s.toggleFavorite);
 
-  if (isLoading) {
+  if (isLoading) return <GameDetailSkeleton />;
+
+  if (error) {
     return (
-      <div className="py-20">
-        <LoadingSpinner label="게임 정보 로딩 중..." />
-      </div>
+      <ErrorState
+        error={error as Error}
+        onRetry={() => refetch()}
+        variant="page"
+      />
     );
   }
 
-  if (error || !game) {
+  if (!game) {
     return (
-      <div className="py-20 text-center text-sm text-zinc-500">
-        게임 정보를 불러올 수 없어요.
-      </div>
+      <ErrorState
+        type="not-found"
+        title="게임 정보가 없어요"
+        variant="page"
+      />
     );
   }
 
   const isFav = favorites.includes(appId);
-  const topMetrics = getTopMetrics((game.metrics as unknown as Record<string, number | boolean | null>) ?? {}, 6);
-  const radarData = topMetrics.map(({ key, value }) => ({ metric: key, value }));
+
+  // 편차 기반 특징적 지표 6개
+  const distinctiveMetrics = getDistinctiveMetrics(
+    game.metrics as unknown as Record<string, number | boolean | null>,
+    6
+  );
+  const radarData = distinctiveMetrics.map(({ key, value }) => ({ metric: key, value }));
+
+  const genres = game.genres?.split(',').map(g => g.trim()).filter(Boolean) ?? [];
 
   return (
     <article className="w-full">
-      {/* 헤더 영역 / Hero */}
+      {/* Hero */}
       <div className="w-full rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
         <div className="relative w-full aspect-[460/215] bg-zinc-200 dark:bg-zinc-800">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={imgError ? '/placeholder-game.png' : steamHeader(appId, game.header_image)}
-            alt={game.name}
-            onError={() => setImgError(true)}
-            className="w-full h-full object-cover"
-          />
+          <GameImage appId={appId} name={game.name} fallback={game.header_image} size="hero" priority />
         </div>
 
         <div className="p-6 flex flex-col md:flex-row md:items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
-              {game.name}
-            </h1>
+            <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">{game.name}</h1>
             {game.one_line_summary && (
-              <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">
-                {game.one_line_summary}
-              </p>
+              <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">{game.one_line_summary}</p>
             )}
             {game.marketing_hook && (
               <p className="mt-3 text-sm text-purple-700 dark:text-purple-300 italic">
                 &ldquo;{game.marketing_hook}&rdquo;
               </p>
             )}
-            {game.genres && (
+            {genres.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-1.5">
-                {game.genres.split(',').map(g => g.trim()).filter(Boolean).map((g) => (
-                  <span
-                    key={g}
-                    className="px-2 py-0.5 rounded text-[11px] bg-purple-600/10 text-purple-700 dark:text-purple-300"
-                  >
+                {genres.map(g => (
+                  <span key={g} className="px-2 py-0.5 rounded text-[11px] bg-purple-600/10 text-purple-700 dark:text-purple-300">
                     {g}
                   </span>
                 ))}
@@ -97,7 +92,6 @@ export function GameDetail({ appId }: GameDetailProps) {
             )}
           </div>
 
-          {/* 액션 버튼 / Actions */}
           <div className="flex items-center gap-2 flex-shrink-0">
             <a
               href={`https://store.steampowered.com/app/${appId}`}
@@ -105,8 +99,7 @@ export function GameDetail({ appId }: GameDetailProps) {
               rel="noreferrer noopener"
               className={cn(
                 'inline-flex items-center gap-1.5 px-4 py-2 rounded-md',
-                'bg-purple-600 text-white text-[12px] font-medium',
-                'hover:bg-purple-700 transition-colors'
+                'bg-purple-600 text-white text-[12px] font-medium hover:bg-purple-700 transition-colors'
               )}
             >
               <ExternalLink className="w-3.5 h-3.5" />
@@ -116,8 +109,7 @@ export function GameDetail({ appId }: GameDetailProps) {
               type="button"
               onClick={() => toggleFavorite(appId)}
               className={cn(
-                'inline-flex items-center gap-1.5 px-3 py-2 rounded-md',
-                'border text-[12px]',
+                'inline-flex items-center gap-1.5 px-3 py-2 rounded-md border text-[12px]',
                 isFav
                   ? 'border-purple-500 text-purple-600 bg-purple-50 dark:bg-purple-950/20'
                   : 'border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300'
@@ -130,35 +122,45 @@ export function GameDetail({ appId }: GameDetailProps) {
         </div>
       </div>
 
-      {/* 레이더 + 지표 / Radar + metric bars */}
+      {/* 레이더 + 지표 */}
       <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-8">
         <div className="flex flex-col items-center justify-center bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6">
-          <h3 className="text-[12px] font-medium text-zinc-500 dark:text-zinc-400 mb-2 self-start">
-            상위 6개 지표
-          </h3>
+          <div className="self-start mb-1">
+            <h3 className="text-[12px] font-medium text-zinc-500 dark:text-zinc-400">가장 특징적인 지표</h3>
+            <p className="text-[10px] text-zinc-400">평균(5점)에서 가장 멀리 떨어진 지표</p>
+          </div>
           <RadarChart data={radarData} size={300} />
         </div>
 
         <div className="flex flex-col gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6">
-          <h3 className="text-[12px] font-medium text-zinc-500 dark:text-zinc-400 mb-1">
-            세부 지표
-          </h3>
-          {topMetrics.map(({ key: metric, value }) => {
-            const norm = value <= 1 ? value : value / 10;
-            const pct = Math.max(0, Math.min(100, norm * 100));
+          <h3 className="text-[12px] font-medium text-zinc-500 dark:text-zinc-400 mb-1">세부 지표</h3>
+          {distinctiveMetrics.map(({ key, value, category }) => {
+            const pct = Math.max(0, Math.min(100, (value / 10) * 100));
             return (
-              <div key={metric}>
+              <div key={key}>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[12px] text-zinc-700 dark:text-zinc-300">
-                    {METRIC_LABELS[metric] || metric}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[12px] text-zinc-700 dark:text-zinc-300">
+                      {METRIC_LABELS[key] || key}
+                    </span>
+                    {category === 'high' && (
+                      <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300">높음</span>
+                    )}
+                    {category === 'low' && (
+                      <span className="text-[9px] px-1 rounded bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">낮음</span>
+                    )}
+                  </div>
                   <span className="text-[11px] font-mono text-purple-600 dark:text-purple-400">
                     {value.toFixed(0)} / 10
                   </span>
                 </div>
                 <div className="w-full h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-purple-600 dark:bg-purple-500 rounded-full transition-all duration-500"
+                    className={cn(
+                      'h-full rounded-full transition-all duration-500',
+                      category === 'high'   ? 'bg-purple-600' :
+                      category === 'low'    ? 'bg-blue-500'   : 'bg-zinc-400'
+                    )}
                     style={{ width: `${pct}%` }}
                   />
                 </div>
