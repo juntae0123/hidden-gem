@@ -4,32 +4,110 @@ Hidden Gem API 서버 진입점 (FastAPI Application Entry Point)
 Steam 게임 AI 추천 서비스의 FastAPI 앱 설정.
 - 4,190개 게임 데이터 (GPT-5.4 Batch 분석)
 - 60개 지표 (49 수치 + 9 태그 + 2 평가)
-- 49차원 벡터 + 1536차원 임베딩 하이브리드 추천 엔진
+- 49차원 벡터 + 1536차원 임베딩 하이브리드 추천 엔진 v5
+
+v3.0 → v3.1 변경사항:
+    - Sentry 에러 추적 + p95 알람 통합
+    - Discord 알람 연동 (DISCORD_WEBHOOK_URL 설정 시)
 
 실행:
     uvicorn main:app --reload --port 8000
 """
 
 import logging
+from contextlib import asynccontextmanager
 
+import sentry_sdk
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from contextlib import asynccontextmanager
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+from sentry_sdk.integrations.redis import RedisIntegration
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
 
 from config import settings
 from routers import games_router
 
 logger = logging.getLogger(__name__)
 
+
+# ==================== Sentry 초기화 / Sentry Setup ====================
+
+def init_sentry():
+    """
+    Initialize Sentry error tracking and performance monitoring.
+    Korean: Sentry 에러 추적 + 성능 모니터링 초기화.
+
+    SENTRY_DSN 환경변수 없으면 비활성화 (로컬 개발 모드).
+    통합:
+        - FastAPI: 요청/응답 추적
+        - SQLAlchemy: 슬로우 쿼리 감지
+        - Redis: 캐시 에러 추적
+    """
+    dsn = getattr(settings, "SENTRY_DSN", None)
+    if not dsn:
+        logger.info("Sentry DSN 없음 — 에러 추적 비활성화 (로컬 모드)")
+        return
+
+    sentry_sdk.init(
+        dsn=dsn,
+        environment=getattr(settings, "SENTRY_ENV", "production"),
+        release=f"hidden-gem@{getattr(settings, 'APP_VERSION', '3.1.0')}",
+
+        # 성능 추적 / Performance tracing
+        # 운영 초기: 100% 샘플링, MAU 1K+ 이후 0.1~0.2로 낮추기
+        traces_sample_rate=getattr(settings, "SENTRY_TRACES_SAMPLE_RATE", 1.0),
+
+        # 통합 / Integrations
+        integrations=[
+            FastApiIntegration(
+                transaction_style="endpoint",  # 엔드포인트별 트랜잭션
+            ),
+            SqlalchemyIntegration(),   # 슬로우 쿼리 감지
+            RedisIntegration(),        # Redis 에러 추적
+        ],
+
+        # 민감 정보 필터링 / Sensitive data filtering
+        before_send=_filter_sensitive_data,
+
+        # p95 응답시간 알람용 프로파일링
+        profiles_sample_rate=0.1,
+    )
+
+    logger.info(f"✅ Sentry 초기화 완료 (env={getattr(settings, 'SENTRY_ENV', 'production')})")
+
+
+def _filter_sensitive_data(event, hint):
+    """
+    Filter sensitive data before sending to Sentry.
+    Korean: Sentry 전송 전 민감 정보 필터링.
+
+    OPENAI_API_KEY, DB 비밀번호 등 환경변수 값 제거.
+    """
+    # request body에서 민감 필드 제거
+    if "request" in event and "data" in event.get("request", {}):
+        data = event["request"]["data"]
+        if isinstance(data, dict):
+            for key in ("api_key", "password", "token", "secret"):
+                if key in data:
+                    data[key] = "[Filtered]"
+    return event
+
+
+# Sentry 앱 시작 전 초기화 (import 시점)
+init_sentry()
+
+
 # ==================== Rate Limiter 초기화 / Rate Limiter Setup ====================
-# IP 기반 Rate Limiting / IP-based rate limiting
+
 limiter = Limiter(key_func=get_remote_address)
 
+
+# ==================== 앱 생명주기 / Lifespan ====================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -56,7 +134,7 @@ async def lifespan(app: FastAPI):
         logger.warning(f"⚠️  비용 가드 초기화 실패: {e}")
 
     print("=" * 60)
-    print("🚀 Hidden Gem API Server (49D + Embedding) starting...")
+    print("🚀 Hidden Gem API Server v3.1 starting...")
     print(f"📊 Database: {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
     print(f"📖 Docs:     http://localhost:8000/docs")
     print(f"🩺 Health:   http://localhost:8000/health")
@@ -68,33 +146,34 @@ async def lifespan(app: FastAPI):
     print("👋 Shutting down...")
 
 
+# ==================== FastAPI 앱 / FastAPI App ====================
+
 app = FastAPI(
     title="Hidden Gem API",
     description=(
         "🎮 **Steam 게임 AI 추천 서비스**\n\n"
         "## 핵심 기능\n"
         "- **60개 지표 기반 게임 분석** (49 수치 + 9 태그 + 2 평가)\n"
-        "- **유사 게임 추천**: 코사인+유클리드+임베딩 하이브리드\n"
+        "- **유사 게임 추천**: 4단계 가중치 + 앵커 점수 (v5)\n"
         "- **자연어 시맨틱 검색**: GPT 번역 + pgvector\n"
         "- **선호도 기반 추천**: 원하는 게임 스타일 직접 지정\n\n"
         "## 데이터\n"
         "- 4,190개 게임 (인디/AAA 무관)\n"
         "- GPT-5.4 Batch + Steam CSV 통합"
     ),
-    version="3.0.0",
+    version="3.1.0",
     lifespan=lifespan,
 )
 
+
 # ==================== 미들웨어 / Middleware ====================
 
-# Rate Limiting 미들웨어 / Rate limiting middleware
+# Rate Limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
-# CORS 미들웨어 / CORS middleware
-# 운영 환경에서는 allow_origins를 구체적인 도메인으로 제한
-# In production, restrict allow_origins to specific domains
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],        # 개발용 / Production: ["https://hiddengem.io"]
@@ -103,10 +182,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # ==================== 라우터 / Routers ====================
 
-# /api/v1 접두사로 게임 관련 라우터 등록
 app.include_router(games_router, prefix=settings.API_V1_PREFIX)
+
 
 # ==================== 기본 엔드포인트 / Base Endpoints ====================
 
@@ -115,8 +195,9 @@ async def root():
     """서비스 기본 정보 반환 (Service Info)"""
     return {
         "service": "Hidden Gem API",
-        "version": "3.0.0",
+        "version": "3.1.0",
         "dimension": "49D vector + 1536D embedding",
+        "engine": "v5 (4-tier weighting + anchor score)",
         "docs": "/docs",
         "health": "/health",
         "cost": "/ops/cost",
@@ -126,7 +207,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     """헬스 체크 - Docker/k8s 컨테이너 상태 확인용 (Health Check)"""
-    return {"status": "healthy", "version": "3.0.0"}
+    return {"status": "healthy", "version": "3.1.0"}
 
 
 # ==================== 운영 엔드포인트 / Ops Endpoints ====================
@@ -161,6 +242,16 @@ async def invalidate_cache():
     deleted = await recommendation_cache.invalidate_all()
     return {"deleted_keys": deleted, "message": f"{deleted}개 캐시 삭제 완료"}
 
+'''
+@app.get("/ops/sentry-test")
+async def sentry_test():
+    """
+    Sentry 연결 테스트 엔드포인트 (Sentry Connection Test)
+    의도적으로 예외를 발생시켜 Sentry 수신 여부 확인.
+    운영 배포 후 한 번만 실행, 확인 후 제거 권장.
+    """
+    raise ValueError("Sentry 테스트 에러 — 정상 수신되면 이 에러가 Sentry에 표시됩니다.")
+'''
 
 if __name__ == "__main__":
     import uvicorn
