@@ -11,6 +11,8 @@
 *.jsonl
 /data/*
 !/data/.gitkeep
+backups/
+*.sql.gz
 
 # 3. 주피터 노트북 찌꺼기 파일 (이거 안 넣으면 커밋 내역이 엄청 지저분해집니다)
 # 📓 프로젝트 명세서 노트북만 단독 제외
@@ -35,3 +37,4 @@ node_modules/
 .venv/
 __pycache__/backups/
 *.sql.gz
+
