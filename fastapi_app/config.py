@@ -39,22 +39,17 @@ class Settings(BaseSettings):
     GEM_POTENTIAL_SCALE: float = 100.0
 
     # ==================== OpenAI ====================
-    # .env에서 주입, 코드에 키 값 절대 하드코딩 금지
     OPENAI_API_KEY: str = ""
-
-    # OpenAI 비용 가드 한도 / Cost Guard Limits
     OPENAI_DAILY_LIMIT_USD: float = 50.0
     OPENAI_DAILY_WARN_USD: float = 30.0
     OPENAI_HOURLY_LIMIT_USD: float = 5.0
     OPENAI_HOURLY_WARN_USD: float = 3.0
 
     # ==================== Redis 캐시 / Redis Cache ====================
-    # Docker: REDIS_HOST=redis (컨테이너명), 로컬: REDIS_HOST=localhost
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
-    REDIS_URL: str = ""  # 직접 지정 시 HOST+PORT 무시 / Overrides HOST+PORT if set
+    REDIS_URL: str = ""
 
-    # 캐시 TTL (초) / Cache TTL in seconds
     CACHE_TTL_SEMANTIC: int = 3600
     CACHE_TTL_BY_GAME: int = 3600
     CACHE_TTL_BY_PREFERENCE: int = 1800
@@ -67,6 +62,12 @@ class Settings(BaseSettings):
 
     # ==================== 알람 / Alerts ====================
     DISCORD_WEBHOOK_URL: Optional[str] = None
+
+    # ==================== Sentry ====================
+    SENTRY_DSN: str = ""                    # .env에서 주입, 없으면 비활성화
+    SENTRY_ENV: str = "development"         # development / production
+    SENTRY_TRACES_SAMPLE_RATE: float = 1.0  # 초기 100%, MAU 1K+ 이후 낮추기
+    APP_VERSION: str = "3.1.0"
 
     @property
     def DATABASE_URL(self) -> str:
@@ -82,7 +83,6 @@ class Settings(BaseSettings):
         Redis 연결 URL 자동 조합 (Redis Connection URL)
         REDIS_URL 직접 지정 시 그대로 사용.
         없으면 REDIS_HOST + REDIS_PORT 조합.
-        Docker: redis://redis:6379, 로컬: redis://localhost:6379
         """
         if self.REDIS_URL:
             return self.REDIS_URL
@@ -105,5 +105,4 @@ def get_settings() -> Settings:
     return Settings()
 
 
-# 앱 전역에서 임포트해 사용하는 단일 설정 객체
 settings = get_settings()

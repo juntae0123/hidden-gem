@@ -13,3 +13,4 @@ openai
 pgvector
 scikit-learn
 scipy
+sentry-sdk[fastapi]==2.8.0
