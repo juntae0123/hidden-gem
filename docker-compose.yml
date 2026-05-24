@@ -95,6 +95,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - SENTRY_DSN=${SENTRY_DSN}
       - SENTRY_ENV=${SENTRY_ENV:-development}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
     ports:
       - "8000:8000"
     depends_on:
