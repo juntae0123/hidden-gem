@@ -1,10 +1,8 @@
-/**
- * Home page — semantic search + AI recommendations.
- * 메인 페이지 — 시맨틱 검색 + AI 추천.
- */
+// src/app/page.tsx
+
 'use client';
 
-import { useState, useTransition, Suspense } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 
@@ -12,30 +10,15 @@ import { SearchBar } from '@/components/ui/SearchBar';
 import { GameGrid } from '@/components/game/GameGrid';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { GameGridSkeleton } from '@/components/ui/LoadingSkeleton';
-import { useDefaultRecommendations } from '@/hooks/useRecommend';
-import { semanticSearchGames } from '@/lib/api';
+import { useDefaultRecommendations, DEFAULT_THEME_LABEL } from '@/hooks/useRecommend';
+import { semanticSearchGames, recordTasteAction } from '@/lib/api';
+import { useUserStore } from '@/store/useUserStore';
 
-/**
- * Extract human-readable label from first match reason.
- * 첫 번째 match_reason에서 사람이 읽기 좋은 라벨 추출.
- */
-function extractReasonLabel(reasons: string[] | undefined): string {
-  if (!reasons?.length) return '취향 분석 기반';
-  const match = reasons[0].match(/^✓\s*([^()]+?)\s*(높음|낮음|적절)?\s*\([^)]*\)$/);
-  if (!match) return '취향 분석 기반';
-  const [, metric, level] = match;
-  const suffix = level === '높음' ? '높은' : level === '낮음' ? '낮은' : '균형 잡힌';
-  return `${metric.trim()} ${suffix} 게임`;
-}
-
-/**
- * Inner component — uses useSearchParams (must be inside Suspense).
- * useSearchParams 사용 — 반드시 Suspense 안에 있어야 함.
- */
-function HomeContent() {
-  const router       = useRouter();
-  const searchParams = useSearchParams();
+export default function HomePage() {
+  const router        = useRouter();
+  const searchParams  = useSearchParams();
   const [isPending, startTransition] = useTransition();
+  const ensureSessionId = useUserStore(s => s.ensureSessionId);
 
   const submittedQuery = searchParams.get('q') ?? '';
   const [inputValue, setInputValue] = useState(submittedQuery);
@@ -55,7 +38,7 @@ function HomeContent() {
     retry: 1,
   });
 
-  // 기본 AI 추천
+  // 기본 AI 추천 (오늘의 테마)
   const {
     data:    aiResult,
     isLoading: aiLoading,
@@ -63,8 +46,22 @@ function HomeContent() {
     refetch: refetchAI,
   } = useDefaultRecommendations(9);
 
+  // 검색 제출
   const handleSubmit = (value: string) => {
     const trimmed = value.trim();
+    
+    if (trimmed) {
+      recordTasteAction({
+        session_id:  ensureSessionId(),
+        action_type: 'search',
+        context: {
+          query:        trimmed,
+          query_length: trimmed.length,
+          referrer:     '/',
+        },
+      });
+    }
+    
     startTransition(() => {
       router.push(trimmed ? `/?q=${encodeURIComponent(trimmed)}` : '/');
     });
@@ -79,7 +76,6 @@ function HomeContent() {
 
   return (
     <div className="flex flex-col gap-12">
-      {/* Hero + 검색 */}
       <section className="pt-8 pb-2 flex flex-col items-center text-center">
         <div className="mb-6">
           <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
@@ -94,12 +90,11 @@ function HomeContent() {
         </div>
       </section>
 
-      {/* 결과 */}
       <section>
         <h2 className="text-[13px] font-medium text-zinc-700 dark:text-zinc-300 mb-4">
           {showSearch
             ? `"${submittedQuery}" 검색 결과 ${searchGames.length}개`
-            : `오늘의 AI 추천 · ${extractReasonLabel(aiGames[0]?.match_reasons)}`}
+            : `오늘의 AI 추천 · ${DEFAULT_THEME_LABEL} 게임`}
         </h2>
 
         {currentError && (
@@ -127,17 +122,5 @@ function HomeContent() {
         )}
       </section>
     </div>
-  );
-}
-
-/**
- * Home page — wraps HomeContent in Suspense for useSearchParams.
- * 메인 페이지 — useSearchParams 때문에 Suspense로 감쌈.
- */
-export default function HomePage() {
-  return (
-    <Suspense fallback={<GameGridSkeleton count={9} />}>
-      <HomeContent />
-    </Suspense>
   );
 }

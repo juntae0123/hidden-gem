@@ -1,14 +1,8 @@
 /**
  * Preference analysis page — 49 metrics with categories and tooltips.
- * 취향 분석 페이지 — 49개 전체 지표, 카테고리별 분류, 툴팁 설명.
+ * 취향 분석 페이지.
  *
- * v1 → v2:
- *   - useState(results) + onSuccess 제거 → mutation.data 직접 사용 (이중 상태 제거)
- *   - 에러 상태 추가 (ErrorState)
- *   - 로딩 상태 개선 (GameGridSkeleton)
- *   - 4가지 상태 분기 (error / loading / empty / success)
- *   - 조정 지표 카운트 표시
- *   - 슬라이더 aria-label 추가 (접근성)
+ * v3: ensureSessionId 사용 (SSR-safe)
  */
 'use client';
 
@@ -20,11 +14,9 @@ import { GameGridSkeleton } from '@/components/ui/LoadingSkeleton';
 import { useRecommendByPreference } from '@/hooks/useRecommend';
 import { METRIC_LABELS, cn } from '@/lib/utils';
 import { METRIC_DESCRIPTIONS, METRIC_CATEGORIES_KO } from '@/lib/constants';
+import { recordTasteAction } from '@/lib/api';
+import { useUserStore } from '@/store/useUserStore';
 
-/**
- * Build initial preferences with neutral value (5.0).
- * 모든 지표 5.0 중립값으로 초기화.
- */
 const buildInitialPrefs = (): Record<string, number> => {
   const prefs: Record<string, number> = {};
   Object.values(METRIC_CATEGORIES_KO).forEach(({ metrics }) => {
@@ -33,30 +25,22 @@ const buildInitialPrefs = (): Record<string, number> => {
   return prefs;
 };
 
-/**
- * Single metric slider with tooltip.
- * 툴팁이 포함된 단일 지표 슬라이더.
- */
 function MetricSlider({
-  metricKey,
-  value,
-  onChange,
+  metricKey, value, onChange,
 }: {
   metricKey: string;
   value: number;
   onChange: (key: string, val: number) => void;
 }) {
   const [showTooltip, setShowTooltip] = useState(false);
-  const label = METRIC_LABELS[metricKey] || metricKey;
+  const label       = METRIC_LABELS[metricKey] || metricKey;
   const description = METRIC_DESCRIPTIONS[metricKey] || '';
 
   return (
     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 relative">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1.5">
-          <span className="text-[13px] text-zinc-700 dark:text-zinc-300 font-medium">
-            {label}
-          </span>
+          <span className="text-[13px] text-zinc-700 dark:text-zinc-300 font-medium">{label}</span>
           <button
             type="button"
             onMouseEnter={() => setShowTooltip(true)}
@@ -81,9 +65,7 @@ function MetricSlider({
 
       <Slider.Root
         className="relative flex items-center select-none touch-none w-full h-5"
-        min={0}
-        max={10}
-        step={0.5}
+        min={0} max={10} step={0.5}
         value={[value]}
         onValueChange={(v) => onChange(metricKey, v[0])}
       >
@@ -99,42 +81,41 @@ function MetricSlider({
   );
 }
 
-/**
- * Preference analysis page component.
- * 취향 분석 페이지 — 49개 지표 카테고리별 슬라이더 + 추천 결과.
- */
 export default function SearchPage() {
-  const [prefs, setPrefs] = useState<Record<string, number>>(buildInitialPrefs);
+  const [prefs, setPrefs]               = useState<Record<string, number>>(buildInitialPrefs);
   const [activeCategory, setActiveCategory] = useState<string>('vibe');
-  const mutation = useRecommendByPreference();
+  const mutation        = useRecommendByPreference();
+  const ensureSessionId = useUserStore(s => s.ensureSessionId);
 
-  // mutation.data 직접 사용 — 이중 상태 관리 제거
-  const results = mutation.data?.recommendations ?? [];
+  const results       = mutation.data?.recommendations ?? [];
+  const categories    = Object.entries(METRIC_CATEGORIES_KO);
+  const adjustedCount = Object.entries(prefs).filter(([, v]) => Math.abs(v - 5.0) >= 0.5).length;
 
   const setPref = (key: string, value: number) => {
     setPrefs((p) => ({ ...p, [key]: value }));
   };
 
-  /**
-   * Submit handler — only send non-neutral metrics.
-   * 제출 — 중립값(5.0) 아닌 지표만 전송 (신호 강도 ↑).
-   */
   const handleSubmit = () => {
     const nonNeutral = Object.fromEntries(
       Object.entries(prefs).filter(([, v]) => Math.abs(v - 5.0) >= 0.5)
     );
     const toSend = Object.keys(nonNeutral).length > 0 ? nonNeutral : prefs;
+
+    recordTasteAction({
+      session_id:  ensureSessionId(),
+      action_type: 'search',
+      context: {
+        adjusted_metrics: Object.keys(nonNeutral),
+        adjusted_count:   Object.keys(nonNeutral).length,
+        referrer:         '/search',
+      },
+    });
+
     mutation.mutate({ preferences: toSend, count: 12 });
   };
 
-  const categories = Object.entries(METRIC_CATEGORIES_KO);
-  const adjustedCount = Object.entries(prefs).filter(
-    ([, v]) => Math.abs(v - 5.0) >= 0.5
-  ).length;
-
   return (
     <div className="flex flex-col gap-8">
-      {/* 헤더 */}
       <header>
         <h1 className="text-xl font-semibold">취향 분석</h1>
         <p className="text-sm text-zinc-500 mt-1">
@@ -143,7 +124,6 @@ export default function SearchPage() {
         </p>
       </header>
 
-      {/* 카테고리 탭 */}
       <div className="flex flex-wrap gap-2 border-b border-zinc-200 dark:border-zinc-800 pb-3">
         {categories.map(([key, { label }]) => (
           <button
@@ -162,14 +142,10 @@ export default function SearchPage() {
         ))}
       </div>
 
-      {/* 슬라이더 그리드 */}
       {categories.map(([catKey, { metrics }]) => (
         <div
           key={catKey}
-          className={cn(
-            'grid grid-cols-1 md:grid-cols-2 gap-3',
-            activeCategory !== catKey && 'hidden'
-          )}
+          className={cn('grid grid-cols-1 md:grid-cols-2 gap-3', activeCategory !== catKey && 'hidden')}
         >
           {metrics.map((metricKey) => (
             <MetricSlider
@@ -182,12 +158,9 @@ export default function SearchPage() {
         </div>
       ))}
 
-      {/* 조정된 지표 요약 */}
       {adjustedCount > 0 && (
         <div className="flex flex-wrap gap-2">
-          <span className="text-[12px] text-zinc-500">
-            조정된 지표 ({adjustedCount}개):
-          </span>
+          <span className="text-[12px] text-zinc-500">조정된 지표 ({adjustedCount}개):</span>
           {Object.entries(prefs)
             .filter(([, v]) => Math.abs(v - 5.0) >= 0.5)
             .map(([key, val]) => (
@@ -201,7 +174,6 @@ export default function SearchPage() {
         </div>
       )}
 
-      {/* 추천 버튼 */}
       <div className="flex justify-center">
         <button
           type="button"
@@ -209,47 +181,26 @@ export default function SearchPage() {
           disabled={mutation.isPending}
           className={cn(
             'px-8 py-3 rounded-xl bg-purple-600 text-white text-[14px] font-medium',
-            'hover:bg-purple-700 transition-colors disabled:opacity-60',
-            'shadow-sm hover:shadow-md'
+            'hover:bg-purple-700 transition-colors disabled:opacity-60 shadow-sm hover:shadow-md'
           )}
         >
           {mutation.isPending ? '분석 중...' : '✦ 내 취향에 맞는 게임 찾기'}
         </button>
       </div>
 
-      {/* 추천 결과 — 4가지 상태 분기 */}
       <section>
-        {/* 1. 에러 */}
         {mutation.error && (
-          <ErrorState
-            error={mutation.error as Error}
-            onRetry={handleSubmit}
-            variant="inline"
-            title="추천을 가져오지 못했어요"
-          />
+          <ErrorState error={mutation.error as Error} onRetry={handleSubmit} variant="inline" title="추천을 가져오지 못했어요" />
         )}
-
-        {/* 2. 로딩 */}
         {mutation.isPending && !mutation.error && (
           <>
-            <h2 className="text-[13px] font-medium text-zinc-700 dark:text-zinc-300 mb-4">
-              당신의 취향을 분석 중...
-            </h2>
+            <h2 className="text-[13px] font-medium text-zinc-700 dark:text-zinc-300 mb-4">당신의 취향을 분석 중...</h2>
             <GameGridSkeleton count={12} />
           </>
         )}
-
-        {/* 3. 빈 결과 */}
         {!mutation.isPending && !mutation.error && mutation.isSuccess && results.length === 0 && (
-          <ErrorState
-            type="not-found"
-            variant="inline"
-            title="조건에 맞는 게임이 없어요"
-            description="지표 조건을 조금 완화해보세요"
-          />
+          <ErrorState type="not-found" variant="inline" title="조건에 맞는 게임이 없어요" description="지표 조건을 조금 완화해보세요" />
         )}
-
-        {/* 4. 정상 결과 */}
         {!mutation.isPending && !mutation.error && results.length > 0 && (
           <>
             <h2 className="text-[13px] font-medium text-zinc-700 dark:text-zinc-300 mb-4">

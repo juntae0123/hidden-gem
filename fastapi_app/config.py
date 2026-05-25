@@ -59,15 +59,21 @@ class Settings(BaseSettings):
     RATE_LIMIT_SEARCH_AUTH: str = "30/minute"
     RATE_LIMIT_RECOMMEND_ANON: str = "20/minute"
     RATE_LIMIT_DEFAULT: str = "60/minute"
+    RATE_LIMIT_TASTE: str = "60/minute"  # 행동 로그 수집
 
     # ==================== 알람 / Alerts ====================
     DISCORD_WEBHOOK_URL: Optional[str] = None
 
     # ==================== Sentry ====================
-    SENTRY_DSN: str = ""                    # .env에서 주입, 없으면 비활성화
-    SENTRY_ENV: str = "development"         # development / production
-    SENTRY_TRACES_SAMPLE_RATE: float = 1.0  # 초기 100%, MAU 1K+ 이후 낮추기
-    APP_VERSION: str = "3.1.0"
+    SENTRY_DSN: str = ""
+    SENTRY_ENV: str = "development"
+    SENTRY_TRACES_SAMPLE_RATE: float = 1.0
+    APP_VERSION: str = "3.2.0"
+
+    # ==================== 어드민 / Admin ====================
+    # /taste/stats 등 운영 엔드포인트 Basic Auth용
+    ADMIN_USERNAME: str = ""
+    ADMIN_PASSWORD: str = ""
 
     @property
     def DATABASE_URL(self) -> str:
