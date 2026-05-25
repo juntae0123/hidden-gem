@@ -1,17 +1,10 @@
 /**
  * Home page — semantic search + AI recommendations.
  * 메인 페이지 — 시맨틱 검색 + AI 추천.
- *
- * v1 → v2:
- *   - useEffect+mutation → useDefaultRecommendations (useQuery, 30분 캐싱)
- *   - URL 기반 검색 (useSearchParams — 뒤로가기/공유 가능)
- *   - 에러 → ErrorState (재시도 버튼)
- *   - 로딩 → GameGridSkeleton (Spinner → Skeleton)
- *   - match_reasons 파싱 버그 수정
  */
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 
@@ -25,8 +18,6 @@ import { semanticSearchGames } from '@/lib/api';
 /**
  * Extract human-readable label from first match reason.
  * 첫 번째 match_reason에서 사람이 읽기 좋은 라벨 추출.
- *
- * v5 포맷: "✓ 서사깊이 높음 (9.0)" → "서사깊이 높은 게임"
  */
 function extractReasonLabel(reasons: string[] | undefined): string {
   if (!reasons?.length) return '취향 분석 기반';
@@ -37,16 +28,19 @@ function extractReasonLabel(reasons: string[] | undefined): string {
   return `${metric.trim()} ${suffix} 게임`;
 }
 
-export default function HomePage() {
-  const router        = useRouter();
-  const searchParams  = useSearchParams();
+/**
+ * Inner component — uses useSearchParams (must be inside Suspense).
+ * useSearchParams 사용 — 반드시 Suspense 안에 있어야 함.
+ */
+function HomeContent() {
+  const router       = useRouter();
+  const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
 
-  // URL을 진실의 원천으로 / URL as source of truth
   const submittedQuery = searchParams.get('q') ?? '';
   const [inputValue, setInputValue] = useState(submittedQuery);
 
-  // ==================== 시맨틱 검색 ====================
+  // 시맨틱 검색
   const {
     data:    searchResult,
     isLoading: searching,
@@ -61,7 +55,7 @@ export default function HomePage() {
     retry: 1,
   });
 
-  // ==================== 기본 AI 추천 ====================
+  // 기본 AI 추천
   const {
     data:    aiResult,
     isLoading: aiLoading,
@@ -69,7 +63,6 @@ export default function HomePage() {
     refetch: refetchAI,
   } = useDefaultRecommendations(9);
 
-  // ==================== 핸들러 ====================
   const handleSubmit = (value: string) => {
     const trimmed = value.trim();
     startTransition(() => {
@@ -77,7 +70,6 @@ export default function HomePage() {
     });
   };
 
-  // ==================== 상태 분기 ====================
   const showSearch   = submittedQuery.trim().length > 0;
   const searchGames  = searchResult?.recommendations ?? [];
   const aiGames      = aiResult?.recommendations ?? [];
@@ -135,5 +127,17 @@ export default function HomePage() {
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * Home page — wraps HomeContent in Suspense for useSearchParams.
+ * 메인 페이지 — useSearchParams 때문에 Suspense로 감쌈.
+ */
+export default function HomePage() {
+  return (
+    <Suspense fallback={<GameGridSkeleton count={9} />}>
+      <HomeContent />
+    </Suspense>
   );
 }

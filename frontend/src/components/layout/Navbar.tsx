@@ -6,7 +6,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Moon, Sun } from 'lucide-react';
+import { Moon, Sun, User } from 'lucide-react';
 import { useEffect } from 'react';
 import { useUserStore } from '@/store/useUserStore';
 import { cn } from '@/lib/utils';
@@ -42,7 +42,7 @@ export function Navbar() {
       )}
     >
       <nav className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
-        {/* 로고 / Logo */}
+        {/* 로고 */}
         <Link href="/" className="flex items-center gap-2">
           <span className="text-purple-600 text-lg leading-none">✦</span>
           <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
@@ -50,7 +50,7 @@ export function Navbar() {
           </span>
         </Link>
 
-        {/* 탭 / Tabs */}
+        {/* 탭 */}
         <div className="flex items-center gap-1">
           {TABS.map((tab) => {
             const active =
@@ -73,19 +73,24 @@ export function Navbar() {
           })}
         </div>
 
-        {/* 우측 액션 / Right actions */}
+        {/* 우측 액션 */}
         <div className="flex items-center gap-2">
+          {/* 로그인 버튼 — 사람 아이콘 */}
           <button
             type="button"
             className={cn(
-              'px-3 py-1.5 rounded-md text-[12px]',
+              'w-8 h-8 rounded-md flex items-center justify-center',
               'border border-zinc-200 dark:border-zinc-800',
               'text-zinc-600 dark:text-zinc-300',
-              'hover:border-purple-500 hover:text-purple-600'
+              'hover:border-purple-500 hover:text-purple-600',
+              'transition-colors'
             )}
+            aria-label="로그인"
           >
-            Steam 로그인
+            <User className="w-4 h-4" />
           </button>
+
+          {/* 테마 토글 */}
           <button
             type="button"
             onClick={toggleTheme}
@@ -93,9 +98,10 @@ export function Navbar() {
               'w-8 h-8 rounded-md flex items-center justify-center',
               'border border-zinc-200 dark:border-zinc-800',
               'text-zinc-600 dark:text-zinc-300',
-              'hover:border-purple-500 hover:text-purple-600'
+              'hover:border-purple-500 hover:text-purple-600',
+              'transition-colors'
             )}
-            aria-label="theme toggle"
+            aria-label="테마 전환"
           >
             {theme === 'light' ? (
               <Moon className="w-4 h-4" />

@@ -3,9 +3,9 @@
  * 랭킹 리스트 컴포넌트.
  *
  * v1 → v2:
- *   - img → GameImage (next/image 최적화, AVIF/WebP 자동 변환)
+ *   - img → GameImage (next/image, AVIF/WebP 자동 변환)
+ *   - 인라인 steamHeader 함수 제거
  *   - GemBadge size="sm" 명시
- *   - 인라인 steamHeader 함수 제거 (GameImage가 처리)
  */
 'use client';
 
@@ -17,15 +17,10 @@ import type { RecommendedGame } from '@/types/game';
 
 interface RankingListProps {
   items: RecommendedGame[];
-  /** HOT 뱃지 표시할 순위 (기본 1~3위) */
   hotIndices?: number[];
   className?: string;
 }
 
-/**
- * Single ranking row.
- * 랭킹 한 줄 컴포넌트.
- */
 function RankingRow({
   game,
   rank,
@@ -56,9 +51,7 @@ function RankingRow({
       <span
         className={cn(
           'w-8 text-center font-mono text-[13px] flex-shrink-0',
-          rank <= 3
-            ? 'text-purple-600 font-semibold'
-            : 'text-zinc-500'
+          rank <= 3 ? 'text-purple-600 font-semibold' : 'text-zinc-500'
         )}
       >
         {String(rank).padStart(2, '0')}
@@ -109,7 +102,6 @@ export function RankingList({
   hotIndices = [1, 2, 3],
   className,
 }: RankingListProps) {
-  // gem_potential 기준 내림차순 정렬
   const sorted = [...items].sort(
     (a, b) => (b.gem_potential ?? 0) - (a.gem_potential ?? 0)
   );

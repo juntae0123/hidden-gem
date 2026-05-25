@@ -1,12 +1,12 @@
 /**
  * Preference analysis page — 49 metrics with categories and tooltips.
- * 취향 분석 페이지 — 49개 지표 카테고리별 슬라이더 + 추천 결과.
+ * 취향 분석 페이지 — 49개 전체 지표, 카테고리별 분류, 툴팁 설명.
  *
  * v1 → v2:
- *   - useState(results) + onSuccess 제거 → mutation.data 직접 사용
+ *   - useState(results) + onSuccess 제거 → mutation.data 직접 사용 (이중 상태 제거)
  *   - 에러 상태 추가 (ErrorState)
  *   - 로딩 상태 개선 (GameGridSkeleton)
- *   - 4가지 상태 (error/loading/empty/success) 명확한 분기
+ *   - 4가지 상태 분기 (error / loading / empty / success)
  *   - 조정 지표 카운트 표시
  *   - 슬라이더 aria-label 추가 (접근성)
  */
@@ -28,9 +28,7 @@ import { METRIC_DESCRIPTIONS, METRIC_CATEGORIES_KO } from '@/lib/constants';
 const buildInitialPrefs = (): Record<string, number> => {
   const prefs: Record<string, number> = {};
   Object.values(METRIC_CATEGORIES_KO).forEach(({ metrics }) => {
-    metrics.forEach((m) => {
-      prefs[m] = 5.0;
-    });
+    metrics.forEach((m) => { prefs[m] = 5.0; });
   });
   return prefs;
 };
@@ -64,8 +62,8 @@ function MetricSlider({
             onMouseEnter={() => setShowTooltip(true)}
             onMouseLeave={() => setShowTooltip(false)}
             onClick={() => setShowTooltip(!showTooltip)}
-            className="w-4 h-4 rounded-full bg-zinc-200 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400 text-[10px] flex items-center justify-center hover:bg-purple-100 hover:text-purple-600 transition-colors"
             aria-label={`${label} 설명 보기`}
+            className="w-4 h-4 rounded-full bg-zinc-200 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400 text-[10px] flex items-center justify-center hover:bg-purple-100 hover:text-purple-600 transition-colors"
           >
             ?
           </button>
@@ -103,14 +101,14 @@ function MetricSlider({
 
 /**
  * Preference analysis page component.
- * 취향 분석 페이지 컴포넌트.
+ * 취향 분석 페이지 — 49개 지표 카테고리별 슬라이더 + 추천 결과.
  */
 export default function SearchPage() {
   const [prefs, setPrefs] = useState<Record<string, number>>(buildInitialPrefs);
   const [activeCategory, setActiveCategory] = useState<string>('vibe');
   const mutation = useRecommendByPreference();
 
-  // mutation.data 직접 사용 (이중 상태 제거)
+  // mutation.data 직접 사용 — 이중 상태 관리 제거
   const results = mutation.data?.recommendations ?? [];
 
   const setPref = (key: string, value: number) => {
@@ -118,15 +116,14 @@ export default function SearchPage() {
   };
 
   /**
-   * Submit handler — only send non-neutral metrics for better signal.
-   * 제출 핸들러 — 중립값(5.0) 아닌 지표만 전송 (신호 강도 ↑).
+   * Submit handler — only send non-neutral metrics.
+   * 제출 — 중립값(5.0) 아닌 지표만 전송 (신호 강도 ↑).
    */
   const handleSubmit = () => {
     const nonNeutral = Object.fromEntries(
       Object.entries(prefs).filter(([, v]) => Math.abs(v - 5.0) >= 0.5)
     );
     const toSend = Object.keys(nonNeutral).length > 0 ? nonNeutral : prefs;
-
     mutation.mutate({ preferences: toSend, count: 12 });
   };
 
@@ -222,7 +219,7 @@ export default function SearchPage() {
 
       {/* 추천 결과 — 4가지 상태 분기 */}
       <section>
-        {/* 1. 에러 상태 */}
+        {/* 1. 에러 */}
         {mutation.error && (
           <ErrorState
             error={mutation.error as Error}
@@ -232,7 +229,7 @@ export default function SearchPage() {
           />
         )}
 
-        {/* 2. 로딩 상태 */}
+        {/* 2. 로딩 */}
         {mutation.isPending && !mutation.error && (
           <>
             <h2 className="text-[13px] font-medium text-zinc-700 dark:text-zinc-300 mb-4">
@@ -242,18 +239,15 @@ export default function SearchPage() {
           </>
         )}
 
-        {/* 3. 결과 0개 (성공했지만 빈 결과) */}
-        {!mutation.isPending &&
-          !mutation.error &&
-          mutation.isSuccess &&
-          results.length === 0 && (
-            <ErrorState
-              type="not-found"
-              variant="inline"
-              title="조건에 맞는 게임이 없어요"
-              description="지표 조건을 조금 완화해보세요"
-            />
-          )}
+        {/* 3. 빈 결과 */}
+        {!mutation.isPending && !mutation.error && mutation.isSuccess && results.length === 0 && (
+          <ErrorState
+            type="not-found"
+            variant="inline"
+            title="조건에 맞는 게임이 없어요"
+            description="지표 조건을 조금 완화해보세요"
+          />
+        )}
 
         {/* 4. 정상 결과 */}
         {!mutation.isPending && !mutation.error && results.length > 0 && (
