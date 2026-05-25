@@ -2,10 +2,7 @@
  * Game recommendation card.
  * 게임 추천 카드 컴포넌트.
  *
- * v1 → v2:
- *   - img → GameImage (next/image, CDN 폴백)
- *   - GemBadge 임계값 70+ (기존 95+)
- *   - MatchBar compact 모드 + "52 / 99" 단위 명확
+ * v3: ensureSessionId 사용 (SSR-safe)
  */
 'use client';
 
@@ -16,12 +13,15 @@ import { GemBadge } from './GemBadge';
 import { MatchBar } from './MatchBar';
 import { GameImage } from './GameImage';
 import { GEM_TIERS } from '@/lib/score';
+import { recordTasteAction } from '@/lib/api';
+import { useUserStore } from '@/store/useUserStore';
 import type { RecommendedGame } from '@/types/game';
 
 interface GameCardProps {
   game: RecommendedGame;
   active?: boolean;
   context?: 'search' | 'similar' | 'preference';
+  index?: number;
   className?: string;
 }
 
@@ -29,17 +29,34 @@ export function GameCard({
   game,
   active = false,
   context = 'preference',
+  index = 0,
   className,
 }: GameCardProps) {
-  const matchValue  = game.similarity_score ?? 0;
-  const gemScore    = game.gem_potential ?? 0;
-  const reasonText  = game.match_reasons?.[0] ?? '';
-  const genres      = game.genres
+  const ensureSessionId = useUserStore((s) => s.ensureSessionId);
+  const matchValue = game.similarity_score ?? 0;
+  const gemScore   = game.gem_potential ?? 0;
+  const reasonText = game.match_reasons?.[0] ?? '';
+  const genres     = game.genres
     ?.split(',').map(g => g.trim()).filter(Boolean).slice(0, 3) ?? [];
+
+  const handleClick = () => {
+    const actionType = context === 'search' ? 'search_click' : 'rec_click';
+    recordTasteAction({
+      session_id:  ensureSessionId(),
+      app_id:      game.app_id,
+      action_type: actionType,
+      context: {
+        click_position:   index,
+        displayed_score:  matchValue,
+        referrer_context: context,
+      },
+    });
+  };
 
   return (
     <Link
       href={`/game/${game.app_id}`}
+      onClick={handleClick}
       className={cn(
         'group flex flex-col overflow-hidden',
         'bg-white dark:bg-zinc-900',
@@ -52,7 +69,6 @@ export function GameCard({
         className
       )}
     >
-      {/* 헤더 이미지 */}
       <div className="relative w-full aspect-[16/9] bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
         <GameImage
           appId={game.app_id}
@@ -68,7 +84,6 @@ export function GameCard({
         )}
       </div>
 
-      {/* 본문 */}
       <div className="flex flex-col gap-2.5 p-3.5">
         <h3 className="text-[13px] font-medium text-zinc-900 dark:text-zinc-100 line-clamp-1">
           {game.name}
@@ -77,10 +92,7 @@ export function GameCard({
         {genres.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {genres.map(g => (
-              <span
-                key={g}
-                className="px-1.5 py-0.5 rounded text-[10px] bg-purple-600/10 text-purple-700 dark:text-purple-300"
-              >
+              <span key={g} className="px-1.5 py-0.5 rounded text-[10px] bg-purple-600/10 text-purple-700 dark:text-purple-300">
                 {g}
               </span>
             ))}

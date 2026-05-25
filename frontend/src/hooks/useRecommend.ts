@@ -2,28 +2,104 @@
  * Recommendation hooks — TanStack Query based
  * 추천 관련 훅 — TanStack Query 기반
  *
- * v1 → v2 변경사항:
- *   - useDefaultRecommendations: useEffect+mutation → useQuery (30분 캐싱)
- *   - useRecommendByGenre: 신규 (랭킹 페이지용)
- *   - useRecommendByGame: 기존 유지
- *   - useRecommendByPreference: mutation 유지 (취향 분석 제출용)
+ * v2 → v3:
+ *   - DEFAULT_PREFERENCES: 6개 분산 → 매일 다른 테마 순환
+ *   - 테마 5개 (서사/아늑/전략/분위기/숨겨진 보석)
+ *   - 각 테마는 핵심 3개 지표만 → 변별력 ↑
  */
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { recommendByGame, recommendByPreference } from '@/lib/api';
 
-// ==================== Cold Start 기본 선호도 ====================
+// ==================== 매일 순환 테마 / Daily Rotating Themes ====================
 
-/** 신규 유저용 기본 선호도 — 다양한 감성 게임 */
-export const DEFAULT_PREFERENCES = {
-  narrative_depth:     8,
-  lore_richness:       7,
-  art_style_uniqueness:7,
-  replay_value:        6,
-  exploration_reward:  7,
-  soundtrack_impact:   7,
-} as const;
+/**
+ * Daily rotating recommendation themes for cold-start users.
+ * 신규 유저용 매일 순환 추천 테마.
+ *
+ * 각 테마는 핵심 3개 지표만 → 변별력 강화.
+ * (이전 6개 분산 방식은 액션-어드벤처에 유리하게 작동하는 문제 있었음)
+ */
+export interface DailyTheme {
+  readonly name:  string;
+  readonly label: string;
+  readonly prefs: Record<string, number>;
+}
+
+const DAILY_THEMES: readonly DailyTheme[] = [
+  {
+    name:  'narrative',
+    label: '서사 깊은',
+    prefs: {
+      narrative_depth:    10,
+      lore_richness:       9,
+      choice_consequence:  8,
+    },
+  },
+  {
+    name:  'cozy',
+    label: '아늑한',
+    prefs: {
+      cozy_factor:    9,
+      time_pressure:  1,
+      humor_rating:   7,
+    },
+  },
+  {
+    name:  'strategic',
+    label: '뇌지컬',
+    prefs: {
+      strategic_depth:       10,
+      management_complexity:  8,
+      learning_curve:         7,
+    },
+  },
+  {
+    name:  'atmospheric',
+    label: '분위기 깊은',
+    prefs: {
+      environmental_storytelling: 9,
+      soundtrack_impact:          9,
+      melancholy:                 7,
+    },
+  },
+  {
+    name:  'hidden_gem',
+    label: '숨겨진 보석',
+    prefs: {
+      art_style_uniqueness: 9,
+      audio_design:         8,
+      replay_value:         8,
+    },
+  },
+] as const;
+
+/**
+ * Get today's theme — rotates daily based on date.
+ * 오늘의 테마 — 날짜 기반 자동 순환.
+ *
+ * 매일 다른 테마로 신선함 제공 + 유저 재방문 동기.
+ */
+function getTodaysTheme(): DailyTheme {
+  const today = new Date();
+  // 연중 일수 기준 (1~365)
+  const start = new Date(today.getFullYear(), 0, 0);
+  const diff  = today.getTime() - start.getTime();
+  const dayOfYear = Math.floor(diff / 86400000);
+  return DAILY_THEMES[dayOfYear % DAILY_THEMES.length];
+}
+
+const todaysTheme = getTodaysTheme();
+
+/** 오늘의 테마 선호도 / Today's theme preferences */
+export const DEFAULT_PREFERENCES = todaysTheme.prefs;
+
+/** 오늘의 테마 라벨 / Today's theme label (UI 표시용) */
+export const DEFAULT_THEME_LABEL = todaysTheme.label;
+
+/** 오늘의 테마 이름 / Today's theme name (analytics용) */
+export const DEFAULT_THEME_NAME = todaysTheme.name;
 
 // ==================== Query Hooks ====================
 
@@ -35,7 +111,7 @@ export const DEFAULT_PREFERENCES = {
  */
 export function useDefaultRecommendations(count: number = 9) {
   return useQuery({
-    queryKey: ['recommend', 'default', count],
+    queryKey: ['recommend', 'default', DEFAULT_THEME_NAME, count],
     queryFn:  () => recommendByPreference({ ...DEFAULT_PREFERENCES }, count),
     staleTime:          1000 * 60 * 30,  // 30분 fresh
     gcTime:             1000 * 60 * 60,  // 1시간 캐시 유지

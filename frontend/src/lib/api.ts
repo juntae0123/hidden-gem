@@ -19,12 +19,9 @@ const API_BASE_URL =
 export const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { 'Content-Type': 'application/json' },
 });
 
-// 응답 인터셉터 - 에러 로깅 / Response interceptor for error logging
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -33,27 +30,18 @@ apiClient.interceptors.response.use(
   }
 );
 
-/**
- * Search games by name/genre/developer (text match)
- * 이름/장르/개발사 텍스트 매칭으로 게임 검색
- */
-export async function searchGames(
-  query: string,
-  limit: number = 12
-): Promise<Game[]> {
+// ==================== 게임 검색 / Game Search ====================
+
+export async function searchGames(query: string, limit = 12): Promise<Game[]> {
   const { data } = await apiClient.get<Game[]>('/games/search', {
     params: { q: query, limit },
   });
   return data;
 }
 
-/**
- * Search games by natural language query (semantic/embedding-based)
- * 자연어 쿼리를 임베딩으로 변환해 의미 기반 게임 검색
- */
 export async function semanticSearchGames(
   query: string,
-  limit: number = 12
+  limit = 12
 ): Promise<RecommendationResponse> {
   const { data } = await apiClient.post<RecommendationResponse>(
     '/games/search/semantic',
@@ -62,40 +50,28 @@ export async function semanticSearchGames(
   return data;
 }
 
-/**
- * Get detailed info of a specific game
- * 특정 게임의 상세 정보 조회
- */
+// ==================== 게임 정보 / Game Info ====================
+
 export async function getGameDetail(appId: number): Promise<GameDetail> {
   const { data } = await apiClient.get<GameDetail>(`/games/${appId}`);
   return data;
 }
 
-/**
- * Get overall stats overview
- * 전체 통계 개요 조회
- */
 export async function getStatsOverview(): Promise<Record<string, unknown>> {
   const { data } = await apiClient.get('/games/stats/overview');
   return data;
 }
 
-/**
- * Get list of available metrics
- * 사용 가능한 지표 목록 조회
- */
 export async function getMetricsList(): Promise<string[]> {
   const { data } = await apiClient.get<string[]>('/games/metrics/list');
   return data;
 }
 
-/**
- * Recommend games similar to a given game
- * 특정 게임과 유사한 게임 추천
- */
+// ==================== 추천 / Recommendation ====================
+
 export async function recommendByGame(
   appId: number,
-  count: number = 6
+  count = 6
 ): Promise<RecommendationResponse> {
   const { data } = await apiClient.post<RecommendationResponse>(
     '/games/recommend/by-game',
@@ -104,17 +80,86 @@ export async function recommendByGame(
   return data;
 }
 
-/**
- * Recommend games by user preference vector
- * 사용자 선호도 벡터 기반 게임 추천
- */
 export async function recommendByPreference(
   preferences: Record<string, number>,
-  count: number = 12
+  count = 12
 ): Promise<RecommendationResponse> {
   const { data } = await apiClient.post<RecommendationResponse>(
     '/games/recommend/by-preference',
     { preferences, count }
   );
   return data;
+}
+
+// ==================== 행동 로그 / Taste Action ====================
+
+export type TasteActionType =
+  | 'search'
+  | 'detail_view'
+  | 'rec_click'
+  | 'search_click'
+  | 'steam_click'
+  | 'like'
+  | 'neg_feedback'
+  | 'revisit';
+
+export interface TasteActionPayload {
+  session_id: string;
+  app_id?: number;
+  action_type: TasteActionType;
+  context?: Record<string, unknown>;
+}
+
+export interface TasteActionResponse {
+  success: boolean;
+  action_id?: number;
+  message: string;
+}
+
+/**
+ * Record user action — regular async (fire-and-forget).
+ * 유저 행동 기록 — 비동기, 실패해도 서비스 영향 없음.
+ */
+export async function recordTasteAction(
+  payload: TasteActionPayload
+): Promise<TasteActionResponse | null> {
+  if (!payload.session_id) return null;
+
+  try {
+    const { data } = await apiClient.post<TasteActionResponse>(
+      '/taste/action',
+      payload
+    );
+    return data;
+  } catch (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[TasteAction] 기록 실패:', error);
+    }
+    return null;
+  }
+}
+
+/**
+ * Record action using sendBeacon — navigation-safe.
+ * Navigation 시에도 전송 보장 (Steam 클릭 등 페이지 이탈 시).
+ */
+export function recordTasteActionBeacon(
+  payload: TasteActionPayload
+): boolean {
+  if (!payload.session_id) return false;
+
+  if (typeof navigator === 'undefined' || !navigator.sendBeacon) {
+    recordTasteAction(payload);
+    return false;
+  }
+
+  try {
+    const blob = new Blob(
+      [JSON.stringify(payload)],
+      { type: 'application/json' }
+    );
+    return navigator.sendBeacon(`${API_BASE_URL}/taste/action`, blob);
+  } catch {
+    return false;
+  }
 }

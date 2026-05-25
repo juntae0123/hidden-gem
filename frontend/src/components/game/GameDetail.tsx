@@ -2,15 +2,11 @@
  * Game detail panel.
  * 게임 상세 정보 패널.
  *
- * v1 → v2:
- *   - img → GameImage
- *   - LoadingSpinner → GameDetailSkeleton
- *   - 에러 → ErrorState (재시도 버튼 포함)
- *   - getTopMetrics → getDistinctiveMetrics (편차 기반)
- *   - 지표 카테고리 표시 (높음/낮음 뱃지)
+ * v3: ensureSessionId + useRef 중복 방지 + sendBeacon
  */
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { ExternalLink, Heart } from 'lucide-react';
 import { useGameDetail } from '@/hooks/useGames';
 import { useUserStore } from '@/store/useUserStore';
@@ -19,6 +15,7 @@ import { GameDetailSkeleton } from '@/components/ui/LoadingSkeleton';
 import { GameImage } from '@/components/ui/GameImage';
 import { RadarChart } from '@/components/ui/RadarChart';
 import { getDistinctiveMetrics, METRIC_LABELS, cn } from '@/lib/utils';
+import { recordTasteAction, recordTasteActionBeacon } from '@/lib/api';
 
 interface GameDetailProps {
   appId: number;
@@ -26,45 +23,55 @@ interface GameDetailProps {
 
 export function GameDetail({ appId }: GameDetailProps) {
   const { data: game, isLoading, error, refetch } = useGameDetail(appId);
-  const favorites      = useUserStore(s => s.favorites);
-  const toggleFavorite = useUserStore(s => s.toggleFavorite);
+  const favorites       = useUserStore(s => s.favorites);
+  const toggleFavorite  = useUserStore(s => s.toggleFavorite);
+  const ensureSessionId = useUserStore(s => s.ensureSessionId);
+
+  // StrictMode 중복 방지 — appId당 1회만 기록
+  const hasLoggedRef = useRef(false);
+
+  useEffect(() => {
+    if (!appId || hasLoggedRef.current) return;
+
+    // 100ms 디바운스 — StrictMode 이중 실행 대응
+    const timer = setTimeout(() => {
+      if (hasLoggedRef.current) return;
+      hasLoggedRef.current = true;
+      recordTasteAction({
+        session_id:  ensureSessionId(),
+        app_id:      appId,
+        action_type: 'detail_view',
+        context:     { referrer: document.referrer || '/' },
+      });
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [appId, ensureSessionId]);
+
+  // Steam 클릭 — sendBeacon으로 navigation-safe 전송
+  const handleSteamClick = () => {
+    recordTasteActionBeacon({
+      session_id:  ensureSessionId(),
+      app_id:      appId,
+      action_type: 'steam_click',
+      context:     {},
+    });
+  };
 
   if (isLoading) return <GameDetailSkeleton />;
-
-  if (error) {
-    return (
-      <ErrorState
-        error={error as Error}
-        onRetry={() => refetch()}
-        variant="page"
-      />
-    );
-  }
-
-  if (!game) {
-    return (
-      <ErrorState
-        type="not-found"
-        title="게임 정보가 없어요"
-        variant="page"
-      />
-    );
-  }
+  if (error) return <ErrorState error={error as Error} onRetry={() => refetch()} variant="page" />;
+  if (!game) return <ErrorState type="not-found" title="게임 정보가 없어요" variant="page" />;
 
   const isFav = favorites.includes(appId);
-
-  // 편차 기반 특징적 지표 6개
   const distinctiveMetrics = getDistinctiveMetrics(
     game.metrics as unknown as Record<string, number | boolean | null>,
     6
   );
   const radarData = distinctiveMetrics.map(({ key, value }) => ({ metric: key, value }));
-
-  const genres = game.genres?.split(',').map(g => g.trim()).filter(Boolean) ?? [];
+  const genres    = game.genres?.split(',').map(g => g.trim()).filter(Boolean) ?? [];
 
   return (
     <article className="w-full">
-      {/* Hero */}
       <div className="w-full rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
         <div className="relative w-full aspect-[460/215] bg-zinc-200 dark:bg-zinc-800">
           <GameImage appId={appId} name={game.name} fallback={game.header_image} size="hero" priority />
@@ -97,6 +104,7 @@ export function GameDetail({ appId }: GameDetailProps) {
               href={`https://store.steampowered.com/app/${appId}`}
               target="_blank"
               rel="noreferrer noopener"
+              onClick={handleSteamClick}
               className={cn(
                 'inline-flex items-center gap-1.5 px-4 py-2 rounded-md',
                 'bg-purple-600 text-white text-[12px] font-medium hover:bg-purple-700 transition-colors'
@@ -122,7 +130,6 @@ export function GameDetail({ appId }: GameDetailProps) {
         </div>
       </div>
 
-      {/* 레이더 + 지표 */}
       <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-8">
         <div className="flex flex-col items-center justify-center bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6">
           <div className="self-start mb-1">
@@ -158,8 +165,8 @@ export function GameDetail({ appId }: GameDetailProps) {
                   <div
                     className={cn(
                       'h-full rounded-full transition-all duration-500',
-                      category === 'high'   ? 'bg-purple-600' :
-                      category === 'low'    ? 'bg-blue-500'   : 'bg-zinc-400'
+                      category === 'high' ? 'bg-purple-600' :
+                      category === 'low'  ? 'bg-blue-500'   : 'bg-zinc-400'
                     )}
                     style={{ width: `${pct}%` }}
                   />
