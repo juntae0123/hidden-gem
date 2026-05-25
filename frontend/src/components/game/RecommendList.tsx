@@ -3,9 +3,10 @@
  * 유사 게임 추천 리스트.
  *
  * v1 → v2:
- *   - 에러 상태 추가 (ErrorState + 재시도)
- *   - 로딩 상태 개선 (GameGridSkeleton)
+ *   - 에러 처리 추가 (ErrorState + 재시도)
+ *   - 로딩 개선 (GameGridSkeleton)
  *   - 빈 결과 명확한 메시지
+ *   - 4가지 상태 분기 (error / loading / empty / success)
  */
 'use client';
 
@@ -22,12 +23,6 @@ interface RecommendListProps {
 /**
  * Render similar games based on reference game.
  * 기준 게임 기반 유사 게임 렌더링.
- *
- * 4가지 상태 처리:
- *   1. error      → ErrorState (재시도 버튼)
- *   2. isLoading  → GameGridSkeleton
- *   3. 빈 결과    → ErrorState (not-found)
- *   4. 정상       → GameGrid
  */
 export function RecommendList({ appId, count = 6 }: RecommendListProps) {
   const { data, isLoading, error, refetch } = useRecommendByGame(appId, count);
