@@ -1,11 +1,14 @@
 # django_core/config/settings.py
 """
 Hidden Gem - Django 설정
-- GPT-5.4 Batch로 추출한 4,190개 고품질 데이터 관리
-- 신규 게임은 4,190개 기반 Few-Shot으로 저비용 고품질 분석
+
+v1 → v2 변경사항:
+    - django-allauth Google OAuth2 추가
+    - djangorestframework-simplejwt JWT 인증 추가
 """
 
 from pathlib import Path
+from datetime import timedelta
 import os
 from dotenv import load_dotenv
 
@@ -13,10 +16,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = BASE_DIR.parent
 load_dotenv(PROJECT_ROOT / '.env')
 
-# 운영 환경에서는 반드시 .env에서 강력한 SECRET_KEY 설정 필요
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-secret-key-12345')
 DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '*']  # 운영 시 실제 도메인으로 제한
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '*']
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -25,10 +27,18 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sites',          # allauth 필수
+    # Third-party
     'rest_framework',
+    'rest_framework_simplejwt',
     'corsheaders',
     'django_filters',
     'import_export',
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.google',
+    # Local
     'apps.games',
     'apps.users',
 ]
@@ -42,6 +52,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'allauth.account.middleware.AccountMiddleware',  # allauth 필수
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -64,7 +75,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-# Database - Docker PostgreSQL
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -85,15 +95,61 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-# DRF 기본 설정 - 페이지네이션(20개/페이지)
+# ==================== DRF ====================
 REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
 }
 
-# CORS 전체 허용 - 개발용. 운영 시 CORS_ALLOWED_ORIGINS로 구체적 도메인 지정
-CORS_ALLOW_ALL_ORIGINS = True
+# ==================== JWT ====================
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME':  timedelta(hours=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
+    'ROTATE_REFRESH_TOKENS':  True,
+    'ALGORITHM': 'HS256',
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
 
+# ==================== django-allauth ====================
+SITE_ID = 1
+
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+    'allauth.account.auth_backends.AuthenticationBackend',
+]
+
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_AUTHENTICATION_METHOD = 'email'
+ACCOUNT_EMAIL_VERIFICATION = 'none'  # 이메일 인증 스킵 (소셜 로그인만 사용)
+
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        'APP': {
+            'client_id':     os.getenv('GOOGLE_CLIENT_ID', ''),
+            'secret':        os.getenv('GOOGLE_CLIENT_SECRET', ''),
+            'key':           '',
+        },
+        'SCOPE': ['profile', 'email'],
+        'AUTH_PARAMS': {'access_type': 'online'},
+        'FETCH_USERINFO': True,
+    }
+}
+
+# Google 로그인 후 리다이렉트 URL
+SOCIALACCOUNT_LOGIN_ON_GET = True
+LOGIN_REDIRECT_URL = '/'
+
+# 프론트엔드 URL (콜백 후 JWT 전달용)
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+
+# ==================== CORS ====================
+CORS_ALLOW_ALL_ORIGINS = True  # 개발용. 운영: CORS_ALLOWED_ORIGINS
+
+# ==================== 기타 ====================
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
@@ -104,23 +160,12 @@ USE_TZ = True
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# ============================================================
-# GPT 모델 설정
-# ============================================================
 GPT_MODELS = {
-    # 4,190개 원본 추출에 사용한 모델
-    'original': 'gpt-5.4',
-    
-    # 신규 게임 Few-Shot 분석용 (저렴한 모델)
+    'original':     'gpt-5.4',
     'fewshot_mini': 'gpt-4o-mini',
-    'fewshot_nano': 'gpt-4o-mini',  # 또는 더 저렴한 모델
-    
-    # 임베딩
-    'embedding': 'text-embedding-3-small',
+    'embedding':    'text-embedding-3-small',
 }
-# ============================================================
-# Redis 설정
-# ============================================================
+
 REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
 REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
 REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"

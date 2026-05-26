@@ -2,12 +2,26 @@
 """
 URL 라우팅 설정 (URL Routing Configuration)
 
-Django 관리자 페이지만 노출하며, 게임 데이터 API는 FastAPI(포트 8000)에서 제공.
-Django는 데이터 관리(Admin) 전용으로 사용.
+v1 → v2: Google OAuth2 + JWT 인증 URL 추가
 """
 from django.contrib import admin
-from django.urls import path
+from django.urls import path, include
+from rest_framework_simplejwt.views import TokenRefreshView
+from apps.users.views import GoogleLoginCallbackView, UserMeView
 
 urlpatterns = [
-    path('admin/', admin.site.urls),  # Django Admin - 게임/유저 데이터 관리 페이지
+    path('admin/', admin.site.urls),
+
+    # ==================== 인증 / Auth ====================
+    # Google OAuth2 (allauth)
+    path('accounts/', include('allauth.urls')),
+
+    # JWT 토큰 갱신
+    path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    # Google 로그인 콜백 → JWT 발급 후 프론트로 리다이렉트
+    path('api/auth/google/callback/', GoogleLoginCallbackView.as_view(), name='google_callback'),
+
+    # 현재 유저 정보 조회 (프론트에서 로그인 상태 확인용)
+    path('api/auth/me/', UserMeView.as_view(), name='user_me'),
 ]
