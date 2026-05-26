@@ -9,3 +9,10 @@ django-import-export>=3.3.0
 python-dotenv>=1.0.0
 redis>=5.0.0
 openai>=1.12.0
+
+# ==================== Phase 2: 인증 ====================
+django-allauth[socialaccount]>=65.0.0   # Google OAuth2 (의존성 포함)
+djangorestframework-simplejwt>=5.3.0    # JWT 토큰
+requests>=2.31.0                        # allauth Google provider
+cryptography>=42.0.0                    # allauth JWT 처리
+pyjwt[crypto]>=2.8.0                    # JWT 암호화

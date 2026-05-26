@@ -1,6 +1,11 @@
 /**
  * User-related store (zustand) with persistence
- * 사용자 관련 상태 저장소 — SSR-safe sessionId + 행동 로그용
+ * 사용자 관련 상태 저장소 — SSR-safe sessionId + JWT 인증
+ *
+ * v3 → v4:
+ *   - JWT 토큰 저장 (access, refresh)
+ *   - 유저 정보 저장 (id, email, nickname)
+ *   - setLogin, setTokens, logout 추가
  */
 'use client';
 
@@ -9,10 +14,13 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 
 type Theme = 'light' | 'dark';
 
-/**
- * Generate a random session ID (21 chars, URL-safe).
- * 랜덤 세션 ID 생성 — crypto.randomUUID 우선, fallback은 수동 생성.
- */
+export interface UserInfo {
+  id: number;
+  email: string;
+  nickname: string | null;
+  steam_id: string | null;
+}
+
 function generateSessionId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID().replace(/-/g, '').slice(0, 21);
@@ -27,28 +35,34 @@ function generateSessionId(): string {
 interface UserStoreState {
   theme: Theme;
   favorites: number[];
+  // ==================== 인증 ====================
   isLoggedIn: boolean;
-  steamId: string | null;
-  sessionId: string | null;  // nullable — SSR에서 null, 클라이언트에서 lazy 생성
+  user: UserInfo | null;
+  accessToken: string | null;
+  refreshToken: string | null;
+  steamId: string | null;           // 하위 호환
+  sessionId: string | null;
+  // ==================== 액션 ====================
   toggleTheme: () => void;
   setTheme: (t: Theme) => void;
   toggleFavorite: (appId: number) => void;
-  setLogin: (steamId: string | null) => void;
-  ensureSessionId: () => string;  // 항상 유효한 sessionId 반환
+  setLogin: (user: UserInfo) => void;
+  setTokens: (tokens: { access: string; refresh: string }) => void;
+  logout: () => void;
+  ensureSessionId: () => string;
 }
 
-/**
- * User store with localStorage persistence.
- * localStorage 영속화 적용 — sessionId는 최초 1회 생성 후 유지.
- */
 export const useUserStore = create<UserStoreState>()(
   persist(
     (set, get) => ({
-      theme:      'dark',
-      favorites:  [],
-      isLoggedIn: false,
-      steamId:    null,
-      sessionId:  null,  // 초기값 null → 클라이언트에서 onRehydrateStorage로 생성
+      theme:        'dark',
+      favorites:    [],
+      isLoggedIn:   false,
+      user:         null,
+      accessToken:  null,
+      refreshToken: null,
+      steamId:      null,
+      sessionId:    null,
 
       toggleTheme: () =>
         set((s) => ({ theme: s.theme === 'light' ? 'dark' : 'light' })),
@@ -62,13 +76,28 @@ export const useUserStore = create<UserStoreState>()(
             : [...s.favorites, appId],
         })),
 
-      setLogin: (steamId) =>
-        set({ steamId, isLoggedIn: steamId !== null }),
+      setLogin: (user) =>
+        set({
+          isLoggedIn: true,
+          user,
+          steamId: user.steam_id,
+        }),
 
-      /**
-       * Ensure a valid sessionId exists and return it.
-       * 유효한 sessionId 보장 — 없으면 생성 후 저장.
-       */
+      setTokens: (tokens) =>
+        set({
+          accessToken:  tokens.access,
+          refreshToken: tokens.refresh,
+        }),
+
+      logout: () =>
+        set({
+          isLoggedIn:   false,
+          user:         null,
+          accessToken:  null,
+          refreshToken: null,
+          steamId:      null,
+        }),
+
       ensureSessionId: () => {
         const current = get().sessionId;
         if (current) return current;
@@ -80,7 +109,6 @@ export const useUserStore = create<UserStoreState>()(
     {
       name:    'hidden-gem-user',
       storage: createJSONStorage(() => localStorage),
-      // localStorage 복원 후 sessionId 없으면 생성
       onRehydrateStorage: () => (state) => {
         if (state && !state.sessionId && typeof window !== 'undefined') {
           state.sessionId = generateSessionId();
