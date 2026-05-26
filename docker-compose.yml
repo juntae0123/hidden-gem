@@ -60,8 +60,12 @@ services:
       - DB_PASSWORD=0312
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
     ports:
-      - "8001:8000"
+      - "8001:8001"
     depends_on:
       db:
         condition: service_healthy
@@ -98,6 +102,7 @@ services:
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
       - ADMIN_USERNAME=${ADMIN_USERNAME}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      
     ports:
       - "8000:8000"
     depends_on:
