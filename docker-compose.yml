@@ -65,7 +65,7 @@ services:
       - FRONTEND_URL=${FRONTEND_URL}
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
     ports:
-      - "8001:8001"
+      - "8001:8000"
     depends_on:
       db:
         condition: service_healthy

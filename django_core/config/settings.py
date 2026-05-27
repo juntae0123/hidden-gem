@@ -2,9 +2,9 @@
 """
 Hidden Gem - Django 설정
 
-v1 → v2 변경사항:
-    - django-allauth Google OAuth2 추가
-    - djangorestframework-simplejwt JWT 인증 추가
+v2 → v3 변경사항:
+    - SOCIALACCOUNT_PROVIDERS APP 제거 (DB SocialApp만 사용)
+    - MultipleObjectsReturned 에러 해결
 """
 
 from pathlib import Path
@@ -27,8 +27,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'django.contrib.sites',          # allauth 필수
-    # Third-party
+    'django.contrib.sites',
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
@@ -38,7 +37,6 @@ INSTALLED_APPS = [
     'allauth.account',
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
-    # Local
     'apps.games',
     'apps.users',
 ]
@@ -52,7 +50,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'allauth.account.middleware.AccountMiddleware',  # allauth 필수
+    'allauth.account.middleware.AccountMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -124,26 +122,21 @@ AUTHENTICATION_BACKENDS = [
 ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_USERNAME_REQUIRED = False
 ACCOUNT_AUTHENTICATION_METHOD = 'email'
-ACCOUNT_EMAIL_VERIFICATION = 'none'  # 이메일 인증 스킵 (소셜 로그인만 사용)
+ACCOUNT_EMAIL_VERIFICATION = 'none'
 
+# Google SocialApp은 Django Admin에서 DB로 관리 (중복 방지)
+# SOCIALACCOUNT_PROVIDERS APP 설정 제거 — DB에 등록된 것만 사용
 SOCIALACCOUNT_PROVIDERS = {
     'google': {
-        'APP': {
-            'client_id':     os.getenv('GOOGLE_CLIENT_ID', ''),
-            'secret':        os.getenv('GOOGLE_CLIENT_SECRET', ''),
-            'key':           '',
-        },
         'SCOPE': ['profile', 'email'],
         'AUTH_PARAMS': {'access_type': 'online'},
         'FETCH_USERINFO': True,
     }
 }
 
-# Google 로그인 후 리다이렉트 URL
 SOCIALACCOUNT_LOGIN_ON_GET = True
 LOGIN_REDIRECT_URL = '/'
 
-# 프론트엔드 URL (콜백 후 JWT 전달용)
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 
 # ==================== CORS ====================
