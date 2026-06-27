@@ -1,6 +1,8 @@
 /**
  * Utility functions for Hidden Gem frontend.
  * Hidden Gem 프론트엔드 유틸리티 함수.
+ *
+ * v3 → v4: 장르별 핵심지표 (getGenreCoreMetrics) 추가
  */
 
 import { clsx, type ClassValue } from 'clsx';
@@ -33,7 +35,7 @@ export const METRIC_LABELS: Record<string, string> = {
   puzzle_complexity: '퍼즐복잡도', platforming_precision: '플랫폼정밀도',
   coop_synergy: '협동시너지', competitive_stress: '경쟁스트레스',
   npc_interaction: 'NPC상호작용', user_creation: '유저창작',
-  multiplayer_scale: '멀티규모', lore_richness: '세계관밀도',
+  multiplayer_scale: '멀티규모', lore_richness: '세계관',
   choice_consequence: '선택결과', visual_spectacle: '시각연출',
   environmental_storytelling: '환경서사', soundtrack_impact: '사운드트랙',
   build_variety: '빌드다양성', progression_clarity: '진행명확성',
@@ -48,53 +50,196 @@ export const METRIC_LABELS: Record<string, string> = {
 
 export const NUMERIC_METRIC_FIELDS = Object.keys(METRIC_LABELS);
 
-// ==================== Distinctive Metrics ====================
+// ==================== Genre Core Metrics ====================
+// juntae 철학: "장르마다 핵심지표가 다름, 9점 자랑 X 정체성 O"
+
+export const GENRE_CORE_METRICS: Record<string, string[]> = {
+  RPG: [
+    'narrative_depth',      // 서사깊이
+    'growth_reward',        // 성장보상
+    'choice_consequence',   // 선택결과
+    'lore_richness',        // 세계관
+    'exploration_reward',   // 탐험보상
+    'freedom_level',        // 자유도
+  ],
+  액션: [
+    'action_pacing',        // 액션템포
+    'reflex_demand',        // 반응속도
+    'visual_spectacle',     // 시각연출
+    'animation_quality',    // 애니메이션
+    'replay_value',         // 리플레이
+    'difficulty_accessibility', // 난이도접근성
+  ],
+  전략: [
+    'strategic_depth',      // 전략깊이
+    'management_complexity',// 관리복잡도
+    'replay_value',         // 리플레이
+    'learning_curve',       // 학습곡선
+    'rng_dependency',       // RNG의존도
+    'build_variety',        // 빌드다양성
+  ],
+  시뮬레이션: [
+    'management_complexity',
+    'freedom_level',
+    'replay_value',
+    'progression_clarity',
+    'user_creation',
+    'session_length',
+  ],
+  어드벤처: [
+    'exploration_reward',
+    'narrative_depth',
+    'environmental_storytelling',
+    'world_reactivity',
+    'puzzle_complexity',
+    'lore_richness',
+  ],
+  인디: [
+    'art_style_uniqueness',
+    'narrative_depth',
+    'audio_design',
+    'soundtrack_impact',
+    'melancholy',
+    'replay_value',
+  ],
+  로그라이크: [
+    'replay_value',
+    'rng_dependency',
+    'learning_curve',
+    'build_variety',
+    'grind_factor',
+    'reflex_demand',
+  ],
+  공포: [
+    'horror_factor',
+    'melancholy',
+    'dark_fantasy_vibe',
+    'environmental_storytelling',
+    'soundtrack_impact',
+    'narrative_depth',
+  ],
+  퍼즐: [
+    'puzzle_complexity',
+    'strategic_depth',
+    'learning_curve',
+    'progression_clarity',
+    'art_style_uniqueness',
+    'difficulty_accessibility',
+  ],
+};
+
+export const DEFAULT_CORE_METRICS = [
+  'narrative_depth',
+  'replay_value',
+  'art_style_uniqueness',
+  'audio_design',
+  'exploration_reward',
+  'visual_spectacle',
+];
+
+// ==================== Distinctive Metric Type ====================
 
 export interface DistinctiveMetric {
   key: string;
   value: number;
-  /** 평균(5)에서 떨어진 정도 */
   deviation: number;
-  /** high(8+) / low(2-) / normal */
   category: 'high' | 'low' | 'normal';
 }
 
 /**
- * Get most distinctive metrics for a game (deviation from neutral 5).
- * 게임의 가장 특징적인 지표 N개 — 평균(5)에서 편차 큰 순.
+ * Get genre-core metrics for a game.
+ * 게임의 장르 핵심 6대 지표 (정체성 표시).
  *
- * 기존 getTopMetrics(값 큰 순)의 문제:
- *   - 모든 게임이 비슷한 "높은 지표"를 가질 수 있음
- *   - 진짜 이 게임만의 특징을 못 잡음
+ * juntae 철학:
+ *   - "9점 자랑" X (과금공정성 같은 무관 지표 제외)
+ *   - "이 게임이 어떤 RPG/액션인가" 정체성
+ *   - 낮은 점수도 정체성 (성장5 = 서사중심 RPG)
  *
- * 개선: 편차 기반 → "이 게임은 다른 게임과 뭐가 다른가"
+ * @param metrics - 게임 지표
+ * @param genres - 장르 문자열 (예: "RPG")
+ * @param n - 표시 개수 (기본 6)
+ */
+export function getGenreCoreMetrics(
+  metrics: Record<string, number | boolean | null | undefined>,
+  genres: string,
+  n: number = 6
+): DistinctiveMetric[] {
+  // 1. 장르 파싱 (첫 매칭 우선)
+  const genreList = genres
+    .split(',')
+    .map((g) => g.trim())
+    .filter(Boolean);
+
+  let coreFields: string[] = DEFAULT_CORE_METRICS;
+  for (const genre of genreList) {
+    if (GENRE_CORE_METRICS[genre]) {
+      coreFields = GENRE_CORE_METRICS[genre];
+      break;
+    }
+  }
+
+  // 2. 핵심지표 값 추출
+  const result: DistinctiveMetric[] = [];
+  for (const key of coreFields) {
+    const value = metrics[key];
+    if (typeof value !== 'number') continue;
+    result.push({
+      key,
+      value,
+      deviation: value - 5,
+      category: value >= 8 ? 'high' : value >= 5 ? 'normal' : 'low',
+    });
+  }
+
+  // 3. 6개 미만이면 강점으로 보충
+  if (result.length < n) {
+    const usedKeys = new Set(result.map((r) => r.key));
+    const supplements: DistinctiveMetric[] = [];
+    for (const key of NUMERIC_METRIC_FIELDS) {
+      if (usedKeys.has(key)) continue;
+      const value = metrics[key];
+      if (typeof value !== 'number' || value < 6) continue;
+      supplements.push({
+        key,
+        value,
+        deviation: value - 5,
+        category: value >= 8 ? 'high' : 'normal',
+      });
+    }
+    supplements.sort((a, b) => b.value - a.value);
+    result.push(...supplements.slice(0, n - result.length));
+  }
+
+  return result.slice(0, n);
+}
+
+/**
+ * Legacy — 높은 값 우선 (검색 의도 카드용).
+ * @deprecated 게임 상세는 getGenreCoreMetrics 사용.
  */
 export function getDistinctiveMetrics(
   metrics: Record<string, number | boolean | null | undefined>,
   n: number = 6
 ): DistinctiveMetric[] {
   const result: DistinctiveMetric[] = [];
-
   for (const key of NUMERIC_METRIC_FIELDS) {
     const value = metrics[key];
     if (typeof value !== 'number') continue;
-
-    const deviation = Math.abs(value - 5);
+    if (value < 5) continue;
     result.push({
       key,
       value,
-      deviation,
-      category: value >= 8 ? 'high' : value <= 2 ? 'low' : 'normal',
+      deviation: value - 5,
+      category: value >= 8 ? 'high' : value >= 6 ? 'normal' : 'low',
     });
   }
-
-  return result.sort((a, b) => b.deviation - a.deviation).slice(0, n);
+  result.sort((a, b) => b.value - a.value);
+  return result.slice(0, n);
 }
 
 /**
  * Legacy — top metrics by value.
- * 레거시 — 값 기준 상위 지표 (하위 호환).
- * @deprecated Use getDistinctiveMetrics instead.
+ * @deprecated
  */
 export function getTopMetrics(
   metrics: Record<string, number | boolean | null>,
