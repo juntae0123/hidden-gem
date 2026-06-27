@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useTransition } from 'react';
+import { Suspense, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 
@@ -14,7 +14,11 @@ import { useDefaultRecommendations, DEFAULT_THEME_LABEL } from '@/hooks/useRecom
 import { semanticSearchGames, recordTasteAction } from '@/lib/api';
 import { useUserStore } from '@/store/useUserStore';
 
-export default function HomePage() {
+/**
+ * Inner home content using useSearchParams.
+ * Korean: useSearchParams를 쓰는 실제 본문. Suspense로 감싸기 위해 분리.
+ */
+function HomeContent() {
   const router        = useRouter();
   const searchParams  = useSearchParams();
   const [isPending, startTransition] = useTransition();
@@ -49,7 +53,7 @@ export default function HomePage() {
   // 검색 제출
   const handleSubmit = (value: string) => {
     const trimmed = value.trim();
-    
+
     if (trimmed) {
       recordTasteAction({
         session_id:  ensureSessionId(),
@@ -61,7 +65,7 @@ export default function HomePage() {
         },
       });
     }
-    
+
     startTransition(() => {
       router.push(trimmed ? `/?q=${encodeURIComponent(trimmed)}` : '/');
     });
@@ -122,5 +126,17 @@ export default function HomePage() {
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * Home page wrapper with Suspense boundary.
+ * Korean: useSearchParams가 prerender 시 Suspense를 요구해서 바깥에서 감쌈.
+ */
+export default function HomePage() {
+  return (
+    <Suspense fallback={<GameGridSkeleton count={9} />}>
+      <HomeContent />
+    </Suspense>
   );
 }
