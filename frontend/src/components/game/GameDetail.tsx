@@ -19,6 +19,7 @@ import { RadarChart } from '@/components/ui/RadarChart';
 import { getGenreCoreMetrics, METRIC_LABELS, cn } from '@/lib/utils';
 import { METRIC_DESCRIPTIONS } from '@/lib/constants';
 import { recordTasteAction, recordTasteActionBeacon } from '@/lib/api';
+import { LoginPromptModal } from '@/components/ui/LoginPromptModal';
 
 interface GameDetailProps {
   appId: number;
@@ -84,9 +85,11 @@ export function GameDetail({ appId }: GameDetailProps) {
   const { data: game, isLoading, error, refetch } = useGameDetail(appId);
   const favorites       = useUserStore(s => s.favorites);
   const toggleFavorite  = useUserStore(s => s.toggleFavorite);
+  const isLoggedIn      = useUserStore(s => s.isLoggedIn);
   const ensureSessionId = useUserStore(s => s.ensureSessionId);
 
   const hasLoggedRef = useRef(false);
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
   useEffect(() => {
     if (!appId || hasLoggedRef.current) return;
@@ -172,16 +175,22 @@ export function GameDetail({ appId }: GameDetailProps) {
             </a>
             <button
               type="button"
-              onClick={() => toggleFavorite(appId)}
+              onClick={() => {
+                if (!isLoggedIn) {
+                  setShowLoginPrompt(true);
+                  return;
+                }
+                toggleFavorite(appId);
+              }}
               className={cn(
-                'inline-flex items-center gap-1.5 px-3 py-2 rounded-md border text-[12px]',
+                'inline-flex items-center gap-1.5 px-3 py-2 rounded-md border text-[12px] transition-colors',
                 isFav
-                  ? 'border-purple-500 text-purple-600 bg-purple-50 dark:bg-purple-950/20'
-                  : 'border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300'
+                  ? 'border-red-200 text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:border-red-900'
+                  : 'border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800'
               )}
             >
-              <Heart className={cn('w-3.5 h-3.5', isFav && 'fill-current')} />
-              {isFav ? '찜됨' : '찜하기'}
+              <Heart className={cn('w-3.5 h-3.5', isFav && 'fill-red-500 text-red-500')} />
+              찜
             </button>
           </div>
         </div>
@@ -213,6 +222,12 @@ export function GameDetail({ appId }: GameDetailProps) {
           ))}
         </div>
       </div>
+
+      <LoginPromptModal
+        open={showLoginPrompt}
+        message="찜하기는 로그인 후 이용할 수 있어요."
+        onClose={() => setShowLoginPrompt(false)}
+      />
     </article>
   );
 }

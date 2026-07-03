@@ -3,12 +3,13 @@
  * 상단 네비게이션 바
  *
  * v2 → v3: 로그인 상태에 따라 User 아이콘 / 닉네임 + 로그아웃 표시
+ * v3 → v4: 드롭다운에 마이페이지 추가 + 취향 분석 탭 강조
  */
 'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Moon, Sun, User, LogOut } from 'lucide-react';
+import { Moon, Sun, User, LogOut, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useUserStore } from '@/store/useUserStore';
 import { cn } from '@/lib/utils';
@@ -16,7 +17,7 @@ import { cn } from '@/lib/utils';
 const TABS = [
   { href: '/',        label: '홈' },
   { href: '/ranking', label: '랭킹' },
-  { href: '/search',  label: '취향 분석' },
+  { href: '/search',  label: '취향 분석', highlight: true },
 ];
 
 export function Navbar() {
@@ -65,6 +66,27 @@ export function Navbar() {
             const active =
               pathname === tab.href ||
               (tab.href !== '/' && pathname.startsWith(tab.href));
+
+            // 취향 분석 — 강조 탭 (핵심 기능)
+            if (tab.highlight) {
+              return (
+                <Link
+                  key={tab.href}
+                  href={tab.href}
+                  className={cn(
+                    'flex items-center gap-1 px-3 py-1.5 rounded-md text-[13px] font-medium transition-colors',
+                    active
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-purple-600/10 text-purple-700 dark:text-purple-300 hover:bg-purple-600/20'
+                  )}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  {tab.label}
+                </Link>
+              );
+            }
+
+            // 일반 탭 (홈/랭킹)
             return (
               <Link
                 key={tab.href}
@@ -114,10 +136,22 @@ export function Navbar() {
                   <div className="px-3 py-2 text-[11px] text-zinc-400 border-b border-zinc-100 dark:border-zinc-800">
                     {user.email}
                   </div>
+
+                  {/* 마이페이지 */}
+                  <Link
+                    href="/mypage"
+                    onClick={() => setShowMenu(false)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-zinc-600 dark:text-zinc-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/20 transition-colors"
+                  >
+                    <User className="w-3.5 h-3.5" />
+                    마이페이지
+                  </Link>
+
+                  {/* 로그아웃 */}
                   <button
                     type="button"
                     onClick={logout}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-zinc-600 dark:text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-zinc-600 dark:text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors border-t border-zinc-100 dark:border-zinc-800"
                   >
                     <LogOut className="w-3.5 h-3.5" />
                     로그아웃

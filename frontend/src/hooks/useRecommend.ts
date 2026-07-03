@@ -10,7 +10,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { recommendByGame, recommendByPreference } from '@/lib/api';
+import { recommendByGame, recommendByPreference, getVibes, recommendByVibe } from '@/lib/api';
 
 // ==================== 매일 순환 테마 / Daily Rotating Themes ====================
 
@@ -180,5 +180,38 @@ export function useRecommendByPreference() {
         data
       );
     },
+  });
+}
+
+// ==================== Vibe Cluster Hooks ====================
+
+/**
+ * Fetch vibe chip list (cached long — rarely changes).
+ * Korean: Vibe 칩 목록 조회. 거의 안 바뀌니 길게 캐싱.
+ */
+export function useVibes() {
+  return useQuery({
+    queryKey: ['vibes', 'list'],
+    queryFn:  getVibes,
+    staleTime: 1000 * 60 * 60,      // 1시간 fresh
+    gcTime:    1000 * 60 * 60 * 24, // 24시간 캐시
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+}
+
+/**
+ * Recommend games by selected vibe chip.
+ * Korean: 선택된 Vibe 칩으로 추천. vibeKey가 null이면 비활성.
+ */
+export function useRecommendByVibe(vibeKey: string | null, count: number = 12) {
+  return useQuery({
+    queryKey: ['recommend', 'vibe', vibeKey, count],
+    queryFn:  () => recommendByVibe(vibeKey as string, count),
+    enabled:  vibeKey !== null,
+    staleTime: 1000 * 60 * 30,
+    gcTime:    1000 * 60 * 60,
+    refetchOnWindowFocus: false,
+    retry: 1,
   });
 }

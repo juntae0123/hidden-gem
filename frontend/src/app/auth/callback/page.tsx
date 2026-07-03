@@ -15,10 +15,11 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 const DJANGO_URL = process.env.NEXT_PUBLIC_DJANGO_URL || 'http://localhost:8001';
 
 function CallbackContent() {
-  const router       = useRouter();
-  const searchParams = useSearchParams();
-  const setLogin     = useUserStore(s => s.setLogin);
-  const setTokens    = useUserStore(s => s.setTokens);
+  const router        = useRouter();
+  const searchParams  = useSearchParams();
+  const setLogin      = useUserStore(s => s.setLogin);
+  const setTokens     = useUserStore(s => s.setTokens);
+  const loadFavorites = useUserStore(s => s.loadFavorites);
 
   useEffect(() => {
     const access  = searchParams.get('access');
@@ -40,12 +41,15 @@ function CallbackContent() {
       .then(res => res.json())
       .then(user => {
         setLogin(user);
-        router.replace('/');  // 메인 페이지로
-      })
-      .catch(() => {
-        router.replace('/login?error=fetch_failed');
+        loadFavorites();  // 로그인 후 찜 목록 DB에서 로드
+        // 온보딩 분기: 미완료 신규 유저 → 온보딩, 완료 → 메인
+        if (user.onboarding_completed) {
+          router.replace('/');
+        } else {
+          router.replace('/onboarding');
+        }
       });
-  }, [searchParams, setLogin, setTokens, router]);
+  }, [searchParams, setLogin, setTokens, loadFavorites, router]);
 
   return (
     <div className="min-h-[60vh] flex items-center justify-center">

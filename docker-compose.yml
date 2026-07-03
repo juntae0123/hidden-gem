@@ -1,5 +1,5 @@
 # docker-compose.yml
-version: '3.8'
+# version 속성 제거 (obsolete 경고 해결)
 
 services:
   # ============================================================
@@ -97,12 +97,12 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
       - SENTRY_DSN=${SENTRY_DSN}
       - SENTRY_ENV=${SENTRY_ENV:-development}
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
       - ADMIN_USERNAME=${ADMIN_USERNAME}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      
     ports:
       - "8000:8000"
     depends_on:
@@ -116,9 +116,50 @@ services:
     networks:
       - hidden_gem_network
 
+  # ============================================================
+  # Umami Analytics (셀프호스팅 무료 분석)
+  # ============================================================
+  umami:
+    image: ghcr.io/umami-software/umami:postgresql-latest
+    container_name: hidden_gem_umami
+    environment:
+      DATABASE_URL: postgresql://umami:umami_pass@umami_db:5432/umami
+      DATABASE_TYPE: postgresql
+      APP_SECRET: ${UMAMI_APP_SECRET:-hidden-gem-umami-secret-change-me}
+    ports:
+      - "3001:3000"
+    depends_on:
+      umami_db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hidden_gem_network
+
+  # ============================================================
+  # Umami DB (분석 전용 PostgreSQL, 게임 DB와 격리)
+  # ============================================================
+  umami_db:
+    image: postgres:16-alpine
+    container_name: hidden_gem_umami_db
+    environment:
+      POSTGRES_DB: umami
+      POSTGRES_USER: umami
+      POSTGRES_PASSWORD: umami_pass
+    volumes:
+      - umami_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umami -d umami"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - hidden_gem_network
+
 volumes:
   postgres_data:
   redis_data:
+  umami_db_data:
 
 networks:
   hidden_gem_network:

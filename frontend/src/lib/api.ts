@@ -279,6 +279,111 @@ export async function recommendByPreference(
   return data;
 }
 
+// ==================== Vibe Cluster ====================
+
+/** Vibe 칩 메타 (목록 표시용) / Vibe chip metadata */
+export interface VibeItem {
+  key:         string;
+  label:       string;
+  emoji:       string;
+  description: string;
+}
+
+/**
+ * Fetch all macro vibes for chip UI.
+ * Korean: 칩 UI용 12개 Macro Vibe 목록 조회.
+ */
+export async function getVibes(): Promise<VibeItem[]> {
+  const { data } = await apiClient.get<{ vibes: VibeItem[] }>(
+    '/games/vibes'
+  );
+  return data.vibes;
+}
+
+/**
+ * Recommend games by vibe chip (backend maps vibe → v6 preferences).
+ * Korean: Vibe 칩 클릭 → 백엔드가 preferences로 변환 후 v6 추천.
+ */
+export async function recommendByVibe(
+  vibeKey: string,
+  count: number = 12,
+): Promise<RecommendationResponse> {
+  const { data } = await apiClient.post<RecommendationResponse>(
+    `/games/recommend/by-vibe?vibe_key=${encodeURIComponent(vibeKey)}&count=${count}`,
+  );
+  return data;
+}
+
+// ==================== Onboarding (Django auth) ====================
+
+/** 온보딩 입력 / Onboarding form payload */
+export interface OnboardingPayload {
+  first_name?: string;
+  nickname?:   string;
+  gender:      string;  // 필수
+  age_group:   string;  // 필수
+}
+
+/** 유저 정보 (온보딩 상태 포함) / User info incl. onboarding state */
+export interface MeResponse {
+  id:                   number;
+  email:                string;
+  nickname:             string | null;
+  steam_id:             string | null;
+  gender:               string | null;
+  age_group:            string | null;
+  onboarding_completed: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * Fetch current user (incl. onboarding_completed).
+ * Korean: 현재 유저 정보 조회 — 온보딩 완료 여부 포함.
+ * apiClient 사용 → 401 시 자동 토큰 갱신 interceptor를 탐.
+ * Django(8001) 절대 URL을 주면 baseURL(FastAPI)을 무시함.
+ */
+export async function getMe(): Promise<MeResponse> {
+  const { data } = await apiClient.get<MeResponse>(
+    `${DJANGO_URL}/api/auth/me/`
+  );
+  return data;
+}
+
+/**
+ * Submit onboarding data (name/nickname/gender/age_group).
+ * Korean: 온보딩 데이터 제출. 성공 시 갱신된 유저 정보 반환.
+ * apiClient 사용 → 401 자동 갱신 interceptor 적용.
+ */
+export async function submitOnboarding(
+  payload: OnboardingPayload
+): Promise<MeResponse> {
+  const { data } = await apiClient.post<MeResponse>(
+    `${DJANGO_URL}/api/auth/onboarding/`,
+    payload
+  );
+  return data;
+}
+
+/** 최근 본 게임 1개 / Recently viewed game */
+export interface RecentGame {
+  app_id:       number;
+  name:         string;
+  header_image: string;
+  genres:       string;
+}
+
+/**
+ * Fetch user's recently viewed games (detail_view history).
+ * Korean: 최근 본 게임 조회 — 로그인 유저의 detail_view 이력.
+ * apiClient 사용 → 401 자동 갱신 적용.
+ */
+export async function getRecentGames(): Promise<RecentGame[]> {
+  const { data } = await apiClient.get<{ games: RecentGame[] }>(
+    `${DJANGO_URL}/api/auth/recent-games/`
+  );
+  return data.games;
+}
+
 // ==================== Taste Action API ====================
 
 export type TasteActionType =
@@ -351,4 +456,137 @@ export function recordTasteActionBeacon(
   } catch {
     return false;
   }
+}
+
+// ==================== Game Survey (지표 검증 설문) ====================
+
+/** 설문 대상 게임 / Game eligible for survey */
+export interface PendingSurvey {
+  app_id:       number;
+  name:         string;
+  header_image: string;
+  genres:       string;
+}
+
+/** 지표 평가 1개 / One metric rating */
+export interface MetricRatingInput {
+  metric:     string;
+  our_score:  number;
+  user_score: number;  // 1~5
+}
+
+/** 설문 제출 payload */
+export interface SurveySubmit {
+  app_id:   number;
+  played:   boolean;
+  ratings?: MetricRatingInput[];
+}
+
+/**
+ * Check if there's a pending survey for the user.
+ * Korean: 설문 대상 게임 1개 조회 (1주일 전 본+스팀간 게임, 미설문).
+ */
+export async function getPendingSurvey(): Promise<PendingSurvey | null> {
+  const { data } = await apiClient.get<{ survey: PendingSurvey | null }>(
+    `${DJANGO_URL}/api/auth/pending-survey/`
+  );
+  return data.survey;
+}
+
+/**
+ * Submit survey response.
+ * Korean: 설문 응답 제출 (played + 지표별 점수).
+ */
+export async function submitSurvey(
+  payload: SurveySubmit
+): Promise<{ success?: boolean; duplicate?: boolean }> {
+  const { data } = await apiClient.post(
+    `${DJANGO_URL}/api/auth/submit-survey/`,
+    payload
+  );
+  return data;
+}
+
+// ==================== Favorites (찜) ====================
+
+/** 찜한 게임 1개 / One favorited game */
+export interface FavoriteGame {
+  app_id:       number;
+  name:         string;
+  header_image: string;
+  genres:       string;
+}
+
+/**
+ * Toggle favorite (add/remove). Login required.
+ * Korean: 찜 토글 — 추가/삭제. 로그인 필요.
+ * 반환: 토글 후 찜 상태 (true=찜됨).
+ */
+export async function toggleFavoriteApi(appId: number): Promise<boolean> {
+  const { data } = await apiClient.post<{ favorited: boolean }>(
+    `${DJANGO_URL}/api/auth/favorite/toggle/`,
+    { app_id: appId }
+  );
+  return data.favorited;
+}
+
+/**
+ * Get my favorites (game info + app_ids).
+ * Korean: 내 찜 목록 — 게임 정보 + app_id 배열(store 동기화용).
+ */
+export async function getFavorites(): Promise<{
+  favorites: FavoriteGame[];
+  app_ids:   number[];
+}> {
+  const { data } = await apiClient.get<{
+    favorites: FavoriteGame[];
+    app_ids:   number[];
+  }>(`${DJANGO_URL}/api/auth/favorites/`);
+  return data;
+}
+
+// ==================== Taste Preference (취향 설정) ====================
+
+/** 취향 설정 데이터 / Taste preference payload */
+export interface TastePreference {
+  preferred_genres:   string[];              // 선호 장르
+  metric_preferences: Record<string, number>; // 지표별 선호 점수 (1~5)
+}
+
+/**
+ * Get saved taste preferences.
+ * Korean: 저장된 취향 조회 — 선호 장르 + 지표 점수.
+ */
+export async function getTastePreference(): Promise<TastePreference> {
+  const { data } = await apiClient.get<TastePreference>(
+    `${DJANGO_URL}/api/auth/taste-preference/`
+  );
+  return data;
+}
+
+/**
+ * Save taste preferences.
+ * Korean: 취향 저장 — 선호 장르 + 지표 점수.
+ */
+export async function saveTastePreference(
+  payload: TastePreference
+): Promise<TastePreference> {
+  const { data } = await apiClient.post<TastePreference>(
+    `${DJANGO_URL}/api/auth/taste-preference/`,
+    payload
+  );
+  return data;
+}
+
+// ==================== Delete Account (회원 탈퇴) ====================
+
+/**
+ * Delete account (anonymizes behavior/survey data, removes personal info).
+ * Korean: 회원 탈퇴 — 개인정보 삭제 + 행동/설문 익명화. 되돌릴 수 없음.
+ */
+export async function deleteAccount(): Promise<{ success: boolean }> {
+  const { data } = await apiClient.delete<{ success: boolean }>(
+    `${DJANGO_URL}/api/auth/delete-account/`
+  );
+  return data;
 }

@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     # /taste/stats 등 운영 엔드포인트 Basic Auth용
     ADMIN_USERNAME: str = ""
     ADMIN_PASSWORD: str = ""
+    
+    # ==================== JWT (Django 토큰 검증용) ====================
+    # Django와 동일한 SECRET_KEY로 JWT 검증 → user_id 추출
+    DJANGO_SECRET_KEY: str = "dev-secret-key-12345"
+    JWT_ALGORITHM: str = "HS256"
 
     @property
     def DATABASE_URL(self) -> str:
