@@ -122,12 +122,13 @@ AUTHENTICATION_BACKENDS = [
     'allauth.account.auth_backends.AuthenticationBackend',
 ]
 
-# allauth 65.x 설정 (deprecated 경고 제거)
-ACCOUNT_LOGIN_METHODS = {'email'}
-ACCOUNT_SIGNUP_FIELDS = ['email*']
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_AUTHENTICATION_METHOD = 'email'
 ACCOUNT_EMAIL_VERIFICATION = 'none'
 
-# Google SocialApp은 Django Admin에서 DB로 관리
+# Google SocialApp은 Django Admin에서 DB로 관리 (중복 방지)
+# SOCIALACCOUNT_PROVIDERS APP 설정 제거 — DB에 등록된 것만 사용
 SOCIALACCOUNT_PROVIDERS = {
     'google': {
         'SCOPE': ['profile', 'email'],
@@ -137,17 +138,8 @@ SOCIALACCOUNT_PROVIDERS = {
 }
 
 SOCIALACCOUNT_LOGIN_ON_GET = True
-SOCIALACCOUNT_AUTO_SIGNUP = True
-
-# ⭐⭐⭐ 핵심 수정: LOGIN_REDIRECT_URL은 반드시 '/' !!!
-# 절대 '/api/auth/google/callback/'으로 하면 안 됨 (redirect_uri 망가짐)
-LOGIN_REDIRECT_URL = '/'
-
-# JWT 발급 어댑터
-ACCOUNT_ADAPTER = 'apps.users.views.JWTAccountAdapter' 
+LOGIN_REDIRECT_URL = '/api/auth/google/callback/'
 SOCIALACCOUNT_ADAPTER = 'apps.users.views.JWTSocialAccountAdapter'
-
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 

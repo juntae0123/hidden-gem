@@ -38,6 +38,8 @@ from schemas.game import (
     RecommendationResponse, RecommendedGame,
 )
 from services.recommender import recommender, EXCLUSION_KEYWORDS
+from services.vibe_config import get_vibe_list, get_vibe_preferences  # ← 추가
+
 from services.cache import recommendation_cache
 from services.cost_guard import cost_guard
 
@@ -199,6 +201,17 @@ async def list_metrics():
     }
 
 
+@router.get("/vibes")
+async def list_vibes():
+    """
+    List 12 macro vibes for chip UI.
+    Korean: 12개 Macro Vibe 목록 (칩 UI용).
+
+    경로: /api/v1/games/vibes (prefix=/games)
+    """
+    return {"vibes": get_vibe_list()}
+
+
 # ==================== 게임 상세 / Game Detail ====================
 
 @router.get("/{app_id}", response_model=GameWithMetrics)
@@ -353,3 +366,33 @@ async def recommend_by_preference(
         cache_key, response.model_dump(), ttl=recommendation_cache.TTL_BY_PREFERENCE,
     )
     return response
+# ==================== Vibe Cluster (Phase 2-A) ====================
+
+
+@router.post("/recommend/by-vibe")
+async def recommend_by_vibe(
+    vibe_key: str = Query(..., description="Vibe key (예: cozy_escape)"),
+    count: int = Query(12, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Recommend games by vibe chip (v6 by-preference 재사용).
+    Korean: Vibe 칩 클릭 → 해당 preferences로 v6 추천.
+
+    경로: /api/v1/games/recommend/by-vibe?vibe_key=cozy_escape
+    """
+    prefs = get_vibe_preferences(vibe_key)
+    if not prefs:
+        raise HTTPException(404, f"Unknown vibe: {vibe_key}")
+
+    results = await recommender.recommend_by_preference(
+        db=db, preferences=prefs, count=count,
+    )
+    recommendations = recommender.format_recommendations_by_preference(
+        results, prefs,
+    )
+    return {
+        "vibe": vibe_key,
+        "total_candidates": len(recommendations),
+        "recommendations": recommendations,
+    }

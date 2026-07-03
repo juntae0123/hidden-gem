@@ -14,6 +14,7 @@ v3.1 → v3.2 변경사항:
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 import sentry_sdk
@@ -147,12 +148,23 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
+if settings.DEBUG:
+    ALLOWED_ORIGINS = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+else:
+    ALLOWED_ORIGINS = [
+        os.getenv("FRONTEND_URL", "https://hiddengem.io"),
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],        # 개발용 / Production: ["https://hiddengem.io"]
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["X-RateLimit-Remaining", "X-RateLimit-Limit"],
 )
 
 

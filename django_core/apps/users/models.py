@@ -1,10 +1,10 @@
 # django_core/apps/users/models.py
 """
-Hidden Gem - Django 유저 모델 + UserAction 행동 로그
+Hidden Gem - Django 유저 모델 + UserAction 행동 로그 + 게임 설문
 
-v1 → v2 변경사항:
-    - UserAction 모델 추가 (Phase 1.5 데이터 수집 인프라)
-    - 행동 로그 수집만, 취향 학습 로직은 Phase 2+
+v1 → v2: UserAction 추가 (Phase 1.5 데이터 수집)
+v2 → v3: 온보딩 필드 (gender/age_group/onboarding_completed)
+v3 → v4: 게임 설문 (GameSurvey/MetricRating — 지표 검증 수집 인프라)
 """
 
 from django.contrib.auth.models import AbstractUser
@@ -31,11 +31,63 @@ class CustomUser(AbstractUser):
         verbose_name="닉네임"
     )
 
-    # 취향 DNA (FastAPI에서 관리, Django에서는 조회만)
+    # 온보딩 — 데이터 수집용 (성별/나이대)
+    GENDER_CHOICES = [
+        ('male', '남성'),
+        ('female', '여성'),
+        ('other', '기타'),
+        ('no_answer', '응답 안 함'),
+    ]
+    gender = models.CharField(
+        max_length=20,
+        choices=GENDER_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name="성별"
+    )
+
+    AGE_GROUP_CHOICES = [
+        ('10s', '10대'),
+        ('20s', '20대'),
+        ('30s', '30대'),
+        ('40s', '40대'),
+        ('50s_plus', '50대 이상'),
+    ]
+    age_group = models.CharField(
+        max_length=20,
+        choices=AGE_GROUP_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name="나이대"
+    )
+
+    # 온보딩 완료 여부 (신규 가입 → 온보딩 분기에 사용)
+    onboarding_completed = models.BooleanField(
+        default=False,
+        verbose_name="온보딩 완료"
+    )
+
+# 취향 DNA (FastAPI에서 관리, Django에서는 조회만)
     taste_dna_json = models.JSONField(
         null=True,
         blank=True,
         verbose_name="취향 DNA (JSON)"
+    )
+
+    # 선호 장르 (취향 설정 — 복수 선택) / Preferred genres
+    preferred_genres = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="선호 장르",
+        help_text="예: ['액션', 'RPG', '전략']"
+    )
+
+    # 지표별 선호 점수 (취향 설정 — 1~5, 낮을수록 비선호) / Metric preferences
+    metric_preferences = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="지표 선호도",
+        help_text="예: {'cozy_factor': 5, 'horror_factor': 1}"
     )
 
     # 통계
@@ -111,15 +163,6 @@ class UserAction(models.Model):
     )
 
     # 컨텍스트 (분석용 — 지금 뭘 쓸지 몰라도 다 저장)
-    # 예시:
-    # {
-    #   "search_query": "힐링 게임",
-    #   "click_position": 3,          # 화면에서 몇 번째 위치
-    #   "time_to_click_ms": 1500,     # 화면 진입 후 클릭까지 시간
-    #   "displayed_score": 82.5,      # 클릭 시점 화면의 매치 점수
-    #   "referrer": "/search",        # 어디서 왔나
-    #   "session_game_views": 4,      # 이 세션에서 몇 번째 게임 조회
-    # }
     context = models.JSONField(
         default=dict,
         blank=True,
@@ -148,3 +191,118 @@ class UserAction(models.Model):
 
     def __str__(self):
         return f"UserAction({self.action_type}, app_id={self.app_id}, user={self.user_id})"
+
+
+class GameSurvey(models.Model):
+    """
+    Game survey response — step 1 (played or not) + meta.
+    Korean: 게임 설문 — 1단계(즐겼나) + 메타. 지표별 평가는 MetricRating.
+    1주일 전 detail_view+steam_click 한 게임에 대해 재방문 시 수집.
+    """
+    user = models.ForeignKey(
+        CustomUser,
+        null=True,                      # 탈퇴 시 익명화 (user만 NULL, 데이터 유지)
+        blank=True,
+        on_delete=models.SET_NULL,      # 유저 삭제돼도 설문은 익명으로 남김
+        related_name='surveys',
+        verbose_name="유저",
+    )
+    app_id = models.IntegerField(db_index=True, verbose_name="게임 app_id")
+    played = models.BooleanField(
+        verbose_name="플레이 여부",
+        help_text="True=해봤어요, False=안 해봤어요",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "game_surveys"
+        verbose_name = "게임 설문"
+        verbose_name_plural = "게임 설문 목록"
+        ordering = ["-created_at"]
+        # 한 유저가 같은 게임 중복 설문 방지
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "app_id"],
+                name="uq_user_game_survey",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "app_id"], name="idx_survey_user_game"),
+        ]
+
+    def __str__(self):
+        return f"GameSurvey(user={self.user_id}, app={self.app_id}, played={self.played})"
+
+
+class MetricRating(models.Model):
+    """
+    Per-metric felt rating — step 2 (only when played=True).
+    Korean: 지표별 체감 점수 — 2단계. 우리 점수(our_score) vs 유저 체감(user_score).
+    나중에 GPT 지표 점수 보정의 재료 (Community Validation).
+    """
+    survey = models.ForeignKey(
+        GameSurvey,
+        on_delete=models.CASCADE,
+        related_name='ratings',
+        verbose_name="설문",
+    )
+    metric = models.CharField(
+        max_length=50,
+        verbose_name="지표 키",
+        help_text="cozy_factor 등 game_metrics 컬럼명",
+    )
+    our_score = models.FloatField(
+        verbose_name="우리 점수",
+        help_text="GPT가 매긴 0~10 점수",
+    )
+    user_score = models.IntegerField(
+        verbose_name="유저 체감",
+        help_text="유저 슬라이더 응답 1~5",
+    )
+
+    
+
+    class Meta:
+        db_table = "metric_ratings"
+        verbose_name = "지표 평가"
+        verbose_name_plural = "지표 평가 목록"
+        indexes = [
+            # 지표별 보정 분석용 (metric으로 모아서 our vs user 비교)
+            models.Index(fields=["metric"], name="idx_rating_metric"),
+        ]
+
+    def __str__(self):
+        return f"MetricRating({self.metric}: our={self.our_score} user={self.user_score})"
+
+class Favorite(models.Model):
+    """
+    User's favorited game (wishlist).
+    Korean: 유저 찜 게임. 로그인 유저 전용 (비로그인은 로컬 X, DB 저장만).
+    같은 유저+게임 중복 방지.
+    """
+    user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='favorites',
+        verbose_name="유저",
+    )
+    app_id = models.IntegerField(db_index=True, verbose_name="게임 app_id")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "favorites"
+        verbose_name = "찜"
+        verbose_name_plural = "찜 목록"
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "app_id"],
+                name="uq_user_favorite",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "-created_at"], name="idx_fav_user_time"),
+        ]
+
+    def __str__(self):
+        return f"Favorite(user={self.user_id}, app={self.app_id})"

@@ -10,8 +10,9 @@ import { SearchBar } from '@/components/ui/SearchBar';
 import { GameGrid } from '@/components/game/GameGrid';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { GameGridSkeleton } from '@/components/ui/LoadingSkeleton';
-import { useDefaultRecommendations, DEFAULT_THEME_LABEL } from '@/hooks/useRecommend';
+import { useDefaultRecommendations, DEFAULT_THEME_LABEL, useRecommendByVibe, useVibes } from '@/hooks/useRecommend';
 import { semanticSearchGames, recordTasteAction } from '@/lib/api';
+import { VibeChips } from '@/components/ui/VibeChips';
 import { useUserStore } from '@/store/useUserStore';
 
 /**
@@ -26,6 +27,9 @@ function HomeContent() {
 
   const submittedQuery = searchParams.get('q') ?? '';
   const [inputValue, setInputValue] = useState(submittedQuery);
+
+  // Vibe 칩 선택 상태
+  const [selectedVibe, setSelectedVibe] = useState<string | null>(null);
 
   // 시맨틱 검색
   const {
@@ -50,11 +54,20 @@ function HomeContent() {
     refetch: refetchAI,
   } = useDefaultRecommendations(9);
 
+  // Vibe 칩 추천
+  const {
+    data:    vibeResult,
+    isLoading: vibeLoading,
+    error:   vibeError,
+    refetch: refetchVibe,
+  } = useRecommendByVibe(selectedVibe, 12);
+
   // 검색 제출
   const handleSubmit = (value: string) => {
     const trimmed = value.trim();
 
     if (trimmed) {
+      setSelectedVibe(null); // 검색하면 칩 선택 해제
       recordTasteAction({
         session_id:  ensureSessionId(),
         action_type: 'search',
@@ -71,12 +84,35 @@ function HomeContent() {
     });
   };
 
-  const showSearch   = submittedQuery.trim().length > 0;
-  const searchGames  = searchResult?.recommendations ?? [];
-  const aiGames      = aiResult?.recommendations ?? [];
-  const displayGames = showSearch ? searchGames : aiGames;
-  const isLoading    = showSearch ? (searching || isPending) : aiLoading;
-  const currentError = showSearch ? searchError : aiError;
+  // 칩 클릭
+  const handleVibeSelect = (vibeKey: string | null) => {
+    setSelectedVibe(vibeKey);
+    if (vibeKey) {
+      recordTasteAction({
+        session_id:  ensureSessionId(),
+        action_type: 'search',
+        context: { query: `vibe:${vibeKey}`, referrer: '/' },
+      });
+    }
+  };
+
+  // 표시 우선순위: 검색 > 칩 > 기본추천
+  const showSearch = submittedQuery.trim().length > 0;
+  const showVibe   = !showSearch && selectedVibe !== null;
+
+  const searchGames = searchResult?.recommendations ?? [];
+  const vibeGames   = vibeResult?.recommendations ?? [];
+  const aiGames     = aiResult?.recommendations ?? [];
+
+  const displayGames = showSearch ? searchGames : showVibe ? vibeGames : aiGames;
+  const isLoading    = showSearch
+    ? (searching || isPending)
+    : showVibe ? vibeLoading : aiLoading;
+  const currentError = showSearch ? searchError : showVibe ? vibeError : aiError;
+
+  // 선택된 vibe 라벨 (헤더 표시용)
+  const { data: vibes } = useVibes();
+  const selectedVibeLabel = vibes?.find(v => v.key === selectedVibe)?.label ?? '';
 
   return (
     <div className="flex flex-col gap-12">
@@ -94,17 +130,26 @@ function HomeContent() {
         </div>
       </section>
 
+      {/* Vibe 칩 — 검색 중이 아닐 때만 노출 */}
+      {!showSearch && (
+        <section className="-mt-6">
+          <VibeChips selected={selectedVibe} onSelect={handleVibeSelect} />
+        </section>
+      )}
+
       <section>
         <h2 className="text-[13px] font-medium text-zinc-700 dark:text-zinc-300 mb-4">
           {showSearch
             ? `"${submittedQuery}" 검색 결과 ${searchGames.length}개`
-            : `오늘의 AI 추천 · ${DEFAULT_THEME_LABEL} 게임`}
+            : showVibe
+              ? `${selectedVibeLabel} 추천 ${vibeGames.length}개`
+              : `오늘의 AI 추천 · ${DEFAULT_THEME_LABEL} 게임`}
         </h2>
 
         {currentError && (
           <ErrorState
             error={currentError as Error}
-            onRetry={() => showSearch ? refetchSearch() : refetchAI()}
+            onRetry={() => showSearch ? refetchSearch() : showVibe ? refetchVibe() : refetchAI()}
             variant="page"
           />
         )}
@@ -117,7 +162,7 @@ function HomeContent() {
             variant="page"
             title={showSearch ? '검색 결과가 없어요' : '추천을 불러올 수 없어요'}
             description={showSearch ? '다른 표현으로 검색해보세요' : '잠시 후 다시 시도해주세요'}
-            onRetry={showSearch ? undefined : () => refetchAI()}
+            onRetry={showSearch ? undefined : showVibe ? () => refetchVibe() : () => refetchAI()}
           />
         )}
 
@@ -128,7 +173,6 @@ function HomeContent() {
     </div>
   );
 }
-
 /**
  * Home page wrapper with Suspense boundary.
  * Korean: useSearchParams가 prerender 시 Suspense를 요구해서 바깥에서 감쌈.

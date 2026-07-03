@@ -46,7 +46,10 @@ from models.game import (
     Game,
     GameMetric,
 )
+
 from schemas.game import RecommendedGame
+from services.score_v6 import calculate_score_v6
+
 
 
 # ==================== 한국어 라벨 / Korean Metric Labels ====================
@@ -91,7 +94,7 @@ SCORE_ANCHOR = 100.0  # 기준 게임 앵커 점수
 
 # sigmoid 변환 파라미터 (거리 → 점수) / Sigmoid params for distance-to-score
 # 거리 0 → 99점, 거리 클수록 0점 수렴
-SIGMOID_SCALE = 8.0   # 거리 감도 (클수록 민감) / Distance sensitivity
+SIGMOID_SCALE = 3.5   # 거리 감도 (클수록 민감) / Distance sensitivity
 
 
 # ==================== 검색 의도 분류 / Search Intent Types ====================
@@ -864,22 +867,44 @@ class GameRecommender:
                     continue
 
             cand_vec = build_weighted_vector(game.metrics, weight_map)
-            metric_score = compute_metric_score(target_vec, cand_vec, n_active)
-            gem_bonus = self._calculate_gem_bonus(game, game.metrics)
-            display_score = to_display_score(metric_score, gem_bonus)
+
+            # ===== v6 점수 (Core + X-Factor + Gem) =====
+            # juntae 철학: 장르핵심 + 검색의도 + 독창성 + 발굴
+            game_metrics_dict = {
+                f: float(getattr(game.metrics, f, 5.0) or 5.0)
+                for f in NUMERIC_METRIC_FIELDS
+            }
+            genre = (
+                (game.genres or '').split(',')[0].strip()
+                if game.genres else ''
+            )
+
+            v6_result = calculate_score_v6(
+                game_metrics=game_metrics_dict,
+                target_metrics=preferences,
+                genre=genre,
+                review_count=game.review_count or 0,
+                positive_ratio=game.steam_positive_ratio or 0.5,
+                gem_percentile=float(game.metrics.gem_percentile or 50),
+            )
+            display_score = v6_result['final_score']
 
             scored.append({
                 "game": game,
                 "metric": game.metrics,
                 "score": display_score,
                 "score_breakdown": {
-                    "metric_score": round(metric_score * 100, 1),
-                    "embedding_score": 0.0,
-                    "gem_bonus": round(gem_bonus * 5, 1),
+                    "core_score": v6_result['breakdown']['core_score'],
+                    "xfactor_score": v6_result['breakdown']['xfactor_score'],
+                    "gem_score": v6_result['breakdown']['gem_score'],
                     "final_score": display_score,
                 },
+                "v6_identity": v6_result['identity'],
+                "v6_strengths": v6_result['unique_strengths'],
                 "weight_map": weight_map,
             })
+
+
 
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored[:count]
@@ -1089,7 +1114,10 @@ Examples:
     ) -> List[RecommendedGame]:
         """
         Format preference-based recommendation results.
-        Korean: 선호도 기반 추천 결과 포맷팅.
+        Korean: 선호도 기반 추천 결과 포맷팅 — v6 분해 포함.
+
+        v6 추가: score_breakdown / v6_identity / v6_strengths
+            scored.append에서 넣은 v6 데이터를 응답에 전달.
         """
         formatted = []
         for r in results:
@@ -1105,6 +1133,10 @@ Examples:
                 marketing_hook=game.marketing_hook or "",
                 similarity_score=r["score"],
                 gem_potential=metric.gem_percentile or metric.gem_potential,
+                # v6 분해 (UI 표시용)
+                score_breakdown=r.get("score_breakdown", {}),
+                v6_identity=r.get("v6_identity", ""),
+                v6_strengths=r.get("v6_strengths", []),
                 match_reasons=self._generate_match_reasons_from_preferences(
                     metric, preferences, weight_map
                 ),

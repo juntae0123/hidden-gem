@@ -22,6 +22,7 @@ import logging
 import re
 import secrets
 from typing import Optional, Any, Literal
+from services.auth import get_optional_user_id
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Security
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -34,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from database import get_db
 from models.user_action import UserAction
+from services.auth import get_optional_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -153,15 +155,18 @@ async def record_action(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Record user behavior for taste learning (Phase 1.5 — collection only).
-    Korean: 취향 학습용 유저 행동 기록 — 수집만, 학습 로직 없음.
-
+    Record user behavior for taste learning (Phase 2 — user_id 연결됨).
+    Korean: 취향 학습용 유저 행동 기록.
+    로그인 유저면 JWT에서 user_id 추출해 함께 저장, 비로그인은 None(익명).
     Fire-and-forget: 실패해도 서비스 영향 없이 조용히 처리.
-    user_id는 Phase 2 로그인 구현 후 추가 예정.
     """
+    # 로그인 유저면 user_id 추출, 비로그인이면 None (익명 수집 유지)
+    user_id = get_optional_user_id(request)
+
     try:
         action = UserAction(
             created_at=datetime.now(timezone.utc),
+            user_id=user_id,                # ← Phase 2: 로그인 유저 연결
             session_id=body.session_id,
             app_id=body.app_id,
             action_type=body.action_type,
@@ -170,13 +175,11 @@ async def record_action(
         db.add(action)
         await db.commit()
         await db.refresh(action)
-
         logger.debug(
-            f"TasteAction 기록: id={action.id} "
+            f"TasteAction 기록: id={action.id} user={user_id} "
             f"type={body.action_type} app={body.app_id}"
         )
         return TasteActionResponse(success=True, action_id=action.id)
-
     except Exception as e:
         await db.rollback()
         logger.warning(f"TasteAction 기록 실패 (무시됨): {e}", exc_info=True)

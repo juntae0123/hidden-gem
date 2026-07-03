@@ -323,7 +323,12 @@ class RecommendedGame(BaseModel):
     Single recommended game with similarity score and match reasons.
     Korean: 추천 결과 단일 게임 스키마 (유사도 점수 + 추천 이유 포함).
 
-    similarity_score: 0~1 사이의 최종 유사도 점수 (하이브리드 + gem 보너스)
+    v6 추가:
+        score_breakdown: Core/X-Factor/Gem 점수 분해 (UI 표시용)
+        v6_identity: 게임 정체성 ("어두운 판타지 + 대서사")
+        v6_strengths: X-Factor 독창적 강점 목록
+
+    similarity_score: 0~99 최종 점수 (Core 75 + X-Factor 18 + Gem 6)
     match_reasons: 추천 이유 텍스트 목록 (최대 5개)
     key_metrics: 이 게임의 특징적인 지표 {지표명: 값} (최대 5개)
     """
@@ -334,12 +339,16 @@ class RecommendedGame(BaseModel):
     one_line_summary: str = ""
     marketing_hook: str = ""
 
-    similarity_score: float              # 0.0 ~ 1.0 (높을수록 유사)
+    similarity_score: float                # 0~99 (v6 최종 점수)
     gem_potential: Optional[float] = None  # AI 평가 잠재력 (0~100 스케일)
 
-    match_reasons: List[str] = []        # 추천 이유 한국어 텍스트 목록
-    key_metrics: Dict[str, float] = {}   # 특징 지표 딕셔너리
+    # v6 점수 분해 (UI 표시용)
+    score_breakdown: Dict[str, float] = {}  # {core_score, xfactor_score, gem_score, final_score}
+    v6_identity: str = ""                    # "어두운 판타지 + 대서사"
+    v6_strengths: List[Dict] = []            # [{metric, value, label, is_exceptional}]
 
+    match_reasons: List[str] = []          # 추천 이유 한국어 텍스트 목록
+    key_metrics: Dict[str, float] = {}     # 특징 지표 딕셔너리
 
 class RecommendationResponse(BaseModel):
     """

@@ -11,6 +11,7 @@ import { Providers } from './providers';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { CookieConsent } from '@/components/ui/CookieConsent';
+import { SurveyGate } from '@/components/ui/SurveyGate';
 
 const UMAMI_URL = process.env.NEXT_PUBLIC_UMAMI_URL || 'http://localhost:3001';
 const UMAMI_WEBSITE_ID = process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID || '';
@@ -44,14 +45,15 @@ export default function RootLayout({
           />
         )}
       </head>
-      <body className="min-h-screen bg-[#FAFAF7] dark:bg-[#0F0F13] text-zinc-900 dark:text-zinc-100 antialiased">
-        <Providers>
-          <Navbar />
-          <main className="max-w-7xl mx-auto px-6 py-8">{children}</main>
-          <Footer />
-          <CookieConsent />
-        </Providers>
-      </body>
+        <body className="min-h-screen bg-[#FAFAF7] dark:bg-[#0F0F13] text-zinc-900 dark:text-zinc-100 antialiased">
+          <Providers>
+            <Navbar />
+            <main className="max-w-7xl mx-auto px-6 py-8">{children}</main>
+            <Footer />
+            <CookieConsent />
+            <SurveyGate />
+          </Providers>
+        </body>
     </html>
   );
 }
