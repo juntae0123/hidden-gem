@@ -1,0 +1,18 @@
+# Batch & crawler worker image for Hidden Gem data pipeline.
+# 데이터 파이프라인(배치 생성/적재/크롤러) 전용 워커 이미지.
+# 웹 컨테이너(django/fastapi)를 오염시키지 않기 위해 분리한다.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# psycopg2-binary needs no build deps, but curl helps for debugging.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.batch.txt /tmp/requirements.batch.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.batch.txt
+
+# Code and data are bind-mounted at runtime (see docker-compose.yml).
+# 코드/데이터는 실행 시 볼륨으로 마운트된다.
+CMD ["sleep", "infinity"]

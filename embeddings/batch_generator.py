@@ -591,22 +591,27 @@ def main():
                         help="학생 모델 (기본: gpt-4o-mini). 교사=gpt-5.4")
     parser.add_argument("--fewshot", default=None,
                         help="few-shot 예시 jsonl 경로 (fewshot_sampler.py 출력)")
+    parser.add_argument("--csv", default=None,
+                        help="블라인드 CSV 경로 (신작이면 data/new_games.csv)")
     parser.add_argument("--fewshot-n", type=int, default=6,
                         help="주입할 few-shot 예시 수 (기본 6, 많을수록 비용↑)")
     
     args = parser.parse_args()
-    
+
+    # resolve blind CSV: --csv overrides the default teacher CSV
+    csv_path = Path(args.csv) if args.csv else CSV_PATH
+
     print("=" * 65)
-    print("🎮 Hidden Gem - Batch API Generator (v5.0)")
+    print("🎮 Hidden Gem - Batch API Generator (v6.0, 60-metric)")
     print("=" * 65)
     print(f"📁 프로젝트: {PROJECT_ROOT}")
-    print(f"📂 CSV: {CSV_PATH}")
+    print(f"📂 CSV: {csv_path}")
     print(f"🤖 모델: {args.model}")
     print("=" * 65)
     
     # CSV 확인
-    if not CSV_PATH.exists():
-        print(f"❌ CSV 파일 없음: {CSV_PATH}")
+    if not csv_path.exists():
+        print(f"❌ CSV 파일 없음: {csv_path}")
         return
     
     # 1. 모드 결정
@@ -637,7 +642,7 @@ def main():
     print(f"\n📌 모드: {mode}")
     
     # 2. 블라인드 데이터 로드
-    df = load_blind_data(CSV_PATH, limit=limit)
+    df = load_blind_data(csv_path, limit=limit)
 
     # 2.5 few-shot 예시 로드 (knowledge distillation)
     fewshot_examples = load_fewshot(args.fewshot, args.fewshot_n)
