@@ -1,0 +1,19 @@
+# Batch worker dependencies (Hidden Gem data pipeline)
+# 배치 워커 의존성. 웹(django/fastapi) requirements와 분리 관리한다.
+
+# HTTP crawling (Steam appdetails, RAWG discovery)
+requests>=2.31.0
+
+# Blind CSV I/O for batch_generator
+pandas>=2.2.0
+
+# OpenAI Batch API (generator / sender)
+openai>=1.30.0
+
+# DB access for batch_processor (normalized game_metrics UPSERT)
+sqlalchemy>=2.0.25
+psycopg2-binary>=2.9.9
+
+# Env + progress
+python-dotenv>=1.0.0
+tqdm>=4.66.0
