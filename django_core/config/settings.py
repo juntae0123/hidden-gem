@@ -156,6 +156,37 @@ FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 
+# ==================== 보안 헤더 (운영 전용) / Security Headers ====================
+# 개발(DEBUG=True)에서는 HTTPS가 없으므로 전부 비활성.
+# 운영에서는 Railway가 HTTPS를 종단 처리하므로 프록시 헤더를 신뢰한다.
+if not DEBUG:
+    # 프록시(Railway) 뒤에서 HTTPS 여부 판별 / Trust proxy's protocol header
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+    # HTTP 요청을 HTTPS로 리다이렉트 / Force HTTPS
+    SECURE_SSL_REDIRECT = True
+
+    # 쿠키를 HTTPS에서만 전송 / Cookies over HTTPS only
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
+    # JS에서 세션 쿠키 접근 차단 (XSS 완화) / Block JS access to session cookie
+    SESSION_COOKIE_HTTPONLY = True
+
+    # HSTS — 브라우저가 이 도메인은 항상 HTTPS로만 접속 / HTTP Strict Transport Security
+    SECURE_HSTS_SECONDS = 31536000          # 1년
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+
+    # MIME 스니핑 차단 / Prevent MIME type sniffing
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+
+    # 클릭재킹 방어 (iframe 삽입 차단) / Clickjacking protection
+    X_FRAME_OPTIONS = 'DENY'
+
+    # 리퍼러 최소 노출 / Limit referrer leakage
+    SECURE_REFERRER_POLICY = 'same-origin'
+
 # ==================== CORS (보안 강화) ====================
 # v3 → v4: CORS_ALLOW_ALL_ORIGINS 제거, 도메인 화이트리스트 사용
 
