@@ -38,3 +38,5 @@ node_modules/
 __pycache__/backups/
 *.sql.gz
 
+.env.backup
+.env.*
