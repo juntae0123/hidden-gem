@@ -9,9 +9,9 @@ python-dotenv==1.0.0
 slowapi==0.1.9
 redis==7.4.0
 httpx==0.28.1
-openai
-pgvector
-scikit-learn
-scipy
+openai==2.44.0
+pgvector==0.4.2
+scikit-learn==1.9.0
+scipy==1.16.3
 sentry-sdk[fastapi]==2.8.0
 PyJWT==2.10.1

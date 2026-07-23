@@ -18,7 +18,12 @@ load_dotenv(PROJECT_ROOT / '.env')
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-secret-key-12345')
 DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '*']
+if DEBUG:
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+else:
+    ALLOWED_HOSTS = [
+        h.strip() for h in os.getenv('ALLOWED_HOSTS', '').split(',') if h.strip()
+    ]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
