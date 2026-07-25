@@ -154,13 +154,14 @@ if settings.DEBUG:
         "http://127.0.0.1:3000",
     ]
 else:
-    ALLOWED_ORIGINS = [
-        os.getenv("FRONTEND_URL", "https://hiddengem.io"),
-    ]
-
+    # 운영: FRONTEND_URL 콤마 구분 다중 허용
+    # Korean: 여러 주소를 콤마로 받아 허용 (Vercel 프리뷰는 아래 regex가 커버)
+    _frontend = os.getenv("FRONTEND_URL", "https://hiddengem.io")
+    ALLOWED_ORIGINS = [o.strip() for o in _frontend.split(",") if o.strip()]    
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://.*\.vercel\.app",   # ← Vercel 모든 서브도메인 허용
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
