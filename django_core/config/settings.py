@@ -198,10 +198,11 @@ if DEBUG:
         "http://127.0.0.1:3000",
     ]
 else:
-    # 운영 환경: 환경변수에서 가져오기
+    # 운영: FRONTEND_URL 콤마 구분 다중 허용 + Vercel 프리뷰 정규식
     CORS_ALLOWED_ORIGINS = [
-        os.getenv("FRONTEND_URL", "https://hiddengem.io"),
+        o.strip() for o in os.getenv("FRONTEND_URL", "https://hiddengem.io").split(",") if o.strip()
     ]
+    CORS_ALLOWED_ORIGIN_REGEXES = [r"^https://.*\.vercel\.app$"]
 
 # 쿠키/JWT 함께 사용하려면 필수
 CORS_ALLOW_CREDENTIALS = True
