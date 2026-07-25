@@ -6,7 +6,6 @@
 # 2. 데이터 파일 (Git은 코드 저장소이지, 데이터 저장소가 아닙니다!)
 *.csv
 *.xlsx
-*.json
 *.pkl
 *.jsonl
 /data/*
@@ -40,3 +39,8 @@ __pycache__/backups/
 
 .env.backup
 .env.*
+
+# frontend 빌드 필수 json 예외 허용 (데이터 .jsonl은 계속 무시)
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/tsconfig.json
