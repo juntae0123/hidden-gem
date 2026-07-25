@@ -41,7 +41,7 @@ export function Footer() {
         </div>
 
         <div className="text-[11px] text-zinc-400 text-center md:text-left">
-          © {new Date().getFullYear()} Hidden Gem. Made with ☕ + AI.
+             © 2026 Hidden Gem. Made with ☕ + AI.
         </div>
       </div>
     </footer>
