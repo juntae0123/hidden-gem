@@ -3,6 +3,8 @@
  * 프로바이더 포함 루트 레이아웃.
  *
  * v1 → v3: Umami 분석 스크립트 + CookieConsent + 메타데이터 강화
+ * v3 → v4: Umami <Script>를 <head> 밖 body로 이동 (#418 hydration mismatch 해결)
+ *          / React error #418 fix — afterInteractive script는 head에 두지 않는다
  */
 import type { Metadata } from 'next';
 import Script from 'next/script';
@@ -35,8 +37,17 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko" suppressHydrationWarning className="dark">
-      <head>
-        {/* Umami 분석 (Website ID 있을 때만) */}
+      <body className="min-h-screen bg-[#FAFAF7] dark:bg-[#0F0F13] text-zinc-900 dark:text-zinc-100 antialiased">
+        <Providers>
+          <Navbar />
+          <main className="max-w-7xl mx-auto px-6 py-8">{children}</main>
+          <Footer />
+          <CookieConsent />
+          <SurveyGate />
+        </Providers>
+
+        {/* Umami 분석 — afterInteractive는 body 끝에 (head에 두면 #418) */}
+        {/* Umami analytics: mounted in body, not head, to avoid hydration mismatch */}
         {UMAMI_WEBSITE_ID && (
           <Script
             src={`${UMAMI_URL}/script.js`}
@@ -44,16 +55,7 @@ export default function RootLayout({
             strategy="afterInteractive"
           />
         )}
-      </head>
-        <body className="min-h-screen bg-[#FAFAF7] dark:bg-[#0F0F13] text-zinc-900 dark:text-zinc-100 antialiased">
-          <Providers>
-            <Navbar />
-            <main className="max-w-7xl mx-auto px-6 py-8">{children}</main>
-            <Footer />
-            <CookieConsent />
-            <SurveyGate />
-          </Providers>
-        </body>
+      </body>
     </html>
   );
 }
