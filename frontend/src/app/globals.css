@@ -1,7 +1,12 @@
-@import "tailwindcss";
+/* frontend/src/app/globals.css 상단 */
 @import "tailwindcss";
 @source "../**/*.{js,ts,jsx,tsx}";
 @variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #FAFAF7;
+  --foreground: #171717;
+}
 
 :root {
   --background: #FAFAF7;
