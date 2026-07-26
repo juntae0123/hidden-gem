@@ -2,7 +2,7 @@
 
 'use client';
 
-import { Suspense, useState, useTransition } from 'react';
+import { Suspense, useState, useEffect, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 
@@ -10,7 +10,7 @@ import { SearchBar } from '@/components/ui/SearchBar';
 import { GameGrid } from '@/components/game/GameGrid';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { GameGridSkeleton } from '@/components/ui/LoadingSkeleton';
-import { useDefaultRecommendations, DEFAULT_THEME_LABEL, useRecommendByVibe, useVibes } from '@/hooks/useRecommend';
+import { useDefaultRecommendations, DEFAULT_THEME_LABEL, getTodaysTheme, useRecommendByVibe, useVibes } from '@/hooks/useRecommend';
 import { semanticSearchGames, recordTasteAction } from '@/lib/api';
 import { VibeChips } from '@/components/ui/VibeChips';
 import { useUserStore } from '@/store/useUserStore';
@@ -30,6 +30,12 @@ function HomeContent() {
 
   // Vibe 칩 선택 상태
   const [selectedVibe, setSelectedVibe] = useState<string | null>(null);
+
+  // 오늘의 테마 라벨 — SSR/CSR 동일 고정 초기값, mount 후 실제 갱신 (#418 방지)
+  const [themeLabel, setThemeLabel] = useState(DEFAULT_THEME_LABEL);
+  useEffect(() => {
+    setThemeLabel(getTodaysTheme().label);
+  }, []);
 
   // 시맨틱 검색
   const {
@@ -143,7 +149,7 @@ function HomeContent() {
             ? `"${submittedQuery}" 검색 결과 ${searchGames.length}개`
             : showVibe
               ? `${selectedVibeLabel} 추천 ${vibeGames.length}개`
-              : `오늘의 AI 추천 · ${DEFAULT_THEME_LABEL} 게임`}
+              : `오늘의 AI 추천 · ${themeLabel} 게임`}
         </h2>
 
         {currentError && (

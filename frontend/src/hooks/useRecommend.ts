@@ -77,28 +77,20 @@ const DAILY_THEMES: readonly DailyTheme[] = [
 
 /**
  * Get today's theme by UTC day-of-year.
- * Korean: UTC 기준 연중 일수로 오늘의 테마 결정.
- *   SSR(Vercel 미국) ≠ CSR(한국) 시간대 불일치(#418) 방지 위해 UTC 고정.
+ * Korean: UTC 기준 오늘의 테마. 컴포넌트에서 mounted 후 호출용.
  */
-function getTodaysTheme(): DailyTheme {
+export function getTodaysTheme(): DailyTheme {
   const now = new Date();
-  // UTC 기준 통일 — 서버/브라우저 어디서든 같은 날짜
   const startUTC = Date.UTC(now.getUTCFullYear(), 0, 0);
   const dayOfYear = Math.floor((now.getTime() - startUTC) / 86400000);
   return DAILY_THEMES[dayOfYear % DAILY_THEMES.length];
 }
 
-const todaysTheme = getTodaysTheme();
-
-
-/** 오늘의 테마 선호도 / Today's theme preferences */
-export const DEFAULT_PREFERENCES = todaysTheme.prefs;
-
-/** 오늘의 테마 라벨 / Today's theme label (UI 표시용) */
-export const DEFAULT_THEME_LABEL = todaysTheme.label;
-
-/** 오늘의 테마 이름 / Today's theme name (analytics용) */
-export const DEFAULT_THEME_NAME = todaysTheme.name;
+// ⭐ 모듈 로드 시엔 항상 [0] 고정 (SSR/CSR 동일 → #418 방지)
+//    실제 오늘 테마는 컴포넌트에서 getTodaysTheme() 호출
+export const DEFAULT_PREFERENCES = DAILY_THEMES[0].prefs;
+export const DEFAULT_THEME_LABEL = DAILY_THEMES[0].label;
+export const DEFAULT_THEME_NAME = DAILY_THEMES[0].name;
 
 // ==================== Query Hooks ====================
 
