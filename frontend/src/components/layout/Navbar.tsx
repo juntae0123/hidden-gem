@@ -30,6 +30,8 @@ export function Navbar() {
 
   // 드롭다운 상태
   const [showMenu, setShowMenu] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -107,7 +109,7 @@ export function Navbar() {
         {/* 우측 액션 */}
         <div className="flex items-center gap-2">
           {/* 로그인 상태에 따른 분기 */}
-          {isLoggedIn && user ? (
+          {mounted && isLoggedIn && user ? (
             // 로그인됨 — 닉네임 + 드롭다운
             <div className="relative">
               <button
@@ -189,7 +191,7 @@ export function Navbar() {
             )}
             aria-label="테마 전환"
           >
-            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            {mounted && theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
           </button>
         </div>
       </nav>
