@@ -76,21 +76,20 @@ const DAILY_THEMES: readonly DailyTheme[] = [
 ] as const;
 
 /**
- * Get today's theme — rotates daily based on date.
- * 오늘의 테마 — 날짜 기반 자동 순환.
- *
- * 매일 다른 테마로 신선함 제공 + 유저 재방문 동기.
+ * Get today's theme by UTC day-of-year.
+ * Korean: UTC 기준 연중 일수로 오늘의 테마 결정.
+ *   SSR(Vercel 미국) ≠ CSR(한국) 시간대 불일치(#418) 방지 위해 UTC 고정.
  */
 function getTodaysTheme(): DailyTheme {
-  const today = new Date();
-  // 연중 일수 기준 (1~365)
-  const start = new Date(today.getFullYear(), 0, 0);
-  const diff  = today.getTime() - start.getTime();
-  const dayOfYear = Math.floor(diff / 86400000);
+  const now = new Date();
+  // UTC 기준 통일 — 서버/브라우저 어디서든 같은 날짜
+  const startUTC = Date.UTC(now.getUTCFullYear(), 0, 0);
+  const dayOfYear = Math.floor((now.getTime() - startUTC) / 86400000);
   return DAILY_THEMES[dayOfYear % DAILY_THEMES.length];
 }
 
 const todaysTheme = getTodaysTheme();
+
 
 /** 오늘의 테마 선호도 / Today's theme preferences */
 export const DEFAULT_PREFERENCES = todaysTheme.prefs;
