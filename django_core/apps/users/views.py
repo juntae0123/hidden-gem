@@ -50,9 +50,10 @@ class JWTAccountAdapter(DefaultAccountAdapter):
 
         logger.info(f"[OAuth] 로그인 성공 + JWT 발급: {user.email}")
 
+        # 토큰은 fragment(#)로 전달 - 쿼리스트링과 달리 서버 로그/Referer에 남지 않음
         return (
             f"{FRONTEND_URL}/auth/callback"
-            f"?access={access_token}"
+            f"#access={access_token}"
             f"&refresh={refresh_token}"
         )
 

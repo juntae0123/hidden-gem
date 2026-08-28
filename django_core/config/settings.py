@@ -16,8 +16,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = BASE_DIR.parent
 load_dotenv(PROJECT_ROOT / '.env')
 
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-secret-key-12345')
-DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
+# DEBUG 기본값은 False - 환경변수를 깜빡한 운영 배포가 디버그 모드로 뜨는 사고 방지
+DEBUG = os.getenv('DJANGO_DEBUG', 'False') == 'True'
+
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', '')
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = 'dev-secret-key-12345'  # 로컬 개발 전용
+    else:
+        # JWT 서명키가 기본값으로 운영에 뜨면 토큰 위조가 가능해짐 - 기동 자체를 거부
+        raise RuntimeError('DJANGO_SECRET_KEY must be set when DEBUG=False')
 if DEBUG:
     ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 else:

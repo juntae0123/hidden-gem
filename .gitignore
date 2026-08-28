@@ -46,3 +46,8 @@ __pycache__/backups/
 !frontend/tsconfig.json
 
 .vercel
+
+# 백업/덤프/로그 - 코드 저장소에 두지 않음 (보안 점검 2026-08-29)
+*.bak
+db_backup.sql
+upload_log.txt
