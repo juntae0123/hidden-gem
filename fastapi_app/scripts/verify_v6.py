@@ -55,7 +55,7 @@ async def measure(preferences: dict, label: str):
             print(f"  {rank:3}위 {sc:5.1f}  C:{bd['core_score']:4.1f} X:{bd['xfactor_score']:4.1f} G:{bd['gem_score']:3.1f}  {nm_safe}")
 
         print(f"\n  Top10 분포: {s[0]-s[9]:.1f}점")
-        print(f"  1위-끝: {s[0]-s[-1]:.1f}점  {'✅진짜변별력' if s[0]-s[-1]>30 else '❌부족'}")
+        print(f"  1위-끝: {s[0]-s[-1]:.1f}점  {'진짜변별력' if s[0]-s[-1]>30 else '부족'}")
 
         # Witcher 추적
         w = next(((sc, nm, scored.index((sc,nm,bd))+1)
@@ -85,7 +85,7 @@ async def main():
     wd = next((sc for sc, nm, _ in dark if 'Witcher' in nm), None)
     wc = next((sc for sc, nm, _ in cozy if 'Witcher' in nm), None)
     print(f"  다크판타지: {wd:.1f} / 힐링: {wc:.1f}")
-    print(f"  차이: {abs(wd-wc):.1f}점  {'✅의도매칭' if abs(wd-wc)>20 else '⚠️약함'}")
+    print(f"  차이: {abs(wd-wc):.1f}점  {'의도매칭' if abs(wd-wc)>20 else '약함'}")
 
 
 if __name__ == '__main__':

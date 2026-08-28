@@ -13,7 +13,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 DB_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DB_URL)
 
-# 🔴 세션 설정 (브라우저처럼 보이게)
+# 세션 설정 (브라우저처럼 보이게)
 session = requests.Session()
 session.headers.update({
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -55,7 +55,7 @@ def scrape_steam_search(start, count=50):
         
         # 재시도 전 대기
         wait = (attempt + 1) * 2
-        print(f"   ⏳ 재시도 대기 {wait}초...")
+        print(f"   재시도 대기 {wait}초...")
         time.sleep(wait)
     
     return []
@@ -64,7 +64,7 @@ def get_new_app_ids(target_count, existing_ids):
     """새로운 게임 ID를 목표 개수만큼 수집"""
     new_ids = set()
     
-    print(f"🌐 스팀에서 새 게임 {target_count}개 검색 중...")
+    print(f"스팀에서 새 게임 {target_count}개 검색 중...")
     print(f"   (DB에 {len(existing_ids)}개 있음, 중복 제외)")
     
     # 여러 필터 조합으로 검색
@@ -89,7 +89,7 @@ def get_new_app_ids(target_count, existing_ids):
         if len(new_ids) >= target_count:
             break
             
-        print(f"\n📍 '{config_name}' 검색 중...")
+        print(f"\n'{config_name}' 검색 중...")
         consecutive_empty = 0
         
         for start in range(0, 10000, 50):
@@ -133,7 +133,7 @@ def get_new_app_ids(target_count, existing_ids):
                 added = len(new_ids) - before
                 
                 if start % 500 == 0 and start > 0:
-                    print(f"   📄 {start}개 스캔, 새 게임 {len(new_ids)}개 확보")
+                    print(f"   {start}개 스캔, 새 게임 {len(new_ids)}개 확보")
                 
                 time.sleep(0.8)  # Rate limit 방지
                 
@@ -142,9 +142,9 @@ def get_new_app_ids(target_count, existing_ids):
                 time.sleep(2)
                 continue
         
-        print(f"   ✅ '{config_name}' 완료 - 현재 {len(new_ids)}개")
+        print(f"   '{config_name}' 완료 - 현재 {len(new_ids)}개")
     
-    print(f"\n🎯 총 {len(new_ids)}개의 새 게임 ID 확보!")
+    print(f"\n총 {len(new_ids)}개의 새 게임 ID 확보!")
     return list(new_ids)[:target_count * 2]  # 여유분 포함
 
 def analyze_and_embed(name, genres, developer, desc):
@@ -218,29 +218,29 @@ def get_game_details(app_id):
 
 def collect_games(total_target=5000):
     print("=" * 60)
-    print("🚀 스팀 보석 수집기 v5.0")
+    print("스팀 보석 수집기 v5.0")
     print("=" * 60)
     
     existing_ids = get_existing_app_ids()
     current_count = len(existing_ids)
     
-    print(f"📊 현재 DB: {current_count}개 / 목표: {total_target}개")
+    print(f"현재 DB: {current_count}개 / 목표: {total_target}개")
     
     remaining = total_target - current_count
     if remaining <= 0:
-        print("🎉 이미 목표 달성!")
+        print("이미 목표 달성!")
         return
     
-    print(f"🔥 추가 수집 필요: {remaining}개\n")
+    print(f"추가 수집 필요: {remaining}개\n")
     
     # 새로운 게임 ID 수집
     new_app_ids = get_new_app_ids(remaining, existing_ids)
     
     if not new_app_ids:
-        print("❌ 수집할 게임이 없습니다.")
+        print("수집할 게임이 없습니다.")
         return
     
-    print(f"\n🎮 {len(new_app_ids)}개 후보 중 {remaining}개 목표로 분석 시작...")
+    print(f"\n{len(new_app_ids)}개 후보 중 {remaining}개 목표로 분석 시작...")
     print("   (게임당 약 2초 소요)\n")
     
     saved_count = 0
@@ -250,7 +250,7 @@ def collect_games(total_target=5000):
     for app_id in tqdm(new_app_ids, desc="🎮 분석 중"):
         # 목표 달성시 종료
         if saved_count >= remaining:
-            print(f"\n🎯 목표 {remaining}개 달성!")
+            print(f"\n목표 {remaining}개 달성!")
             break
         
         try:
@@ -329,7 +329,7 @@ def collect_games(total_target=5000):
             
             # 진행 상황 출력
             if saved_count % 50 == 0:
-                print(f"\n💾 {saved_count}/{remaining} 저장 완료! (스킵: {skip_count})")
+                print(f"\n{saved_count}/{remaining} 저장 완료! (스킵: {skip_count})")
             
             time.sleep(1.2)  # Rate limit 방지
             
@@ -341,15 +341,15 @@ def collect_games(total_target=5000):
     final_count = current_count + saved_count
     
     print("\n" + "=" * 60)
-    print("🎊 수집 완료!")
-    print(f"   ✅ 신규 저장: {saved_count}개")
-    print(f"   ⏭️ 스킵: {skip_count}개")
-    print(f"   ❌ 에러: {error_count}개")
-    print(f"   📊 DB 총합: {final_count}개")
+    print("수집 완료!")
+    print(f"   신규 저장: {saved_count}개")
+    print(f"   스킵: {skip_count}개")
+    print(f"   에러: {error_count}개")
+    print(f"   DB 총합: {final_count}개")
     print("=" * 60)
     
     if final_count < total_target:
-        print(f"\n⚠️ 아직 {total_target - final_count}개 부족!")
+        print(f"\n아직 {total_target - final_count}개 부족!")
         print("   다시 실행하면 이어서 수집합니다.")
 
 

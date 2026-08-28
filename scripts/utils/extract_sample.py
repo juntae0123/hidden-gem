@@ -39,6 +39,6 @@ with open(output_path, "w", encoding="utf-8") as f:
     for game in samples:
         f.write(json.dumps(game, ensure_ascii=False) + "\n")
 
-print(f"✅ 완료: {len(samples)}개 추출")
+print(f"완료: {len(samples)}개 추출")
 for g in samples:
     print(f"  - {g.get('name')} | gem_potential: {g.get('metrics', {}).get('gem_potential')}")

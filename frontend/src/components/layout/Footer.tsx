@@ -37,11 +37,18 @@ export function Footer() {
             >
               이용약관
             </Link>
+            <span className="text-zinc-300 dark:text-zinc-700">·</span>
+            <a
+              href="mailto:juntai0312@gmail.com"
+              className="text-zinc-500 hover:text-purple-600 transition-colors"
+            >
+              개발자 문의
+            </a>
           </nav>
         </div>
 
         <div className="text-[11px] text-zinc-400 text-center md:text-left">
-             © 2026 Hidden Gem. Made with ☕ + AI.
+             © 2026 Hidden Gem. Made with ☕ + AI. · 문의: juntai0312@gmail.com
         </div>
       </div>
     </footer>

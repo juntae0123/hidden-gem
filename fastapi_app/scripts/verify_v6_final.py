@@ -78,10 +78,10 @@ async def main():
             print(f"  Witcher 힐링: {sc:.1f}점 ({rank}위)")
             print(f"    Core: {bd['core_score']:.1f}  X-Factor: {bd['xfactor_score']:.1f}  Gem: {bd['gem_score']:.1f}")
             if bd['xfactor_score'] > bd['core_score']:
-                print(f"    ⚠️ X-Factor > Core → 거품 위험!")
+                print(f"    X-Factor > Core → 거품 위험!")
                 print(f"       힐링 안 맞는데 독창성으로 점수 띄움")
             else:
-                print(f"    ✅ Core 기반 (X-Factor 거품 아님)")
+                print(f"    Core 기반 (X-Factor 거품 아님)")
             cozy = gm.get('cozy_factor', 0)
             print(f"    cozy_factor(힐링): {cozy} (낮아야 정상)")
             # 1877위 주변 5개 — 거품 게임 군집 확인
@@ -103,11 +103,11 @@ async def main():
         found_big = []
         for sc, nm, bd, rv, gm in scored[:10]:
             is_big = any(k in nm for k in big_keywords)
-            mark = " ⚠️대형작" if is_big else ""
+            mark = " 대형작" if is_big else ""
             if is_big:
                 found_big.append(safe_name(nm))
             print(f"    {sc:5.1f}  C:{bd['core_score']:4.1f} X:{bd['xfactor_score']:4.1f} G:{bd['gem_score']:3.1f}  rv:{rv:>7}  {safe_name(nm)}{mark}")
-        print(f"\n  [판정] 대형작 상위: {found_big if found_big else '없음 ✅'}")
+        print(f"\n  [판정] 대형작 상위: {found_big if found_big else '없음 '}")
         s = [x[0] for x in scored]
         print(f"  분산: 1위{s[0]:.1f} ~ 끝{s[-1]:.1f} = {s[0]-s[-1]:.1f}점")
 
@@ -126,9 +126,9 @@ async def main():
         print(f"  필터 후 Top20 공포게임: {horror_after}개")
         print(f"  제외된 게임 수: {filtered}개")
         if horror_after == 0:
-            print(f"  [판정] ✅ must_not 작동 (공포 완전 제외)")
+            print(f"  [판정] must_not 작동 (공포 완전 제외)")
         else:
-            print(f"  [판정] ⚠️ 공포게임 {horror_after}개 남음")
+            print(f"  [판정] 공포게임 {horror_after}개 남음")
 
     print("\n" + "=" * 60)
     print("검증 3개 완료")

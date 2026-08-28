@@ -26,7 +26,7 @@ input_jsonl = '../data/final/final_master_games.jsonl'
 output_jsonl = '../data/final/final_master_games_fixed.jsonl'
 
 # ---- Steam CSV 로드 및 app_id 인덱싱 ----
-print(f"📂 원본 스팀 데이터 읽는 중... ({csv_path})")
+print(f"원본 스팀 데이터 읽는 중... ({csv_path})")
 df = pd.read_csv(csv_path)
 print(f"   CSV 컬럼: {list(df.columns)}")
 print(f"   CSV 게임 수: {len(df)}")
@@ -35,7 +35,7 @@ print(f"   CSV 게임 수: {len(df)}")
 steam_dict = df.set_index('app_id').to_dict('index')
 
 # ---- JSONL 라인별 스트리밍 병합 ----
-print("\n🔄 AI 데이터에 스팀 메타데이터 + gem_potential 병합 중...")
+print("\nAI 데이터에 스팀 메타데이터 + gem_potential 병합 중...")
 merged_count = 0
 missing_count = 0
 gem_count = 0
@@ -79,8 +79,8 @@ with open(input_jsonl, 'r', encoding='utf-8') as f_in, \
 
         f_out.write(json.dumps(data, ensure_ascii=False) + '\n')
 
-print(f"\n✅ 병합 완료!")
+print(f"\n병합 완료!")
 print(f"   - 정상 병합: {merged_count}개")
 print(f"   - gem_potential 채워짐: {gem_count}개")
 print(f"   - CSV에 없는 데이터: {missing_count}개")
-print(f"\n🎉 새 파일: {output_jsonl}")
+print(f"\n새 파일: {output_jsonl}")

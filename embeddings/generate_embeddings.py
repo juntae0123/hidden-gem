@@ -54,9 +54,9 @@ DB_URL = os.getenv("DATABASE_URL")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 if not DB_URL:
-    raise ValueError("❌ .env에 DATABASE_URL이 없습니다!")
+    raise ValueError(".env에 DATABASE_URL이 없습니다!")
 if not OPENAI_API_KEY:
-    raise ValueError("❌ .env에 OPENAI_API_KEY가 없습니다!")
+    raise ValueError(".env에 OPENAI_API_KEY가 없습니다!")
 
 engine = create_engine(DB_URL)
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -98,13 +98,13 @@ def assert_backup_exists() -> int:
         """), {"t": BACKUP_TABLE}).scalar()
         if not exists:
             raise SystemExit(
-                f"❌ 백업 테이블 {BACKUP_TABLE} 없음. 실행 거부.\n"
+                f"백업 테이블 {BACKUP_TABLE} 없음. 실행 거부.\n"
                 f"   먼저 실행: CREATE TABLE {BACKUP_TABLE} AS "
                 f"SELECT game_id, embedding FROM game_metrics "
                 f"WHERE embedding IS NOT NULL;"
             )
         n = conn.execute(text(f"SELECT COUNT(*) FROM {BACKUP_TABLE}")).scalar()
-    print(f"✅ 백업 테이블 확인: {BACKUP_TABLE} ({n:,}건)")
+    print(f"백업 테이블 확인: {BACKUP_TABLE} ({n:,}건)")
     return n
 
 
@@ -165,22 +165,22 @@ def process(targets: List[Dict], dry_run: bool) -> Dict[str, int]:
         valid.append(t)
 
     if not valid:
-        print("⚠️ 유효 대상이 없습니다.")
+        print("유효 대상이 없습니다.")
         return stats
 
-    print(f"\n🎯 유효 대상: {len(valid)}건")
+    print(f"\n유효 대상: {len(valid)}건")
     for t in valid:
         rich = build_rich_text(t["name"], t["developer"], t["genres"], t["description"])
         print(f"   [{t['app_id']}] {t['name'][:28]:30} dev='{t['developer']}'")
         print(f"       rich_text 미리보기: {rich[:70].replace(chr(10), ' | ')}...")
 
     if dry_run:
-        print("\n⚠️ Dry-run: 임베딩 생성/기록 안 함")
+        print("\nDry-run: 임베딩 생성/기록 안 함")
         stats["generated"] = len(valid)
         return stats
 
     # 2) 배치 임베딩 생성
-    print(f"\n🧠 임베딩 생성 중 ({EMBED_MODEL}, {EMBED_DIM}차원)")
+    print(f"\n임베딩 생성 중 ({EMBED_MODEL}, {EMBED_DIM}차원)")
     all_vecs: Dict[int, List[float]] = {}
     for i in range(0, len(valid), BATCH_SIZE):
         chunk = valid[i:i + BATCH_SIZE]
@@ -189,7 +189,7 @@ def process(targets: List[Dict], dry_run: bool) -> Dict[str, int]:
         vecs = embed_batch(texts)
         for t, v in zip(chunk, vecs):
             if len(v) != EMBED_DIM:
-                print(f"   ⚠️ app_id={t['app_id']} 차원 {len(v)} != {EMBED_DIM} → 스킵")
+                print(f"   app_id={t['app_id']} 차원 {len(v)} != {EMBED_DIM} → 스킵")
                 continue
             all_vecs[t["game_id"]] = v
             stats["generated"] += 1
@@ -207,7 +207,7 @@ def process(targets: List[Dict], dry_run: bool) -> Dict[str, int]:
         assert f"SET {col}" not in stmt and f", {col}" not in stmt, \
             f"금지 컬럼 {col}이 UPDATE에 포함됨!"
 
-    print(f"\n📤 DB 기록 중 ({len(all_vecs)}건)")
+    print(f"\nDB 기록 중 ({len(all_vecs)}건)")
     with engine.begin() as conn:
         for gid, vec in tqdm(all_vecs.items(), desc="UPDATE"):
             r = conn.execute(update_sql, {"vec": to_vector_literal(vec), "gid": gid})
@@ -238,12 +238,12 @@ def verify(baseline_backup: int) -> None:
             ORDER BY g.app_id
         """)).fetchall()
 
-    print("\n🔎 검증")
+    print("\n검증")
     print(f"   embedding 보유: {n_emb:,}건 (백업 기준 {baseline_backup:,} + 신규)")
     print(f"   embedding NULL: {n_null}건 (소프트웨어 49건 예상)")
     print(f"\n   신작 상태:")
     for app_id, name, has_emb, gem, pct in news:
-        flag = "✅" if has_emb else "❌ 여전히 NULL"
+        flag = "ok" if has_emb else "여전히 NULL"
         print(f"     {app_id} {str(name)[:24]:26} embedding={flag} "
               f"gem={gem} pct={pct}")
 
@@ -257,22 +257,22 @@ def main():
     args = parser.parse_args()
 
     print("=" * 62)
-    print("🧠 Hidden Gem - 신작 임베딩 생성")
+    print("Hidden Gem - 신작 임베딩 생성")
     print("=" * 62)
-    print(f"📏 모델: {EMBED_MODEL} ({EMBED_DIM}차원)")
-    print(f"📐 템플릿: Title / Developer / Genres / Description (원본 복원)")
-    print(f"🚫 미변경: gem_potential, gem_percentile (embedding만 기록)")
+    print(f"모델: {EMBED_MODEL} ({EMBED_DIM}차원)")
+    print(f"템플릿: Title / Developer / Genres / Description (원본 복원)")
+    print(f"미변경: gem_potential, gem_percentile (embedding만 기록)")
     print("=" * 62)
 
     backup_n = assert_backup_exists()
 
     targets = fetch_targets(include_all=args.all)
     if not targets:
-        print("✅ embedding NULL인 대상이 없습니다.")
+        print("embedding NULL인 대상이 없습니다.")
         return
 
     scope = "신작 + 소프트웨어" if args.all else "신작만"
-    print(f"📋 대상 ({scope}): {len(targets)}건")
+    print(f"대상 ({scope}): {len(targets)}건")
 
     stats = process(targets, dry_run=args.dry_run)
 
@@ -285,7 +285,7 @@ def main():
 
     if not args.dry_run and stats["written"] > 0:
         verify(backup_n)
-        print("\n💡 다음: 신작 by-game 추천 검증 → 문제없으면 is_active=True")
+        print("\n다음: 신작 by-game 추천 검증 → 문제없으면 is_active=True")
 
 
 if __name__ == "__main__":

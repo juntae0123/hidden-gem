@@ -1,9 +1,13 @@
 """
-Google OAuth Initial Setup Script
-Korean: Google OAuth 초기 설정 (Site + SocialApp) 자동화.
+OAuth Initial Setup Script (Google + Steam)
+Korean: OAuth 초기 설정 (Site + SocialApp) 자동화.
 
 사용법:
     docker exec hidden_gem_django python scripts/setup_oauth.py
+
+필요 환경변수:
+    GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
+    STEAM_API_KEY  (https://steamcommunity.com/dev/apikey 에서 발급)
 """
 import os
 import sys
@@ -64,23 +68,52 @@ def setup_google_app(site):
     return app
 
 
+def setup_steam_app(site):
+    """
+    Register Steam SocialApp (OpenID).
+    Korean: Steam SocialApp 등록. client_id = Steam Web API Key, secret 불필요.
+    """
+    api_key = os.getenv('STEAM_API_KEY', '')
+
+    if not api_key:
+        print("[SKIP] STEAM_API_KEY not set — Steam login disabled")
+        return None
+
+    app, created = SocialApp.objects.update_or_create(
+        provider='steam',
+        defaults={
+            'name': 'Steam',
+            'client_id': api_key,
+            'secret': '',
+        }
+    )
+    app.sites.add(site)
+
+    action = 'created' if created else 'updated'
+    print(f"[OK] Steam SocialApp {action}")
+    print(f"     sites: {[s.domain for s in app.sites.all()]}")
+    return app
+
+
 if __name__ == '__main__':
     print("=" * 60)
-    print("Google OAuth Initial Setup")
+    print("OAuth Initial Setup (Google + Steam)")
     print("=" * 60)
 
     site = setup_site()
-    app = setup_google_app(site)
+    google_app = setup_google_app(site)
+    steam_app = setup_steam_app(site)
 
     print("=" * 60)
-    if app:
-        print("[SUCCESS] Setup complete!")
-        print("")
-        print("Next steps:")
-        print("  1. Check Google Cloud Console redirect URI:")
-        print("     http://localhost:8001/accounts/google/login/callback/")
-        print("  2. Test login:")
-        print("     http://localhost:3000/login")
+    if google_app:
+        print("[OK] Google ready")
+        print("     redirect URI: http://localhost:8001/accounts/google/login/callback/")
     else:
         print("[WARNING] Check GOOGLE_CLIENT_ID/SECRET in .env")
+    if steam_app:
+        print("[OK] Steam ready")
+        print("     login URL: http://localhost:8001/accounts/steam/login/")
+    else:
+        print("[WARNING] STEAM_API_KEY not set — Steam login skipped")
+    print("  Test: http://localhost:3000/login")
     print("=" * 60)

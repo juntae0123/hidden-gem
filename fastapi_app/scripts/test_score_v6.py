@@ -72,14 +72,14 @@ def test_witcher_vs_others():
     results.sort(key=lambda x: -x[1]['final_score'])
 
     for name, score in results:
-        print(f"\n🎮 {name}")
+        print(f"\n{name}")
         print(f"   최종: {score['final_score']}점")
         print(f"   ├ Core: {score['breakdown']['core_score']}")
         print(f"   ├ X-Factor: {score['breakdown']['xfactor_score']}")
         print(f"   └ Gem: {score['breakdown']['gem_score']}")
-        print(f"   💎 정체성: {score['identity']}")
+        print(f"   정체성: {score['identity']}")
         if score['is_hidden_gem']:
-            print(f"   ⭐ 숨은 명작!")
+            print(f"   숨은 명작!")
 
     scores = [s['final_score'] for _, s in results]
     print(f"\n{'=' * 60}")

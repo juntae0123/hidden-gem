@@ -13,6 +13,7 @@ import { Moon, Sun, User, LogOut, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useUserStore } from '@/store/useUserStore';
 import { cn } from '@/lib/utils';
+import { trackEvent } from '@/lib/umami';
 
 const TABS = [
   { href: '/',        label: '홈' },
@@ -53,11 +54,11 @@ export function Navbar() {
       'bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md',
       'border-b border-zinc-200 dark:border-zinc-800'
     )}>
-      <nav className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
+      <nav className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         {/* 로고 */}
         <Link href="/" className="flex items-center gap-2">
-          <span className="text-purple-600 text-lg leading-none">✦</span>
-          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+          <span className="text-purple-600 text-xl leading-none">✦</span>
+          <span className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
             Hidden Gem
           </span>
         </Link>
@@ -75,14 +76,15 @@ export function Navbar() {
                 <Link
                   key={tab.href}
                   href={tab.href}
+                  onClick={() => trackEvent('nav_taste_click')}
                   className={cn(
-                    'flex items-center gap-1 px-3 py-1.5 rounded-md text-[13px] font-medium transition-colors',
+                    'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
                     active
                       ? 'bg-purple-600 text-white'
                       : 'bg-purple-600/10 text-purple-700 dark:text-purple-300 hover:bg-purple-600/20'
                   )}
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <Sparkles className="w-4 h-4" />
                   {tab.label}
                 </Link>
               );
@@ -94,7 +96,7 @@ export function Navbar() {
                 key={tab.href}
                 href={tab.href}
                 className={cn(
-                  'px-3 py-1.5 rounded-md text-[13px] transition-colors',
+                  'px-4 py-2 rounded-lg text-sm transition-colors',
                   active
                     ? 'bg-purple-600/10 text-purple-700 dark:text-purple-300'
                     : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
@@ -166,7 +168,7 @@ export function Navbar() {
             <Link
               href="/login"
               className={cn(
-                'w-8 h-8 rounded-md flex items-center justify-center',
+                'w-9 h-9 rounded-lg flex items-center justify-center',
                 'border border-zinc-200 dark:border-zinc-800',
                 'text-zinc-600 dark:text-zinc-300',
                 'hover:border-purple-500 hover:text-purple-600',
@@ -183,7 +185,7 @@ export function Navbar() {
             type="button"
             onClick={toggleTheme}
             className={cn(
-              'w-8 h-8 rounded-md flex items-center justify-center',
+              'w-9 h-9 rounded-lg flex items-center justify-center',
               'border border-zinc-200 dark:border-zinc-800',
               'text-zinc-600 dark:text-zinc-300',
               'hover:border-purple-500 hover:text-purple-600',

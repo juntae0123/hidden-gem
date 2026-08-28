@@ -86,7 +86,7 @@ export function getTodaysTheme(): DailyTheme {
   return DAILY_THEMES[dayOfYear % DAILY_THEMES.length];
 }
 
-// ⭐ 모듈 로드 시엔 항상 [0] 고정 (SSR/CSR 동일 → #418 방지)
+// 모듈 로드 시엔 항상 [0] 고정 (SSR/CSR 동일 → #418 방지)
 //    실제 오늘 테마는 컴포넌트에서 getTodaysTheme() 호출
 export const DEFAULT_PREFERENCES = DAILY_THEMES[0].prefs;
 export const DEFAULT_THEME_LABEL = DAILY_THEMES[0].label;

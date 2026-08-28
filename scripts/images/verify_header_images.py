@@ -160,7 +160,7 @@ async def main():
     args = parser.parse_args()
     
     print("=" * 60)
-    print("🔍 Hidden Gem - Header Image Verifier (Phase B)")
+    print("Hidden Gem - Header Image Verifier (Phase B)")
     print("=" * 60)
     print(f"   concurrency : {args.concurrency}")
     print(f"   limit       : {args.limit or 'ALL'}")
@@ -198,8 +198,8 @@ async def main():
             else:
                 succeeded += 1
     
-    print(f"\n✅ 성공: {succeeded:,}개")
-    print(f"❌ 실패: {len(failed):,}개")
+    print(f"\n성공: {succeeded:,}개")
+    print(f"실패: {len(failed):,}개")
     
     if failed:
         print(f"\n실패한 game.id (처음 20개): {failed[:20]}")

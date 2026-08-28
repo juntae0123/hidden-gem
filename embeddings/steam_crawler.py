@@ -98,7 +98,7 @@ def request_with_backoff(url: str, params: dict, label: str) -> Optional[request
         try:
             resp = requests.get(url, params=params, timeout=30)
         except requests.RequestException as e:
-            print(f"   ⚠️ {label} 네트워크 오류 ({attempt}/{MAX_RETRIES}): {e}")
+            print(f"   {label} 네트워크 오류 ({attempt}/{MAX_RETRIES}): {e}")
             time.sleep(delay)
             delay *= 2
             continue
@@ -106,15 +106,15 @@ def request_with_backoff(url: str, params: dict, label: str) -> Optional[request
         if resp.status_code == 200:
             return resp
         if resp.status_code == 429 or resp.status_code >= 500:
-            print(f"   ⏳ {label} HTTP {resp.status_code} → {delay:.0f}s 대기")
+            print(f"   {label} HTTP {resp.status_code} → {delay:.0f}s 대기")
             time.sleep(delay)
             delay *= 2
             continue
 
-        print(f"   ❌ {label} HTTP {resp.status_code}")
+        print(f"   {label} HTTP {resp.status_code}")
         return None
 
-    print(f"   ❌ {label} 재시도 초과")
+    print(f"   {label} 재시도 초과")
     return None
 
 
@@ -148,7 +148,7 @@ def discover_via_store_search(max_candidates: int) -> List[int]:
     start = 0
     page_size = 50
 
-    print("🔎 발견: Steam 스토어 검색 (출시일 역순, 게임만)")
+    print("발견: Steam 스토어 검색 (출시일 역순, 게임만)")
     while len(app_ids) < max_candidates:
         resp = request_with_backoff(STORE_SEARCH, {
             "query": "",
@@ -168,7 +168,7 @@ def discover_via_store_search(max_candidates: int) -> List[int]:
         try:
             payload = resp.json()
         except ValueError:
-            print("   ⚠️ 검색 응답이 JSON이 아님 → 폴백 필요")
+            print("   검색 응답이 JSON이 아님 → 폴백 필요")
             break
 
         if start == 0:
@@ -202,10 +202,10 @@ def discover_via_applist(max_candidates: int) -> List[int]:
     """Official IStoreService/GetAppList; games only, newest app_ids first.
     공식 API 폴백. 출시일이 없어 app_id 내림차순(최근 등록순)으로 근사한다."""
     if not STEAM_API_KEY:
-        print("⚠️ STEAM_API_KEY 없음 → applist 폴백 불가")
+        print("STEAM_API_KEY 없음 → applist 폴백 불가")
         return []
 
-    print("🔎 발견: IStoreService/GetAppList (공식 API 폴백)")
+    print("발견: IStoreService/GetAppList (공식 API 폴백)")
     collected: List[int] = []
     last_appid = None
 
@@ -316,7 +316,7 @@ def load_existing_app_ids() -> Set[int]:
     """Read app_ids already in games to avoid re-crawling.
     이미 games에 있는 app_id를 읽어 중복 수집을 막는다."""
     if not DB_URL:
-        print("⚠️ DATABASE_URL 없음 → 중복 체크 생략")
+        print("DATABASE_URL 없음 → 중복 체크 생략")
         return set()
     try:
         from sqlalchemy import create_engine, text
@@ -324,10 +324,10 @@ def load_existing_app_ids() -> Set[int]:
         with engine.connect() as conn:
             rows = conn.execute(text("SELECT app_id FROM games")).fetchall()
         existing = {r[0] for r in rows}
-        print(f"🗄️  DB 기존 게임: {len(existing):,}개 (중복 제외 기준)")
+        print(f" DB 기존 게임: {len(existing):,}개 (중복 제외 기준)")
         return existing
     except Exception as e:
-        print(f"⚠️ DB 접속 실패 → 중복 체크 생략: {e}")
+        print(f"DB 접속 실패 → 중복 체크 생략: {e}")
         return set()
 
 
@@ -343,7 +343,7 @@ def upsert_games(rows: List[Dict]) -> int:
     활성화는 batch_processor가 metrics 적재 성공 후에 수행한다.
     """
     if not DB_URL:
-        print("⚠️ DATABASE_URL 없음 → games 등록 생략")
+        print("DATABASE_URL 없음 → games 등록 생략")
         return 0
 
     from sqlalchemy import create_engine, text
@@ -396,9 +396,9 @@ def upsert_games(rows: List[Dict]) -> int:
             })
             inserted += result.rowcount or 0
 
-    print(f"🗄️  games 등록: {inserted}개 신규 "
+    print(f" games 등록: {inserted}개 신규 "
           f"(is_active=FALSE, analysis_method='pending')")
-    print("   ⚠️ metrics 적재 전까지 서비스에 노출되지 않음")
+    print("   metrics 적재 전까지 서비스에 노출되지 않음")
     return inserted
 
 
@@ -425,6 +425,8 @@ def main():
                         help="발견 소스 (기본 search, 실패 시 applist 자동 폴백)")
     parser.add_argument("--output", default=str(DATA_DIR / "new_games.csv"))
     parser.add_argument("--no-db", action="store_true", help="DB 중복 체크 생략")
+    parser.add_argument("--candidates", type=int, default=None,
+                        help="발견 후보 수 오버라이드 (기본 limit*8). 백필 시 크게 - 중복은 상세 호출 없이 걸러지므로 비용 없음")
     parser.add_argument("--no-register", action="store_true",
                         help="games 테이블 등록 생략 (CSV만 생성)")
     args = parser.parse_args()
@@ -437,31 +439,32 @@ def main():
         start_date = end_date - timedelta(days=args.days)
 
     print("=" * 60)
-    print("🕷️  Hidden Gem - 신작 크롤러 (Steam only, RAWG 미사용)")
+    print(" Hidden Gem - 신작 크롤러 (Steam only, RAWG 미사용)")
     print("=" * 60)
-    print(f"📅 출시 기간: {start_date} ~ {end_date}")
-    print(f"🎯 최대: {args.limit}개")
+    print(f"출시 기간: {start_date} ~ {end_date}")
+    print(f"최대: {args.limit}개")
     print("=" * 60)
 
     existing = set() if args.no_db else load_existing_app_ids()
 
     # 발견: 필터 손실을 흡수하도록 여유있게 후보 수집
+    max_candidates = args.candidates or args.limit * 8
     if args.source == "search":
-        candidates = discover_via_store_search(max_candidates=args.limit * 8)
+        candidates = discover_via_store_search(max_candidates=max_candidates)
         if not candidates:
-            print("⚠️ 스토어 검색 실패 → 공식 API 폴백")
-            candidates = discover_via_applist(max_candidates=args.limit * 8)
+            print("스토어 검색 실패 → 공식 API 폴백")
+            candidates = discover_via_applist(max_candidates=max_candidates)
     else:
-        candidates = discover_via_applist(max_candidates=args.limit * 8)
+        candidates = discover_via_applist(max_candidates=max_candidates)
 
     if not candidates:
-        print("❌ 발견된 후보가 없습니다.")
+        print("발견된 후보가 없습니다.")
         return
 
     rows: List[Dict] = []
     stats = {"duplicate": 0, "filtered": 0, "out_of_range": 0}
 
-    print(f"\n🎮 Steam 상세 수집 (요청 간 {STEAM_DELAY_SEC}s 지연)")
+    print(f"\nSteam 상세 수집 (요청 간 {STEAM_DELAY_SEC}s 지연)")
     for app_id in candidates:
         if len(rows) >= args.limit:
             break
@@ -483,35 +486,35 @@ def main():
             stats["out_of_range"] += 1
             # 검색은 출시일 내림차순 → 시작일보다 과거로 넘어가면 더 볼 필요 없음
             if args.source == "search" and released < start_date:
-                print(f"   ⏹ {released} < {start_date} → 기간 종료, 수집 중단")
+                print(f"   {released} < {start_date} → 기간 종료, 수집 중단")
                 break
             continue
 
         rows.append(details)
         rd = released.isoformat() if released else "?"
-        print(f"   ✅ [{len(rows):>3}] {details['name'][:32]:34} {rd:11} "
+        print(f"   [{len(rows):>3}] {details['name'][:32]:34} {rd:11} "
               f"{details['genres'][:20]:22} desc {len(details['description'])}자")
 
     print("\n" + "=" * 60)
-    print(f"📊 수집 결과: {len(rows)}개")
+    print(f"수집 결과: {len(rows)}개")
     print(f"   DB 중복 제외: {stats['duplicate']}")
     print(f"   비게임/미출시/설명부족 제외: {stats['filtered']}")
     print(f"   기간 밖 제외: {stats['out_of_range']}")
 
     if not rows:
-        print("❌ 저장할 신작이 없습니다.")
+        print("저장할 신작이 없습니다.")
         return
 
     output_path = Path(args.output)
     write_blind_csv(rows, output_path)
-    print(f"\n💾 저장: {output_path} ({len(rows)}행, 4컬럼)")
+    print(f"\n저장: {output_path} ({len(rows)}행, 4컬럼)")
 
     # games 테이블 등록 (비활성 상태). batch_processor가 metrics 적재 후 활성화한다.
     if not args.no_db and not args.no_register:
         upsert_games(rows)
 
     print("=" * 60)
-    print("\n💡 다음 단계:")
+    print("\n다음 단계:")
     print(f"   python -m embeddings.batch_generator --csv {output_path} \\")
     print(f"       --test {len(rows)} --model gpt-5.4-mini \\")
     print("       --fewshot data/fewshot/fewshot_examples.jsonl --fewshot-n 6")

@@ -2,7 +2,7 @@
  * Optimized game image with inline SVG fallback.
  * 인라인 SVG 폴백을 사용한 최적화 게임 이미지.
  *
- * v3 → v4: btoa 제거 (유니코드 ✦ 처리), encodeURIComponent 사용
+ * v3 → v4: btoa 제거 (유니코드 처리), encodeURIComponent 사용
  */
 'use client';
 
@@ -34,7 +34,7 @@ const SIZE_HINTS = {
 
 /**
  * Inline SVG placeholder via encodeURIComponent (유니코드 안전).
- * btoa는 Latin1만 지원해서 ✦ 같은 유니코드 처리 못함.
+ * btoa는 Latin1만 지원해서 같은 유니코드 처리 못함.
  */
 const PLACEHOLDER_SVG =
   'data:image/svg+xml,' +

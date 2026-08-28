@@ -67,7 +67,7 @@ async def fetch_steam_header(
                     return None  # 삭제된 게임 또는 비공개 앱
                 return app_data.get("data", {}).get("header_image")
         except Exception as e:
-            print(f"\n⚠️  app_id={app_id} 요청 실패: {e}")
+            print(f"\n app_id={app_id} 요청 실패: {e}")
             return None
 
 
@@ -78,7 +78,7 @@ async def main():
     args = parser.parse_args()
 
     print("=" * 60)
-    print("🔧 Hidden Gem - Failed Header Image Fixer (Steam API)")
+    print("Hidden Gem - Failed Header Image Fixer (Steam API)")
     print("=" * 60)
 
     # 1. 빈 게임 조회
@@ -94,7 +94,7 @@ async def main():
 
     print(f"\n대상 게임: {len(targets)}개\n")
     if not targets:
-        print("✅ 복구할 게임 없음!")
+        print("복구할 게임 없음!")
         return
 
     # 2. Steam API 호출 (한 번만)
@@ -118,8 +118,8 @@ async def main():
         for i in range(len(targets)) if not urls[i]
     ]
 
-    print(f"\n✅ URL 확보: {len(success)}개")
-    print(f"❌ API도 실패: {len(failed)}개")
+    print(f"\nURL 확보: {len(success)}개")
+    print(f"API도 실패: {len(failed)}개")
 
     if success:
         print("\n확보된 URL 샘플:")
@@ -133,7 +133,7 @@ async def main():
             print(f"  [{app_id}] {name}")
 
     if args.dry_run:
-        print("\n⚠️  --dry-run 모드: 실제 DB 변경 없음")
+        print("\n --dry-run 모드: 실제 DB 변경 없음")
         return
 
     # 4. DB 업데이트
@@ -147,9 +147,9 @@ async def main():
                 )
                 await db.execute(stmt)
             await db.commit()
-        print(f"\n✅ DB 업데이트 완료: {len(success)}개")
+        print(f"\nDB 업데이트 완료: {len(success)}개")
 
-    print("\n🎯 작업 완료!")
+    print("\n작업 완료!")
     print(f"   복구 성공: {len(success)}개")
     print(f"   복구 불가 (삭제/비공개): {len(failed)}개")
 

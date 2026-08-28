@@ -29,7 +29,7 @@ class JWTAccountAdapter(DefaultAccountAdapter):
     """
     Account adapter — 로그인 후 리다이렉트 처리.
 
-    ⭐ get_login_redirect_url은 account adapter 메서드!
+    get_login_redirect_url은 account adapter 메서드!
     (socialaccount adapter 아님)
     """
 
@@ -61,11 +61,23 @@ class JWTSocialAccountAdapter(DefaultSocialAccountAdapter):
     """
     Social account adapter — 유저 저장 + 닉네임 + 에러 처리.
 
-    ⚠️ get_callback_url 절대 오버라이드 X (redirect_uri 보호)
+    get_callback_url 절대 오버라이드 X (redirect_uri 보호)
     """
 
+    def populate_user(self, request, sociallogin, data):
+        """Steam은 이메일을 제공하지 않으므로 합성 이메일로 자동 가입을 통과시킨다.
+
+        (ACCOUNT_SIGNUP_FIELDS의 email 필수 조건 + auto signup 판정이
+        user.email 기준이라, 여기서 채워야 가입 폼으로 빠지지 않음)
+        """
+        user = super().populate_user(request, sociallogin, data)
+        if sociallogin.account.provider == 'steam' and not user.email:
+            steam_id = sociallogin.account.uid
+            user.email = f'steam_{steam_id}@users.hiddengem.local'
+        return user
+
     def save_user(self, request, sociallogin, form=None):
-        """유저 저장 + Google 프로필에서 닉네임 세팅."""
+        """유저 저장 + 프로필(Google name / Steam personaname)에서 닉네임 세팅."""
         user = super().save_user(request, sociallogin, form)
         extra_data = sociallogin.account.extra_data
 
@@ -73,6 +85,7 @@ class JWTSocialAccountAdapter(DefaultSocialAccountAdapter):
             user.nickname = (
                 extra_data.get('name')
                 or extra_data.get('given_name')
+                or extra_data.get('personaname')
                 or user.email.split('@')[0]
             )
             user.save(update_fields=['nickname'])
@@ -328,9 +341,9 @@ class DeleteAccountView(APIView):
         Favorite.objects.filter(user=user).delete()
 
         # 2) 유저 삭제
-        #    - UserAction.user → SET_NULL (행동 로그 익명 유지)
-        #    - GameSurvey.user → SET_NULL (설문 익명 유지, Community Validation 데이터 보존)
-        #    - CustomUser의 개인정보(이메일/닉네임/성별/나이/취향)는 레코드째 삭제
+        # - UserAction.user → SET_NULL (행동 로그 익명 유지)
+        # - GameSurvey.user → SET_NULL (설문 익명 유지, Community Validation 데이터 보존)
+        # - CustomUser의 개인정보(이메일/닉네임/성별/나이/취향)는 레코드째 삭제
         user_email = user.email  # 로그용
         user.delete()
 

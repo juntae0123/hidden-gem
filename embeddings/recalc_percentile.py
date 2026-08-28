@@ -18,11 +18,11 @@ Hidden Gem - gem_percentile Full Recalculation (task 5)
     - is_active / is_analyzed 필터 없음
     - 비게임 소프트웨어(3DMark gem=0, VEGAS Pro gem=5)도 모수에 포함
 
-⚠️ 이 컬럼은 Project A의 추천 엔진(score_v6)이 직접 읽는다.
+이 컬럼은 Project A의 추천 엔진(score_v6)이 직접 읽는다.
    공식이나 모수를 바꾸면 A의 점수 스케일이 통째로 이동한다.
    재계산을 실행하면 반드시 A에 알리고 score_v6 재검증을 요청할 것.
 
-⚠️ embedding 컬럼은 건드리지 않는다 (임베딩 파이프라인 전담).
+embedding 컬럼은 건드리지 않는다 (임베딩 파이프라인 전담).
 
 사용법:
     # 변경 예상만 확인 (DB 미변경) - 항상 이것부터
@@ -48,7 +48,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 DB_URL = os.getenv("DATABASE_URL")
 if not DB_URL:
-    raise ValueError("❌ .env에 DATABASE_URL이 없습니다!")
+    raise ValueError(".env에 DATABASE_URL이 없습니다!")
 
 engine = create_engine(DB_URL)
 
@@ -75,7 +75,7 @@ def show_current_state() -> Tuple[int, int]:
             "FROM game_metrics WHERE gem_percentile IS NOT NULL"
         )).one()
 
-    print("📊 현재 상태")
+    print("현재 상태")
     print(f"   gem_potential 보유: {n_gem:,}건  ← 재계산 모수")
     print(f"   gem_percentile 보유: {n_pct:,}건  (NULL: {n_gem - n_pct:,}건)")
     if mn is not None:
@@ -120,7 +120,7 @@ def preview_changes(limit: int = 15) -> int:
         total_changed = conn.execute(count_sql).scalar()
         rows = conn.execute(sql, {"limit": limit}).fetchall()
 
-    print(f"\n🔍 변경 예정: {total_changed:,}건")
+    print(f"\n변경 예정: {total_changed:,}건")
     if rows:
         print(f"\n   변동폭 큰 순 상위 {len(rows)}건:")
         print(f"   {'app_id':>9} {'게임':<28} {'gem':>6} {'기존':>7} → {'신규':>6}")
@@ -192,7 +192,7 @@ def verify_after() -> None:
             ORDER BY m.gem_potential DESC LIMIT 3
         """)).fetchall()
 
-    print("\n🔎 재계산 후 검증")
+    print("\n재계산 후 검증")
     print(f"   percentile 보유: {n_pct:,}건 | 범위 {mn} ~ {mx} (avg {avg:.2f})")
     print(f"   gem_potential 있는데 percentile NULL: {remaining}건 (0이어야 정상)")
     print(f"   embedding 보유(불변 확인): {emb:,}건")
@@ -211,40 +211,40 @@ def main():
     args = parser.parse_args()
 
     print("=" * 64)
-    print("📐 Hidden Gem - gem_percentile 전체 재계산")
+    print("Hidden Gem - gem_percentile 전체 재계산")
     print("=" * 64)
-    print(f"🔗 DB: {DB_URL[:34]}...")
-    print("📏 공식: ROUND(PERCENT_RANK() OVER (ORDER BY gem_potential) * 100)")
-    print("🚫 미변경 컬럼: embedding, gem_potential")
+    print(f"DB: {DB_URL[:34]}...")
+    print("공식: ROUND(PERCENT_RANK() OVER (ORDER BY gem_potential) * 100)")
+    print("미변경 컬럼: embedding, gem_potential")
     print("=" * 64)
 
     show_current_state()
     changed = preview_changes()
 
     if args.dry_run:
-        print("\n⚠️ Dry-run 모드: DB 변경 없음")
+        print("\nDry-run 모드: DB 변경 없음")
         return
 
     if changed == 0:
-        print("\n✅ 변경할 행이 없습니다 (이미 최신 상태)")
+        print("\n변경할 행이 없습니다 (이미 최신 상태)")
         return
 
-    print("\n⚠️ 이 컬럼은 Project A의 score_v6가 직접 읽습니다.")
+    print("\n이 컬럼은 Project A의 score_v6가 직접 읽습니다.")
     print("   재계산 후 A에 알리고 점수 스케일 재검증을 요청하세요.")
 
     if not args.yes:
-        confirm = input(f"\n🔥 {changed:,}건의 gem_percentile을 갱신할까요? (y/n): ").strip().lower()
+        confirm = input(f"\n{changed:,}건의 gem_percentile을 갱신할까요? (y/n): ").strip().lower()
         if confirm != "y":
-            print("❌ 취소됨")
+            print("취소됨")
             return
 
     updated = recalculate()
-    print(f"\n✅ 갱신 완료: {updated:,}건")
+    print(f"\n갱신 완료: {updated:,}건")
 
     verify_after()
 
     print("\n" + "=" * 64)
-    print("📣 Project A에 알릴 것:")
+    print("Project A에 알릴 것:")
     print(f"   - gem_percentile {updated:,}건 갱신됨 (모수 변경)")
     print("   - score_v6 점수 스케일 재검증 필요")
     print("=" * 64)

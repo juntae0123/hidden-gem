@@ -44,3 +44,5 @@ __pycache__/backups/
 !frontend/package.json
 !frontend/package-lock.json
 !frontend/tsconfig.json
+
+.vercel

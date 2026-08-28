@@ -58,18 +58,18 @@ class Command(BaseCommand):
         total = games.count()
         self.stdout.write(f'''
 {'='*60}
-🎮 신규 게임 Few-Shot 분석 (GPT-5.4 품질)
+신규 게임 Few-Shot 분석 (GPT-5.4 품질)
 {'='*60}
-📊 분석 대상: {total}개
-🤖 사용 모델: {self.model}
-💡 전략: 4,190개 GPT-5.4 데이터 기반 Few-Shot
+분석 대상: {total}개
+사용 모델: {self.model}
+전략: 4,190개 GPT-5.4 데이터 기반 Few-Shot
 {'='*60}
         ''')
         
         success, failed = 0, 0
         
         for i, game in enumerate(games, 1):
-            self.stdout.write(f'\n[{i}/{total}] 🎮 [{game.app_id}] {game.name}')
+            self.stdout.write(f'\n[{i}/{total}] [{game.app_id}] {game.name}')
             
             if options['dry_run']:
                 similar = self._find_similar_games(game)
@@ -79,7 +79,7 @@ class Command(BaseCommand):
             try:
                 # 1. 유사 게임 찾기 (GPT-5.4로 분석된 것 중에서)
                 similar_games = self._find_similar_games(game, top_k=5)
-                self.stdout.write(f'   📎 유사 게임 {len(similar_games)}개 발견')
+                self.stdout.write(f'   유사 게임 {len(similar_games)}개 발견')
                 
                 # 2. Few-Shot 분석
                 result = self._analyze_with_fewshot(game, similar_games)
@@ -88,15 +88,15 @@ class Command(BaseCommand):
                 self._save_result(game, result)
                 
                 success += 1
-                self.stdout.write(self.style.SUCCESS(f'   ✅ 분석 완료!'))
+                self.stdout.write(self.style.SUCCESS(f'   분석 완료!'))
                 
             except Exception as e:
                 failed += 1
-                self.stdout.write(self.style.ERROR(f'   ❌ 실패: {e}'))
+                self.stdout.write(self.style.ERROR(f'   실패: {e}'))
         
         self.stdout.write(f'''
 {'='*60}
-✅ 완료!
+완료!
    성공: {success}개
    실패: {failed}개
 {'='*60}
@@ -351,7 +351,7 @@ class Command(BaseCommand):
 }}
 ```"""
             except Exception as e:
-                self.stdout.write(self.style.WARNING(f'   ⚠️ 예시 생성 실패: {e}'))
+                self.stdout.write(self.style.WARNING(f'   예시 생성 실패: {e}'))
                 continue
         return examples     
 

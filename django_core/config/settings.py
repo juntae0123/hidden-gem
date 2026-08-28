@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'allauth.account',
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
+    'allauth.socialaccount.providers.steam',
     'apps.games',
     'apps.users',
 ]
@@ -145,7 +146,7 @@ SOCIALACCOUNT_PROVIDERS = {
 SOCIALACCOUNT_LOGIN_ON_GET = True
 SOCIALACCOUNT_AUTO_SIGNUP = True
 
-# ⭐⭐⭐ 핵심 수정: LOGIN_REDIRECT_URL은 반드시 '/' !!!
+# 핵심 수정: LOGIN_REDIRECT_URL은 반드시 '/' !!!
 # 절대 '/api/auth/google/callback/'으로 하면 안 됨 (redirect_uri 망가짐)
 LOGIN_REDIRECT_URL = '/'
 
