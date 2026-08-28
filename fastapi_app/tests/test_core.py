@@ -68,7 +68,7 @@ class TestCostGuardBlocksOverLimit:
         with patch.object(cost_guard, "_get_redis", return_value=mock_redis):
             with patch.object(cost_guard, "_send_alert", new_callable=AsyncMock):
                 allowed, reason = await cost_guard.check_before_request("gpt-4.1-mini")
-                assert allowed is False, "일일 한도 초과에도 허용 (차단 실패 🚨)"
+                assert allowed is False, "일일 한도 초과에도 허용 (차단 실패)"
                 assert reason and reason != "ok", "차단 이유 메시지 없음"
 
     @pytest.mark.asyncio
@@ -83,7 +83,7 @@ class TestCostGuardBlocksOverLimit:
         with patch.object(cost_guard, "_get_redis", return_value=mock_redis):
             with patch.object(cost_guard, "_send_alert", new_callable=AsyncMock):
                 allowed, reason = await cost_guard.check_before_request("gpt-4.1-mini")
-                assert allowed is False, "시간당 스파이크에도 허용 (차단 실패 🚨)"
+                assert allowed is False, "시간당 스파이크에도 허용 (차단 실패)"
 
     def test_daily_limit_config_is_sane(self):
         """Daily limit must be > 0 and <= $500."""

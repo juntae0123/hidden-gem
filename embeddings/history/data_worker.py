@@ -24,14 +24,14 @@ app.add_middleware(
 )
 
 # ============== 상수 정의 ==============
-# 🔴 패치: DROP 컷오프 기본 65점, 최소 마지노선 60점 (동적 완화용)
+# 패치: DROP 컷오프 기본 65점, 최소 마지노선 60점 (동적 완화용)
 DROP_THRESHOLD = 65
 MIN_FALLBACK_THRESHOLD = 60 
 
 MANIAC_AVG_THRESHOLD = 65
 MANIAC_S_TIER_THRESHOLD = 85
 
-# 🔴 부스팅 설정
+# 부스팅 설정
 INTENT_BASE_WEIGHT = 1.5      
 BOOST_CAP = 1.7               
 MAX_TOTAL_WEIGHT = 2.55       
@@ -76,7 +76,7 @@ class GameResult(BaseModel):
     similarity: float
     matched_intents: List[str]
     boost_info: Dict[str, float]
-    boost_reason: str  # 🔴 프론트엔드 노출용 친절한 설명 추가
+    boost_reason: str  # 프론트엔드 노출용 친절한 설명 추가
     scores: Dict[str, int]
 
 class SearchResponse(BaseModel):
@@ -246,7 +246,7 @@ def hybrid_search(request: SearchRequest):
             scores = parse_scores_from_row(row)
             final_score, status, debug = calculate_final_score(scores, genres, user_intents)
             
-            # 🔴 프론트엔드용 친절한 설명 (Boost Reason) 생성
+            # 프론트엔드용 친절한 설명 (Boost Reason) 생성
             boost_reasons = []
             for metric, info in debug.get("boost_info", {}).items():
                 if info.get("additional_boost", 1.0) > 1.0:
@@ -265,7 +265,7 @@ def hybrid_search(request: SearchRequest):
         gems = [g for g in evaluated_games if g["status"] == "GEM"]
         maniacs = [g for g in evaluated_games if g["status"] == "MANIAC"]
 
-        # 🔴 동적 컷오프 완화 (심폐소생술 로직)
+        # 동적 컷오프 완화 (심폐소생술 로직)
         if len(gems) < 5:
             resurrected = [g for g in evaluated_games if g["status"] == "DROP" and MIN_FALLBACK_THRESHOLD <= g["final_score"] < DROP_THRESHOLD]
             for r in resurrected:

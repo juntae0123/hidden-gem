@@ -30,7 +30,7 @@ def update_schema():
     """games 테이블에 JSONB 컬럼 추가"""
     
     print("=" * 60)
-    print("🔧 Hidden Gem - DB 스키마 업데이트")
+    print("Hidden Gem - DB 스키마 업데이트")
     print("=" * 60)
     
     columns_to_add = [
@@ -52,26 +52,26 @@ def update_schema():
                 """))
                 
                 if result.fetchone():
-                    print(f"   ✅ {col_name} - 이미 존재")
+                    print(f"   {col_name} - 이미 존재")
                 else:
                     # 컬럼 추가
                     conn.execute(text(f"""
                         ALTER TABLE games 
                         ADD COLUMN IF NOT EXISTS {col_name} {col_type} DEFAULT '{default}'
                     """))
-                    print(f"   🆕 {col_name} - 추가 완료")
+                    print(f"   {col_name} - 추가 완료")
                     
             except Exception as e:
-                print(f"   ❌ {col_name} - 실패: {e}")
+                print(f"   {col_name} - 실패: {e}")
     
     print("\n" + "=" * 60)
-    print("✅ 스키마 업데이트 완료!")
+    print("스키마 업데이트 완료!")
     print("=" * 60)
 
 
 def verify_schema():
     """스키마 확인"""
-    print("\n📋 현재 games 테이블 컬럼:")
+    print("\n현재 games 테이블 컬럼:")
     
     with engine.connect() as conn:
         result = conn.execute(text("""

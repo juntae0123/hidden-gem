@@ -8,30 +8,30 @@ load_dotenv(find_dotenv())
 DB_URL = os.getenv("DATABASE_URL")
 
 def merge_old_data():
-    print("🔄 과거 데이터(pkl)를 DB로 병합합니다...")
+    print("과거 데이터(pkl)를 DB로 병합합니다...")
     
     # 1. DB 연결
     try:
         engine = create_engine(DB_URL)
-        print("✅ DB 연결 성공!")
+        print("DB 연결 성공!")
     except Exception as e:
-        print(f"❌ DB 연결 실패: {e}")
+        print(f"DB 연결 실패: {e}")
         return
         
     # 2. data 폴더 안의 기존 pkl 파일 읽기
     file_path = "../data/hidden_gem_embedded.pkl"
     try:
         df = pd.read_pickle(file_path)
-        print(f"✅ 파일 읽기 성공! 총 {len(df)}개의 데이터가 있습니다.")
+        print(f"파일 읽기 성공! 총 {len(df)}개의 데이터가 있습니다.")
     except Exception as e:
-        print(f"❌ 파일을 읽을 수 없습니다: {e}")
+        print(f"파일을 읽을 수 없습니다: {e}")
         return
         
     # 3. DB에 안전하게 넣기 (중복 방지)
     success_count = 0
     skip_count = 0
     
-    print("🚀 DB에 밀어 넣는 중...")
+    print("DB에 밀어 넣는 중...")
     with engine.begin() as conn:
         for index, row in df.iterrows():
             try:
@@ -83,7 +83,7 @@ def merge_old_data():
             except Exception as e:
                 skip_count += 1
                 
-    print(f"🎉 병합 완료! 새로 추가된 데이터: {success_count}개 (중복/에러 스킵: {skip_count}개)")
+    print(f"병합 완료! 새로 추가된 데이터: {success_count}개 (중복/에러 스킵: {skip_count}개)")
 
 if __name__ == "__main__":
     merge_old_data()

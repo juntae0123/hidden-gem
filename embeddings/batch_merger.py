@@ -19,14 +19,14 @@ class BatchMerger:
     def find_batch_files(self) -> List[Path]:
         """배치 결과 파일들 찾기 (모든 jsonl 파일 허용)"""
         if not self.batch_dir.exists():
-            print(f"❌ 폴더를 찾을 수 없습니다: {self.batch_dir.absolute()}")
+            print(f"폴더를 찾을 수 없습니다: {self.batch_dir.absolute()}")
             return []
 
         # data/batches 폴더 안의 모든 .jsonl 파일을 찾음
         files = list(self.batch_dir.glob("*.jsonl"))
         
-        print(f"📁 확인된 경로: {self.batch_dir.absolute()}")
-        print(f"📁 발견된 배치 파일: {len(files)}개")
+        print(f"확인된 경로: {self.batch_dir.absolute()}")
+        print(f"발견된 배치 파일: {len(files)}개")
         for f in files:
             print(f"   - {f.name}")
         
@@ -64,7 +64,7 @@ class BatchMerger:
                         'error': str(e)
                     })
         
-        print(f"   ✅ {filepath.name}: {len(results)}개 성공, {len(errors)}개 에러")
+        print(f"   {filepath.name}: {len(results)}개 성공, {len(errors)}개 에러")
         return results, errors
     
     def _parse_content(self, content: str) -> Dict:
@@ -89,7 +89,7 @@ class BatchMerger:
         all_errors = []
         duplicate_check = {} 
         
-        print("\n🔄 병합 시작...")
+        print("\n병합 시작...")
         
         for filepath in files:
             results, errors = self.parse_batch_file(filepath)
@@ -115,7 +115,7 @@ class BatchMerger:
             
             all_errors.extend(errors)
         
-        print(f"\n📊 병합 결과:")
+        print(f"\n병합 결과:")
         print(f"   - 총 게임: {len(all_results)}개")
         print(f"   - 에러: {len(all_errors)}개")
         
@@ -139,7 +139,7 @@ class BatchMerger:
             with open(jsonl_path, 'w', encoding='utf-8') as f:
                 for game in data['games']:
                     f.write(json.dumps(game, ensure_ascii=False) + '\n')
-            print(f"💾 JSONL 저장: {jsonl_path}")
+            print(f"JSONL 저장: {jsonl_path}")
             
         return saved
 
@@ -150,9 +150,9 @@ def main():
     
     if data and data.get('games'):
         merger.save_merged(data, format='jsonl')
-        print("\n✅ 완벽하게 합쳐졌습니다! data/merged 폴더를 확인하세요.")
+        print("\n완벽하게 합쳐졌습니다! data/merged 폴더를 확인하세요.")
     else:
-        print("\n❌ 병합 실패: 데이터를 찾을 수 없습니다.")
+        print("\n병합 실패: 데이터를 찾을 수 없습니다.")
 
 if __name__ == '__main__':
     main()

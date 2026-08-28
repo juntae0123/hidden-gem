@@ -1,7 +1,7 @@
 """
 SQLAlchemy ORM 모델 - Django의 games, game_metrics 테이블 매핑
 
-⚠️ 주의: Django가 생성한 컬럼명과 정확히 일치해야 함
+주의: Django가 생성한 컬럼명과 정확히 일치해야 함
 - games 테이블: 4,190개 게임
 - game_metrics 테이블: 60개 지표 (49 수치 + 9 태그 + 2 평가)
 """

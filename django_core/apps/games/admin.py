@@ -29,21 +29,21 @@ class GameMetricInline(admin.StackedInline):
     can_delete = False
     
     fieldsets = (
-        ('🌈 VIBE (분위기)', {
+        ('VIBE (분위기)', {
             'fields': (
                 ('cozy_factor', 'horror_factor', 'gore_level', 'humor_rating'),
                 ('dark_fantasy_vibe', 'epic_scale', 'melancholy'),
             ),
             'classes': ('collapse',),
         }),
-        ('💪 DEMANDS (요구도)', {
+        ('DEMANDS (요구도)', {
             'fields': (
                 ('reflex_demand', 'strategic_depth', 'grind_factor'),
                 ('time_pressure', 'learning_curve'),
             ),
             'classes': ('collapse',),
         }),
-        ('⚙️ MECHANICS (메커니즘)', {
+        ('MECHANICS (메커니즘)', {
             'fields': (
                 ('freedom_level', 'action_pacing', 'rng_dependency'),
                 ('growth_reward', 'exploration_reward', 'management_complexity'),
@@ -52,32 +52,32 @@ class GameMetricInline(admin.StackedInline):
             ),
             'classes': ('collapse',),
         }),
-        ('👥 SOCIAL (소셜)', {
+        ('SOCIAL (소셜)', {
             'fields': (
                 ('coop_synergy', 'competitive_stress', 'npc_interaction'),
                 ('user_creation', 'multiplayer_scale'),
             ),
             'classes': ('collapse',),
         }),
-        ('🎬 PRESENTATION (연출)', {
+        ('PRESENTATION (연출)', {
             'fields': (
                 ('lore_richness', 'choice_consequence', 'visual_spectacle'),
                 ('environmental_storytelling', 'soundtrack_impact'),
             ),
             'classes': ('collapse',),
         }),
-        ('🏷️ TAGS', {
+        ('TAGS', {
             'fields': (
                 ('is_turn_based', 'is_real_time', 'is_first_person', 'is_third_person'),
                 ('has_permadeath', 'has_base_building', 'has_crafting'),
                 ('is_anime_style', 'is_retro_aesthetic'),
             ),
         }),
-        ('📝 AI 콘텐츠', {
+        ('AI 콘텐츠', {
             'fields': ('marketing_hook', 'one_line_summary', 'target_personas', 'similar_games'),
             'classes': ('collapse',),
         }),
-        ('🔍 분석 정보', {
+        ('분석 정보', {
             'fields': ('confidence_score', 'extraction_version', 'analysis_summary'),
             'classes': ('collapse',),
         }),
@@ -161,17 +161,17 @@ class GameAdmin(ImportExportModelAdmin):
             color, label
         )
 
-    @admin.display(description='🏠Cozy')
+    @admin.display(description='Cozy')
     def cozy_score(self, obj):
         """아늑함 지표 점수 표시"""
         return self._score_display(obj, 'cozy_factor')
 
-    @admin.display(description='👻Horror')
+    @admin.display(description='Horror')
     def horror_score(self, obj):
         """공포 지표 점수 표시"""
         return self._score_display(obj, 'horror_factor')
 
-    @admin.display(description='⚡Reflex')
+    @admin.display(description='Reflex')
     def reflex_score(self, obj):
         """반사신경 요구도 점수 표시"""
         return self._score_display(obj, 'reflex_demand')
@@ -222,6 +222,6 @@ class GameMetricAdmin(admin.ModelAdmin):
 
 
 # Admin 사이트 커스터마이징
-admin.site.site_header = '🎮 Hidden Gem Admin'
+admin.site.site_header = 'Hidden Gem Admin'
 admin.site.site_title = 'Hidden Gem'
 admin.site.index_title = 'GPT-5.4 기반 스팀 인디게임 관리 시스템'

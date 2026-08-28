@@ -13,6 +13,7 @@ openai==2.44.0
 
 # ==================== Phase 2: 인증 ====================
 django-allauth[socialaccount]==65.18.0   # Google OAuth2 (의존성 포함)
+python3-openid==3.2                      # allauth Steam(OpenID) provider 의존성
 djangorestframework-simplejwt==5.5.1     # JWT 토큰
 requests==2.34.2                         # allauth Google provider
 cryptography==49.0.0                     # allauth JWT 처리

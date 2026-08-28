@@ -55,7 +55,7 @@ async def main():
     args = parser.parse_args()
 
     print("=" * 60)
-    print("🧠 Hidden Gem - Embedding Loader")
+    print("Hidden Gem - Embedding Loader")
     print("=" * 60)
 
     # 1단계: pkl 파일에서 1536차원 임베딩 추출
@@ -98,7 +98,7 @@ async def main():
     print(f"   → 적재 대상: {len(targets)}개")
 
     if args.dry_run:
-        print("\n⚠️  dry-run 모드: 실제 DB 변경 없음")
+        print("\n dry-run 모드: 실제 DB 변경 없음")
         print(f"   샘플 app_id: {targets[0][0]}, 임베딩 차원: {len(targets[0][2])}")
         return
 
@@ -106,7 +106,7 @@ async def main():
     print(f"\n3️⃣  임베딩 적재 중 (batch={args.batch_size})...")
     updated = 0
 
-    with tqdm(total=len(targets), desc="🧠 Loading embeddings", unit="game") as pbar:
+    with tqdm(total=len(targets), desc="Loading embeddings", unit="game") as pbar:
         for i in range(0, len(targets), args.batch_size):
             batch = targets[i: i + args.batch_size]
             async with AsyncSessionLocal() as db:
@@ -120,7 +120,7 @@ async def main():
                     pbar.update(1)
                 await db.commit()  # 배치 단위 커밋 (중간 실패 시 해당 배치만 재시도 가능)
 
-    print(f"\n✅ 임베딩 적재 완료: {updated:,}개")
+    print(f"\n임베딩 적재 완료: {updated:,}개")
 
     # 4단계: HNSW 인덱스 생성 (cosine 유사도 검색 가속)
     # m=16, ef_construction=64는 정확도/성능 균형을 위한 경험적 값
@@ -135,7 +135,7 @@ async def main():
         await db.commit()
     print("   → 인덱스 생성 완료!")
 
-    print("\n🎯 전체 완료!")
+    print("\n전체 완료!")
     print(f"   적재된 임베딩: {updated:,}개")
     print(f"   HNSW 인덱스: game_metrics_embedding_hnsw")
 

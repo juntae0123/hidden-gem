@@ -47,7 +47,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 DB_URL = os.getenv("DATABASE_URL")
 
 if not DB_URL:
-    raise ValueError("❌ .env에 DATABASE_URL이 없습니다!")
+    raise ValueError(".env에 DATABASE_URL이 없습니다!")
 
 engine = create_engine(DB_URL)
 
@@ -210,7 +210,7 @@ def parse_batch_result(result_file: Path) -> Tuple[Dict[int, Dict], Dict[str, in
     results: Dict[int, Dict] = {}
     stats = {"success": 0, "http_error": 0, "parse_error": 0, "no_app_id": 0}
 
-    print(f"📂 파일 읽는 중: {result_file}")
+    print(f"파일 읽는 중: {result_file}")
 
     with open(result_file, 'r', encoding='utf-8') as f:
         for line_num, line in enumerate(f, 1):
@@ -220,7 +220,7 @@ def parse_batch_result(result_file: Path) -> Tuple[Dict[int, Dict], Dict[str, in
             try:
                 item = json.loads(line)
             except json.JSONDecodeError as e:
-                print(f"   ⚠️ Line {line_num} JSONL 파싱 실패: {e}")
+                print(f"   Line {line_num} JSONL 파싱 실패: {e}")
                 stats["parse_error"] += 1
                 continue
 
@@ -232,7 +232,7 @@ def parse_batch_result(result_file: Path) -> Tuple[Dict[int, Dict], Dict[str, in
             response = item.get("response") or {}
             if response.get("status_code") != 200:
                 err = (response.get("error") or {}).get("message", "Unknown error")
-                print(f"   ⚠️ app_id={app_id} HTTP 오류: {err}")
+                print(f"   app_id={app_id} HTTP 오류: {err}")
                 stats["http_error"] += 1
                 continue
 
@@ -246,7 +246,7 @@ def parse_batch_result(result_file: Path) -> Tuple[Dict[int, Dict], Dict[str, in
             try:
                 parsed = json.loads(strip_code_fence(content))
             except json.JSONDecodeError as e:
-                print(f"   ⚠️ app_id={app_id} content 파싱 실패: {e}")
+                print(f"   app_id={app_id} content 파싱 실패: {e}")
                 stats["parse_error"] += 1
                 continue
 
@@ -256,7 +256,7 @@ def parse_batch_result(result_file: Path) -> Tuple[Dict[int, Dict], Dict[str, in
             }
             stats["success"] += 1
 
-    print(f"✅ 파싱 완료: 성공 {stats['success']}, "
+    print(f"파싱 완료: 성공 {stats['success']}, "
           f"HTTP오류 {stats['http_error']}, 파싱실패 {stats['parse_error']}, "
           f"app_id없음 {stats['no_app_id']}")
     return results, stats
@@ -346,9 +346,9 @@ def activate_games(game_ids: List[int], version: str) -> int:
 
     activated = result.rowcount or 0
     pending = len(game_ids) - activated
-    print(f"🟢 games 활성화: {activated}개 (metrics + embedding 모두 완비)")
+    print(f"games 활성화: {activated}개 (metrics + embedding 모두 완비)")
     if pending > 0:
-        print(f"   ⏸ {pending}개는 embedding 대기 → is_active=FALSE 유지")
+        print(f"   {pending}개는 embedding 대기 → is_active=FALSE 유지")
         print(f"      (generate_embeddings 실행 후 재활성화 필요)")
     return activated
 
@@ -361,14 +361,14 @@ def upsert_metrics(results: Dict[int, Dict], version: str) -> Tuple[int, int, in
 
     missing = [a for a in app_ids if a not in id_map]
     if missing:
-        print(f"⚠️ games 테이블에 없는 app_id {len(missing)}개 (건너뜀): {missing[:10]}")
+        print(f"games 테이블에 없는 app_id {len(missing)}개 (건너뜀): {missing[:10]}")
         print("   → 크롤러가 games 등록을 했는지 확인 (steam_crawler --no-register 썼나?)")
 
     now = datetime.now()
     success = failed = 0
     written_game_ids: List[int] = []
 
-    print(f"\n📤 game_metrics UPSERT 중... ({len(id_map)}개)")
+    print(f"\ngame_metrics UPSERT 중... ({len(id_map)}개)")
     with engine.begin() as conn:
         for app_id, payload in tqdm(results.items(), desc="UPSERT"):
             game_id = id_map.get(app_id)
@@ -387,7 +387,7 @@ def upsert_metrics(results: Dict[int, Dict], version: str) -> Tuple[int, int, in
                 written_game_ids.append(game_id)
                 success += 1
             except Exception as e:
-                print(f"\n   ⚠️ app_id={app_id} (game_id={game_id}) 실패: {e}")
+                print(f"\n   app_id={app_id} (game_id={game_id}) 실패: {e}")
                 failed += 1
 
     # only games whose metrics actually landed become visible
@@ -401,7 +401,7 @@ def upsert_metrics(results: Dict[int, Dict], version: str) -> Tuple[int, int, in
 def validate_results(results: Dict[int, Dict]) -> None:
     """Report completeness and scale sanity before touching the DB.
     DB를 건드리기 전에 완전성과 스케일 정합성을 리포트한다."""
-    print("\n🔍 결과 품질 검증")
+    print("\n결과 품질 검증")
     total = len(results)
     if total == 0:
         print("   결과 없음")
@@ -419,13 +419,13 @@ def validate_results(results: Dict[int, Dict]) -> None:
         print(f"   gem_potential: MIN {min(gems):.1f} / MAX {max(gems):.1f} "
               f"/ AVG {sum(gems) / len(gems):.1f}  (0-100 스케일이어야 정상)")
         if max(gems) <= 10:
-            print("   🚨 경고: MAX<=10 → 0-10 스케일로 나온 듯. 프롬프트 앵커 확인 필요!")
+            print("   경고: MAX<=10 → 0-10 스케일로 나온 듯. 프롬프트 앵커 확인 필요!")
     else:
-        print("   🚨 경고: gem_potential이 하나도 없음")
+        print("   경고: gem_potential이 하나도 없음")
 
     sample_id, sample = next(iter(results.items()))
     row = sample["row"]
-    print(f"\n   📋 샘플 app_id={sample_id}")
+    print(f"\n   샘플 app_id={sample_id}")
     print(f"      cozy_factor={row['cozy_factor']} horror_factor={row['horror_factor']}")
     print(f"      build_variety={row['build_variety']} (extended flatten 확인)")
     print(f"      gem_potential={row['gem_potential']} confidence={row['confidence_score']}")
@@ -437,7 +437,7 @@ def verify_after_write(app_ids: List[int]) -> None:
     if not app_ids:
         return
     sample = app_ids[:5]
-    print("\n🔎 적재 후 실측 검증 (되읽기)")
+    print("\n적재 후 실측 검증 (되읽기)")
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT g.app_id, m.gem_potential, m.cozy_factor, m.build_variety,
@@ -468,50 +468,50 @@ def main():
     args = parser.parse_args()
 
     print("=" * 60)
-    print("🔄 Hidden Gem - Batch 결과 처리기 (정규화 60컬럼)")
+    print("Hidden Gem - Batch 결과 처리기 (정규화 60컬럼)")
     print("=" * 60)
 
     result_path = Path(args.result_file)
     if not result_path.exists():
         result_path = DATA_DIR / args.result_file
         if not result_path.exists():
-            print(f"❌ 파일을 찾을 수 없습니다: {args.result_file}")
+            print(f"파일을 찾을 수 없습니다: {args.result_file}")
             return
 
-    print(f"📂 결과 파일: {result_path}")
-    print(f"🔗 DB: {DB_URL[:30]}...")
-    print(f"🏷️  extraction_version: {args.version}")
-    print(f"🚫 제외 컬럼: {', '.join(sorted(FORBIDDEN_COLUMNS))}")
+    print(f"결과 파일: {result_path}")
+    print(f"DB: {DB_URL[:30]}...")
+    print(f" extraction_version: {args.version}")
+    print(f"제외 컬럼: {', '.join(sorted(FORBIDDEN_COLUMNS))}")
     print("=" * 60)
 
     results, _ = parse_batch_result(result_path)
     if not results:
-        print("❌ 파싱된 결과가 없습니다!")
+        print("파싱된 결과가 없습니다!")
         return
 
     validate_results(results)
 
     if args.dry_run:
-        print("\n⚠️ Dry-run 모드: DB 업데이트 건너뜀")
+        print("\nDry-run 모드: DB 업데이트 건너뜀")
         return
 
     if not args.yes:
-        confirm = input(f"\n🔥 {len(results)}건을 game_metrics에 UPSERT할까요? (y/n): ").strip().lower()
+        confirm = input(f"\n{len(results)}건을 game_metrics에 UPSERT할까요? (y/n): ").strip().lower()
         if confirm != 'y':
-            print("❌ 취소됨")
+            print("취소됨")
             return
 
     success, failed, missing = upsert_metrics(results, args.version)
 
     print("\n" + "=" * 60)
-    print("✅ 처리 완료!")
+    print("처리 완료!")
     print(f"   UPSERT 성공: {success}개")
     print(f"   실패: {failed}개")
     print(f"   games에 없어 건너뜀: {missing}개")
     print("=" * 60)
 
     verify_after_write(list(results.keys()))
-    print("\n💡 신작을 적재했다면 gem_percentile 전체 재계산(task5)이 필요합니다.")
+    print("\n신작을 적재했다면 gem_percentile 전체 재계산(task5)이 필요합니다.")
 
 
 if __name__ == "__main__":

@@ -60,7 +60,7 @@ def init_sentry():
         before_send=_filter_sensitive_data,
         profiles_sample_rate=0.1,
     )
-    logger.info(f"✅ Sentry 초기화 완료 (env={getattr(settings, 'SENTRY_ENV', 'production')})")
+    logger.info(f"Sentry 초기화 완료 (env={getattr(settings, 'SENTRY_ENV', 'production')})")
 
 
 def _filter_sensitive_data(event, hint):
@@ -96,29 +96,29 @@ async def lifespan(app: FastAPI):
     try:
         from services.cache import recommendation_cache
         await recommendation_cache._get_redis()
-        logger.info("✅ Redis 연결 성공")
+        logger.info("Redis 연결 성공")
     except Exception as e:
-        logger.warning(f"⚠️  Redis 연결 실패 (캐싱 비활성화): {e}")
+        logger.warning(f" Redis 연결 실패 (캐싱 비활성화): {e}")
 
     try:
         from services.cost_guard import cost_guard
         stats = await cost_guard.get_stats()
-        logger.info(f"💰 OpenAI 오늘 누적 비용: ${stats.get('daily_cost_usd', 0):.4f}")
+        logger.info(f"OpenAI 오늘 누적 비용: ${stats.get('daily_cost_usd', 0):.4f}")
     except Exception as e:
-        logger.warning(f"⚠️  비용 가드 초기화 실패: {e}")
+        logger.warning(f" 비용 가드 초기화 실패: {e}")
 
     print("=" * 60)
-    print("🚀 Hidden Gem API Server v3.2 starting...")
-    print(f"📊 Database: {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
-    print(f"📖 Docs:     http://localhost:8000/docs")
-    print(f"🩺 Health:   http://localhost:8000/health")
-    print(f"💰 Cost:     http://localhost:8000/ops/cost")
-    print(f"📈 Taste:    http://localhost:8000/api/v1/taste/stats")
+    print("Hidden Gem API Server v3.2 starting...")
+    print(f"Database: {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
+    print(f"Docs:     http://localhost:8000/docs")
+    print(f"Health:   http://localhost:8000/health")
+    print(f"Cost:     http://localhost:8000/ops/cost")
+    print(f"Taste:    http://localhost:8000/api/v1/taste/stats")
     print("=" * 60)
 
     yield
 
-    print("👋 Shutting down...")
+    print("Shutting down...")
 
 
 # ==================== FastAPI 앱 ====================
@@ -126,7 +126,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Hidden Gem API",
     description=(
-        "🎮 **Steam 게임 AI 추천 서비스**\n\n"
+        "**Steam 게임 AI 추천 서비스**\n\n"
         "## 핵심 기능\n"
         "- **60개 지표 기반 게임 분석** (49 수치 + 9 태그 + 2 평가)\n"
         "- **유사 게임 추천**: 4단계 가중치 + 앵커 점수 (v5)\n"

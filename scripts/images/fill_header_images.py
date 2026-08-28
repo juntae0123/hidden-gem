@@ -98,7 +98,7 @@ async def bulk_update_headers(
     """
     updated = 0
     
-    with tqdm(total=len(targets), desc="🖼️  Filling headers", unit="game") as pbar:
+    with tqdm(total=len(targets), desc="Filling headers", unit="game") as pbar:
         for i in range(0, len(targets), batch_size):
             batch = targets[i : i + batch_size]
             
@@ -125,7 +125,7 @@ async def bulk_update_headers(
             
             except Exception as e:
                 await db.rollback()
-                pbar.write(f"❌ Batch {i//batch_size} 실패: {e}")
+                pbar.write(f"Batch {i//batch_size} 실패: {e}")
                 raise
     
     return updated
@@ -152,7 +152,7 @@ async def main():
     args = parser.parse_args()
     
     print("=" * 60)
-    print("🖼️  Hidden Gem - Steam Header Image Filler (Phase A)")
+    print(" Hidden Gem - Steam Header Image Filler (Phase A)")
     print("=" * 60)
     print(f"   force      : {args.force}")
     print(f"   dry_run    : {args.dry_run}")
@@ -166,7 +166,7 @@ async def main():
         print(f"   → 대상 게임: {len(targets):,}개")
         
         if not targets:
-            print("\n✅ 채울 게임이 없습니다. (이미 모두 채워진 상태)")
+            print("\n채울 게임이 없습니다. (이미 모두 채워진 상태)")
             print("   덮어쓰려면 --force 옵션을 사용하세요.")
             return
         
@@ -183,9 +183,9 @@ async def main():
             db, targets, batch_size=args.batch_size, dry_run=args.dry_run
         )
         
-        print(f"\n✅ 완료! {updated:,}개 게임 업데이트")
+        print(f"\n완료! {updated:,}개 게임 업데이트")
         if args.dry_run:
-            print("   ⚠️  --dry-run 모드라서 실제 DB는 변경되지 않았습니다.")
+            print("    --dry-run 모드라서 실제 DB는 변경되지 않았습니다.")
 
 
 if __name__ == "__main__":

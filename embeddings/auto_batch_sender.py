@@ -17,7 +17,7 @@ def write_log(message):
     print(f"[{timestamp}] {message}")
 
 def run_real_upload(file_path):
-    write_log(f"🚀 [진짜 업로드 시작] {file_path.name}")
+    write_log(f"[진짜 업로드 시작] {file_path.name}")
     
     try:
         # A. 파일 업로드 (OpenAI 서버로 파일 전송)
@@ -25,7 +25,7 @@ def run_real_upload(file_path):
             uploaded_file = client.files.create(file=f, purpose="batch")
         
         file_id = uploaded_file.id
-        write_log(f"   ✅ 파일 서버 도착 (ID: {file_id})")
+        write_log(f"   파일 서버 도착 (ID: {file_id})")
 
         # B. 배치 작업 생성 (서버에게 "일 시작해!"라고 명령)
         batch_job = client.batches.create(
@@ -34,10 +34,10 @@ def run_real_upload(file_path):
             completion_window="24h"
         )
         
-        write_log(f"   🎊 배치 생성 성공! (Batch ID: {batch_job.id})")
+        write_log(f"   배치 생성 성공! (Batch ID: {batch_job.id})")
         return True
     except Exception as e:
-        write_log(f"   ❌ 업로드 실패: {str(e)}")
+        write_log(f"   업로드 실패: {str(e)}")
         return False
 
 # 파일 목록 수집
@@ -46,23 +46,23 @@ PART_FILES = sorted(list(DATA_DIR.glob("*_part*.jsonl")))
 
 def main():
     if not PART_FILES:
-        print(f"❌ '{DATA_DIR}' 폴더에 쪼개진 파일이 없습니다.")
+        print(f"'{DATA_DIR}' 폴더에 쪼개진 파일이 없습니다.")
         return
 
     write_log("==================================================")
-    write_log("🎮 Hidden Gem '진짜' 자동 업로드 시스템 가동")
+    write_log("Hidden Gem '진짜' 자동 업로드 시스템 가동")
     write_log("==================================================")
     
     for i, file_path in enumerate(PART_FILES):
         if run_real_upload(file_path):
             if i < len(PART_FILES) - 1:
-                write_log(f"💤 1시간 대기 중... (다음: {PART_FILES[i+1].name})")
+                write_log(f"1시간 대기 중... (다음: {PART_FILES[i+1].name})")
                 time.sleep(3600)
         else:
-            write_log("⚠️ 실패 발생으로 중단합니다.")
+            write_log("실패 발생으로 중단합니다.")
             break
     
-    write_log("🏁 모든 파트 전송 완료!")
+    write_log("모든 파트 전송 완료!")
 
 if __name__ == "__main__":
     main()

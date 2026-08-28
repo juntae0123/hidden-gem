@@ -212,7 +212,7 @@ def print_report(picked, bins):
     """Show gem distribution + genre spread so the selection is verifiable.
     선택 결과의 gem 분포·장르 분포를 출력해 눈으로 검증 가능하게 한다."""
     if not picked:
-        print("  ⚠️ 선택된 예시 없음 — 필터가 너무 빡세거나 입력이 비었음")
+        print("  선택된 예시 없음 — 필터가 너무 빡세거나 입력이 비었음")
         return
     print("\n  === 선택 결과 ===")
     gem_buckets = Counter()
@@ -242,13 +242,13 @@ def main():
 
     in_path = Path(args.input)
     if not in_path.exists():
-        print(f"❌ 입력 없음: {in_path}")
+        print(f"입력 없음: {in_path}")
         sys.exit(1)
 
     print("=" * 60)
-    print("🎯 Few-Shot Representative Sampler")
+    print("Few-Shot Representative Sampler")
     print("=" * 60)
-    print(f"📂 입력: {in_path}")
+    print(f"입력: {in_path}")
 
     records = load_records(in_path)
     records = apply_quality_filter(records, args.min_desc, args.min_conf,
@@ -262,7 +262,7 @@ def main():
         for r in picked:
             f.write(r["raw"] + "\n")     # verbatim → 입력+출력 전체 보존
 
-    print(f"\n✅ 저장: {out_path}  ({len(picked)}개)")
+    print(f"\n저장: {out_path}  ({len(picked)}개)")
     print("=" * 60)
 
 

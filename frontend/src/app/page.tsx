@@ -3,6 +3,8 @@
 'use client';
 
 import { Suspense, useState, useEffect, useTransition } from 'react';
+import Link from 'next/link';
+import { Sparkles } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 
@@ -14,6 +16,7 @@ import { useDefaultRecommendations, DEFAULT_THEME_LABEL, getTodaysTheme, useReco
 import { semanticSearchGames, recordTasteAction } from '@/lib/api';
 import { VibeChips } from '@/components/ui/VibeChips';
 import { useUserStore } from '@/store/useUserStore';
+import { trackEvent } from '@/lib/umami';
 
 /**
  * Inner home content using useSearchParams.
@@ -122,17 +125,27 @@ function HomeContent() {
 
   return (
     <div className="flex flex-col gap-12">
-      <section className="pt-8 pb-2 flex flex-col items-center text-center">
-        <div className="mb-6">
-          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-            <span className="text-purple-600">✦</span> Hidden Gem
+      <section className="pt-10 pb-2 flex flex-col items-center text-center">
+        <div className="mb-8 flex flex-col items-center">
+          <h1 className="text-3xl md:text-5xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100 leading-tight">
+            60개의 세분화된 지표로,{' '}
+            <span className="text-purple-600">숨은 명작을 찾아냅니다</span>
           </h1>
-          <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
-            당신의 취향에 맞는 게임을 찾아드려요
-          </p>
+          {/* 핵심 CTA — 취향 분석이 이 서비스의 차별점 */}
+          <Link
+            href="/search"
+            onClick={() => trackEvent('hero_taste_cta')}
+            className="mt-8 inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-purple-600 text-white text-sm md:text-base font-medium hover:bg-purple-700 transition-colors shadow-sm"
+          >
+            <Sparkles className="w-4 h-4" />
+            내 취향 분석하기
+          </Link>
         </div>
         <div className="w-full max-w-2xl">
           <SearchBar value={inputValue} onChange={setInputValue} onSubmit={handleSubmit} />
+          <p className="mt-2 text-[12px] text-zinc-400 dark:text-zinc-500">
+            또는 &ldquo;스토리 좋은 힐링 게임&rdquo;처럼 문장으로 검색해보세요
+          </p>
         </div>
       </section>
 

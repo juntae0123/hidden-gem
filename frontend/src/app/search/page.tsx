@@ -16,6 +16,7 @@ import { METRIC_LABELS, cn } from '@/lib/utils';
 import { METRIC_DESCRIPTIONS, METRIC_CATEGORIES_KO } from '@/lib/constants';
 import { recordTasteAction } from '@/lib/api';
 import { useUserStore } from '@/store/useUserStore';
+import { DnaCard } from '@/components/ui/DnaCard';
 
 const buildInitialPrefs = (): Record<string, number> => {
   const prefs: Record<string, number> = {};
@@ -203,9 +204,12 @@ export default function SearchPage() {
         )}
         {!mutation.isPending && !mutation.error && results.length > 0 && (
           <>
-            <h2 className="text-[13px] font-medium text-zinc-700 dark:text-zinc-300 mb-4">
-              당신의 취향에 맞는 게임 {results.length}개
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
+                당신의 취향에 맞는 게임 {results.length}개
+              </h2>
+              <DnaCard prefs={prefs} games={results} />
+            </div>
             <GameGrid games={results} />
           </>
         )}

@@ -304,18 +304,18 @@ def load_blind_data(csv_path: Path, limit: int = None) -> pd.DataFrame:
     - app_id, name, genres, description 4개만 추출
     - developer, 기존 점수 지표 완전 제외 (편견 방지)
     """
-    print(f"📂 CSV 로드 중: {csv_path}")
+    print(f"CSV 로드 중: {csv_path}")
     
     df = pd.read_csv(csv_path)
     print(f"   원본: {len(df)}개, 컬럼 {len(df.columns)}개")
     
-    # 🚨 블라인드 테스트: 4개 컬럼만 추출!
+    # 블라인드 테스트: 4개 컬럼만 추출!
     required_cols = ['app_id', 'name', 'genres', 'description']
     
     # 컬럼 존재 확인
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
-        raise KeyError(f"❌ 필수 컬럼 누락: {missing}")
+        raise KeyError(f"필수 컬럼 누락: {missing}")
     
     df_blind = df[required_cols].copy()
     
@@ -330,13 +330,13 @@ def load_blind_data(csv_path: Path, limit: int = None) -> pd.DataFrame:
     after = len(df_blind)
     
     if before != after:
-        print(f"   ⚠️ description 부족으로 {before - after}개 제외")
+        print(f"   description 부족으로 {before - after}개 제외")
     
     # 제한
     if limit:
         df_blind = df_blind.head(limit)
     
-    print(f"   ✅ 블라인드 데이터: {len(df_blind)}개 (컬럼: {list(df_blind.columns)})")
+    print(f"   블라인드 데이터: {len(df_blind)}개 (컬럼: {list(df_blind.columns)})")
     
     return df_blind
 
@@ -345,7 +345,7 @@ def load_blind_data(csv_path: Path, limit: int = None) -> pd.DataFrame:
 def create_user_prompt(row: pd.Series) -> str:
     """
     게임 데이터 → User Prompt
-    🚨 4개 필드만! (app_id, name, genres, description)
+    4개 필드만! (app_id, name, genres, description)
     """
     app_id = str(row['app_id'])
     name = str(row['name']).replace('"', '\\"').replace('\n', ' ')
@@ -378,7 +378,7 @@ def load_fewshot(path, n: int) -> list:
         return []
     path = Path(path)
     if not path.exists():
-        print(f"⚠️  few-shot 파일 없음: {path} → few-shot 없이 진행")
+        print(f" few-shot 파일 없음: {path} → few-shot 없이 진행")
         return []
 
     examples, skipped = [], 0
@@ -407,7 +407,7 @@ def load_fewshot(path, n: int) -> list:
             })
             if len(examples) >= n:
                 break
-    print(f"✅ few-shot 예시 {len(examples)}개 로드 (스킵 {skipped})")
+    print(f"few-shot 예시 {len(examples)}개 로드 (스킵 {skipped})")
     return examples
 
 
@@ -464,27 +464,112 @@ def generate_batch_jsonl(df: pd.DataFrame, output_path: Path, model: str,
 
 
 # ============== Batch API 업로드 & 실행 ==============
+def run_sync(jsonl_path: Path) -> Path:
+    """배치 입력 JSONL을 동기 호출로 처리해 batch_processor가 읽는
+    출력 JSONL 형식으로 저장한다 (Batch API 장애 시 폴백 경로)."""
+    lines = [json.loads(l) for l in open(jsonl_path, encoding='utf-8') if l.strip()]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_path = DATA_DIR / f"batch_output_{timestamp}.jsonl"
+
+    print(f"\n동기 모드: {len(lines)}건 순차 호출 (Batch API 미사용)")
+    done = failed = 0
+    with open(output_path, 'w', encoding='utf-8') as out:
+        for i, req in enumerate(lines, 1):
+            body = req["body"]
+            try:
+                resp = client.chat.completions.create(**body)
+                record = {
+                    "custom_id": req["custom_id"],
+                    "response": {
+                        "status_code": 200,
+                        "body": resp.model_dump(),
+                    },
+                    "error": None,
+                }
+                done += 1
+            except Exception as exc:
+                record = {
+                    "custom_id": req["custom_id"],
+                    "response": {"status_code": 500, "body": None},
+                    "error": {"message": str(exc)[:300]},
+                }
+                failed += 1
+                print(f"   [{i}] 실패: {str(exc)[:120]}")
+            out.write(json.dumps(record, ensure_ascii=False) + "\n")
+            if i % 10 == 0 or i == len(lines):
+                print(f"   진행: {i}/{len(lines)} (성공 {done} / 실패 {failed})")
+
+    print(f"   저장: {output_path}")
+    print(f"\n다음 단계: python -m embeddings.batch_processor {output_path} --yes")
+    return output_path
+
+
 def upload_batch(jsonl_path: Path) -> str:
-    """파일 업로드 → Batch 생성"""
-    print("\n📤 OpenAI에 파일 업로드 중...")
-    
+    """파일 업로드 → 처리 완료 대기 → Batch 생성.
+
+    files.create 직후에는 파일이 아직 서버에서 처리 중이라
+    batches.create가 "Cannot find file"로 실패할 수 있다 (실측).
+    → status가 processed가 될 때까지 폴링 후 생성하고, 그래도
+    타이밍 이슈가 나면 짧게 재시도한다.
+    """
+    print("\nOpenAI에 파일 업로드 중...")
+
     with open(jsonl_path, 'rb') as f:
         file_obj = client.files.create(file=f, purpose="batch")
-    
+
     file_id = file_obj.id
-    print(f"   ✅ 업로드 완료: {file_id}")
-    
-    print("\n🚀 Batch 작업 생성 중...")
-    batch = client.batches.create(
-        input_file_id=file_id,
-        endpoint="/v1/chat/completions",
-        completion_window="24h"
-    )
-    
-    print(f"   ✅ Batch ID: {batch.id}")
-    print(f"   📊 상태: {batch.status}")
-    
-    return batch.id
+    print(f"   업로드 완료: {file_id}")
+
+    # 파일 처리 완료 대기 (최대 3분)
+    deadline = time.time() + 180
+    while time.time() < deadline:
+        info = client.files.retrieve(file_id)
+        status = getattr(info, 'status', 'processed')
+        if status == 'processed':
+            print("   파일 처리 완료 (processed)")
+            break
+        if status == 'error':
+            raise RuntimeError(f"업로드 파일 처리 실패: {file_id}")
+        print(f"   파일 처리 대기 중... ({status})")
+        time.sleep(5)
+
+    print("\nBatch 작업 생성 중...")
+    last_exc = None
+    for attempt in range(1, 4):
+        try:
+            batch = client.batches.create(
+                input_file_id=file_id,
+                endpoint="/v1/chat/completions",
+                completion_window="24h"
+            )
+            print(f"   Batch ID: {batch.id}")
+            print(f"   상태: {batch.status}")
+            return batch.id
+        except Exception as exc:
+            last_exc = exc
+            if 'Cannot find file' in str(exc) and attempt < 3:
+                print(f"   파일 인식 지연 → {attempt}차 재시도 (10초 후)")
+                time.sleep(10)
+                continue
+            raise
+    raise last_exc
+
+
+def _print_batch_errors(batch_id: str, error_file_id: str = None) -> None:
+    """실패한 배치의 원인을 출력한다 (batch.errors + error file 앞부분)."""
+    try:
+        batch = client.batches.retrieve(batch_id)
+        if batch.errors and getattr(batch.errors, 'data', None):
+            print("   실패 원인 (batch.errors):")
+            for err in batch.errors.data[:5]:
+                print(f"     - [{getattr(err, 'code', '?')}] {getattr(err, 'message', err)}")
+        if error_file_id:
+            content = client.files.content(error_file_id).text
+            print("   error file 앞 5줄:")
+            for line in content.splitlines()[:5]:
+                print(f"     {line[:200]}")
+    except Exception as exc:
+        print(f"   (에러 상세 조회 실패: {exc})")
 
 
 def check_batch_status(batch_id: str) -> dict:
@@ -504,24 +589,25 @@ def check_batch_status(batch_id: str) -> dict:
 
 def wait_and_download(batch_id: str, interval: int = 30) -> Path:
     """완료까지 대기 후 다운로드"""
-    print(f"\n⏳ Batch 완료 대기 중... (매 {interval}초 확인)")
+    print(f"\nBatch 완료 대기 중... (매 {interval}초 확인)")
     
     while True:
         status = check_batch_status(batch_id)
-        print(f"   📊 {status['status']} | {status['completed']}/{status['total']} 완료")
+        print(f"   {status['status']} | {status['completed']}/{status['total']} 완료")
         
         if status['status'] == 'completed':
-            print("\n✅ Batch 완료!")
+            print("\nBatch 완료!")
             break
         elif status['status'] in ['failed', 'expired', 'cancelled']:
-            print(f"\n❌ Batch 실패: {status['status']}")
+            print(f"\nBatch 실패: {status['status']}")
+            _print_batch_errors(batch_id, status.get('error_file_id'))
             return None
         
         time.sleep(interval)
     
     # 결과 다운로드
     output_file_id = status['output_file_id']
-    print(f"\n📥 결과 다운로드 중... ({output_file_id})")
+    print(f"\n결과 다운로드 중... ({output_file_id})")
     
     content = client.files.content(output_file_id)
     
@@ -531,7 +617,7 @@ def wait_and_download(batch_id: str, interval: int = 30) -> Path:
     with open(output_path, 'wb') as f:
         f.write(content.content)
     
-    print(f"   ✅ 저장: {output_path}")
+    print(f"   저장: {output_path}")
     
     return output_path
 
@@ -595,6 +681,10 @@ def main():
                         help="블라인드 CSV 경로 (신작이면 data/new_games.csv)")
     parser.add_argument("--fewshot-n", type=int, default=6,
                         help="주입할 few-shot 예시 수 (기본 6, 많을수록 비용↑)")
+    parser.add_argument("--yes", action="store_true",
+                        help="확인 프롬프트 생략 (스케줄러/자동화용)")
+    parser.add_argument("--sync", action="store_true",
+                        help="Batch API 대신 동기 호출로 즉시 처리 (배치 장애 시 폴백, 비용 2배)")
     
     args = parser.parse_args()
 
@@ -602,16 +692,16 @@ def main():
     csv_path = Path(args.csv) if args.csv else CSV_PATH
 
     print("=" * 65)
-    print("🎮 Hidden Gem - Batch API Generator (v6.0, 60-metric)")
+    print("Hidden Gem - Batch API Generator (v6.0, 60-metric)")
     print("=" * 65)
-    print(f"📁 프로젝트: {PROJECT_ROOT}")
-    print(f"📂 CSV: {csv_path}")
-    print(f"🤖 모델: {args.model}")
+    print(f"프로젝트: {PROJECT_ROOT}")
+    print(f"CSV: {csv_path}")
+    print(f"모델: {args.model}")
     print("=" * 65)
     
     # CSV 확인
     if not csv_path.exists():
-        print(f"❌ CSV 파일 없음: {csv_path}")
+        print(f"CSV 파일 없음: {csv_path}")
         return
     
     # 1. 모드 결정
@@ -620,10 +710,10 @@ def main():
         mode = f"테스트 ({limit}개)"
     elif args.full:
         limit = None
-        mode = "전체 (4,190개)"
+        mode = "전체 (CSV 전량)"
     else:
         # 대화형 선택
-        print("\n🎯 모드 선택:")
+        print("\n모드 선택:")
         print("   [1] 테스트 1개")
         print("   [2] 테스트 10개")
         print("   [3] 전체 4,190개")
@@ -639,7 +729,7 @@ def main():
         
         mode = f"{'테스트 ' + str(limit) + '개' if limit else '전체'}"
     
-    print(f"\n📌 모드: {mode}")
+    print(f"\n모드: {mode}")
     
     # 2. 블라인드 데이터 로드
     df = load_blind_data(csv_path, limit=limit)
@@ -649,12 +739,12 @@ def main():
 
     # 3. 비용 예상
     cost = estimate_cost(len(df), args.model, fewshot_examples)
-    print(f"\n💰 예상 비용:")
+    print(f"\n예상 비용:")
     print(f"   모델: {cost['model']}")
     print(f"   게임: {cost['games']:,}개")
     print(f"   few-shot: {cost['fewshot_n']}개 (요청당 +{cost['fewshot_tokens_per_req']:,} tok)")
     print(f"   토큰: ~{cost['input_tokens']:,} input / ~{cost['output_tokens']:,} output")
-    print(f"   💵 ${cost['cost_usd']} USD (약 ₩{cost['cost_krw']:,.0f})")
+    print(f"   ${cost['cost_usd']} USD (약 ₩{cost['cost_krw']:,.0f})")
     
     # 4. JSONL 생성
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -666,21 +756,29 @@ def main():
     
     output_path = DATA_DIR / output_name
     
-    print(f"\n📝 JSONL 생성 중...")
+    print(f"\nJSONL 생성 중...")
     result = generate_batch_jsonl(df, output_path, args.model, fewshot_examples)
     
-    print(f"   ✅ 성공: {result['success']}개")
+    print(f"   성공: {result['success']}개")
     if result['errors']:
-        print(f"   ⚠️ 실패: {len(result['errors'])}개")
+        print(f"   실패: {len(result['errors'])}개")
         for err in result['errors'][:3]:
             print(f"      - {err}")
     
     file_size = output_path.stat().st_size / 1024
-    print(f"   📦 파일: {output_path.name} ({file_size:.1f} KB)")
+    print(f"   파일: {output_path.name} ({file_size:.1f} KB)")
     
+    # 5. 동기 폴백 모드면 배치를 건너뛰고 바로 호출
+    if args.sync:
+        run_sync(output_path)
+        return
+
     # 5. 업로드?
     if args.upload or (not args.test and not args.full):
-        confirm = input("\n🚀 OpenAI에 업로드할까요? (y/n): ").strip().lower()
+        if args.yes:
+            confirm = 'y'
+        else:
+            confirm = input("\nOpenAI에 업로드할까요? (y/n): ").strip().lower()
         
         if confirm == 'y':
             batch_id = upload_batch(output_path)
@@ -689,19 +787,19 @@ def main():
             if args.wait:
                 output_result = wait_and_download(batch_id)
                 if output_result:
-                    print(f"\n🎉 완료! 다음 명령어 실행:")
+                    print(f"\n완료! 다음 명령어 실행:")
                     print(f"   python -m embeddings.batch_processor {output_result.name}")
             else:
-                print(f"\n📋 Batch ID: {batch_id}")
+                print(f"\nBatch ID: {batch_id}")
                 print(f"   상태 확인: python -m embeddings.batch_generator --status {batch_id}")
                 print(f"   또는: https://platform.openai.com/batches")
     else:
-        print(f"\n📋 다음 단계:")
+        print(f"\n다음 단계:")
         print(f"   1. python -m embeddings.batch_generator --upload")
         print(f"   2. 또는 수동: https://platform.openai.com/batches 에서 업로드")
     
     print("\n" + "=" * 65)
-    print("✅ 완료!")
+    print("완료!")
     print("=" * 65)
 
 
