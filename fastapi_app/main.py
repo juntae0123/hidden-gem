@@ -124,6 +124,10 @@ async def lifespan(app: FastAPI):
 # ==================== FastAPI 앱 ====================
 
 app = FastAPI(
+    # 운영에서는 API 문서/스키마 비노출 (내부 구조 정찰 차단)
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
+    openapi_url="/openapi.json" if settings.DEBUG else None,
     title="Hidden Gem API",
     description=(
         "**Steam 게임 AI 추천 서비스**\n\n"
@@ -161,7 +165,10 @@ else:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=r"https://.*\.vercel\.app",   # ← Vercel 모든 서브도메인 허용
+    # 기본: Vercel 프리뷰 전체 허용 (Bearer 토큰 방식이라 쿠키 탈취 위험은 없음).
+    # 운영에서 좁히려면 CORS_ORIGIN_REGEX 환경변수로 자기 프로젝트 슬러그만 허용:
+    #   예) https://hidden-gem-.*\.vercel\.app
+    allow_origin_regex=os.getenv("CORS_ORIGIN_REGEX", r"https://.*\.vercel\.app"),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],

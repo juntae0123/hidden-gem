@@ -22,8 +22,12 @@ function CallbackContent() {
   const loadFavorites = useUserStore(s => s.loadFavorites);
 
   useEffect(() => {
-    const access  = searchParams.get('access');
-    const refresh = searchParams.get('refresh');
+    // 토큰은 fragment(#access=...&refresh=...)로 옴 - 서버/로그에 안 남는 경로.
+    // 구버전 쿼리스트링(?access=)도 과도기 호환으로 지원.
+    const hash       = typeof window !== 'undefined' ? window.location.hash.slice(1) : '';
+    const hashParams = new URLSearchParams(hash);
+    const access  = hashParams.get('access')  || searchParams.get('access');
+    const refresh = hashParams.get('refresh') || searchParams.get('refresh');
 
     if (!access || !refresh) {
       // 토큰 없음 → 로그인 실패
