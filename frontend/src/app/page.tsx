@@ -127,14 +127,12 @@ function HomeContent() {
     <div className="flex flex-col gap-12">
       <section className="pt-10 pb-2 flex flex-col items-center text-center">
         <div className="mb-8 flex flex-col items-center">
-          <h1 className="max-w-3xl text-3xl md:text-[44px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 leading-tight md:leading-[1.25]">
-            분위기부터 손맛, 난이도까지 —
-            <br className="hidden md:block" />{' '}
-            <span className="bg-gradient-to-r from-purple-500 to-fuchsia-400 dark:from-purple-300 dark:to-fuchsia-300 bg-clip-text text-transparent">
-              딱 맞는 게임
-            </span>
-            을 찾아냅니다
+          <h1 className="text-4xl md:text-5xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+            <span className="text-purple-500 dark:text-purple-400">✦</span> Hidden Gem
           </h1>
+          <p className="mt-3 text-sm md:text-base text-zinc-500 dark:text-zinc-400">
+            당신의 취향에 딱 맞는 게임을 찾아보세요
+          </p>
           {/* 핵심 CTA — 취향 분석이 이 서비스의 차별점 */}
           <Link
             href="/search"
