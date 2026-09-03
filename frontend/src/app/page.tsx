@@ -127,15 +127,19 @@ function HomeContent() {
     <div className="flex flex-col gap-12">
       <section className="pt-10 pb-2 flex flex-col items-center text-center">
         <div className="mb-8 flex flex-col items-center">
-          <h1 className="text-3xl md:text-5xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100 leading-tight">
-            60개의 세분화된 지표로,{' '}
-            <span className="text-purple-600">숨은 명작을 찾아냅니다</span>
+          <h1 className="max-w-3xl text-3xl md:text-[44px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 leading-tight md:leading-[1.25]">
+            분위기부터 손맛, 난이도까지 —
+            <br className="hidden md:block" />{' '}
+            <span className="bg-gradient-to-r from-purple-500 to-fuchsia-400 dark:from-purple-300 dark:to-fuchsia-300 bg-clip-text text-transparent">
+              딱 맞는 게임
+            </span>
+            을 찾아냅니다
           </h1>
           {/* 핵심 CTA — 취향 분석이 이 서비스의 차별점 */}
           <Link
             href="/search"
             onClick={() => trackEvent('hero_taste_cta')}
-            className="mt-8 inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-purple-600 text-white text-sm md:text-base font-medium hover:bg-purple-700 transition-colors shadow-sm"
+            className="mt-8 inline-flex items-center gap-2 px-7 py-3 rounded-full bg-purple-600 text-white text-sm md:text-[15px] font-medium hover:bg-purple-500 transition-colors shadow-lg shadow-purple-600/20"
           >
             <Sparkles className="w-4 h-4" />
             내 취향 분석하기
@@ -143,9 +147,6 @@ function HomeContent() {
         </div>
         <div className="w-full max-w-2xl">
           <SearchBar value={inputValue} onChange={setInputValue} onSubmit={handleSubmit} />
-          <p className="mt-2 text-[12px] text-zinc-400 dark:text-zinc-500">
-            또는 &ldquo;스토리 좋은 힐링 게임&rdquo;처럼 문장으로 검색해보세요
-          </p>
         </div>
       </section>
 

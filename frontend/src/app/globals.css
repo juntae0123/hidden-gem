@@ -23,6 +23,6 @@ body {
    (타이포가 px 고정이 많아 rem 스케일 대신 zoom 사용, Chromium/FF 126+ 지원) */
 @media (min-width: 1800px) {
   html {
-    zoom: 1.08;
+    zoom: 1.03;
   }
 }
