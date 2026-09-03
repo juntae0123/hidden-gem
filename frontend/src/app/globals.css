@@ -19,3 +19,10 @@
 body {
   font-family: Arial, Helvetica, sans-serif;
 }
+/* 대형 모니터에서 기본 밀도가 너무 성겨 보이는 문제 — 전역 배율 보정.
+   (타이포가 px 고정이 많아 rem 스케일 대신 zoom 사용, Chromium/FF 126+ 지원) */
+@media (min-width: 1800px) {
+  html {
+    zoom: 1.08;
+  }
+}

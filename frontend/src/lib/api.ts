@@ -578,6 +578,32 @@ export async function saveTastePreference(
   return data;
 }
 
+// ==================== Steam Library (스팀 라이브러리) ====================
+
+export interface SteamLibraryGame {
+  app_id: number;
+  name: string;
+  playtime_hours: number;
+  in_db: boolean;
+}
+
+export interface SteamLibrary {
+  steam_linked: boolean;
+  library_count?: number;
+  top_games: SteamLibraryGame[];
+}
+
+/**
+ * Get user's Steam library (top by playtime).
+ * Korean: 스팀 연동 유저의 보유 게임 상위 목록 (플레이타임 기준).
+ */
+export async function getSteamLibrary(): Promise<SteamLibrary> {
+  const { data } = await apiClient.get<SteamLibrary>(
+    `${DJANGO_URL}/api/auth/steam-library/`
+  );
+  return data;
+}
+
 // ==================== Delete Account (회원 탈퇴) ====================
 
 /**

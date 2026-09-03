@@ -6,7 +6,8 @@
  */
 'use client';
 
-import { useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useRef, useState } from 'react';
 import * as Slider from '@radix-ui/react-slider';
 import { GameGrid } from '@/components/game/GameGrid';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -87,6 +88,32 @@ export default function SearchPage() {
   const [activeCategory, setActiveCategory] = useState<string>('vibe');
   const mutation        = useRecommendByPreference();
   const ensureSessionId = useUserStore(s => s.ensureSessionId);
+  const swipeApplied    = useRef(false);
+
+  // 스와이프 온보딩에서 넘어온 초기 취향 적용 + 즉시 추천
+  useEffect(() => {
+    if (swipeApplied.current) return;
+    swipeApplied.current = true;
+    let raw: string | null = null;
+    try {
+      raw = sessionStorage.getItem('hg_swipe_prefs');
+      if (raw) sessionStorage.removeItem('hg_swipe_prefs');
+    } catch { return; }
+    if (!raw) return;
+    try {
+      const swipePrefs = JSON.parse(raw) as Record<string, number>;
+      const merged = { ...buildInitialPrefs(), ...swipePrefs };
+      const nonNeutral = Object.fromEntries(
+        Object.entries(merged).filter(([, v]) => Math.abs(v - 5.0) >= 0.5)
+      );
+      // effect 내 동기 setState 회피 (react-hooks/set-state-in-effect)
+      queueMicrotask(() => {
+        setPrefs(merged);
+        mutation.mutate({ preferences: Object.keys(nonNeutral).length ? nonNeutral : merged, count: 12 });
+      });
+    } catch { /* 파싱 실패 시 기본 슬라이더로 */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const results       = mutation.data?.recommendations ?? [];
   const categories    = Object.entries(METRIC_CATEGORIES_KO);
@@ -123,6 +150,12 @@ export default function SearchPage() {
           각 지표를 조정해 당신만의 이상적인 게임을 찾아보세요.{' '}
           <span className="text-purple-600">?</span> 버튼을 누르면 지표 설명을 볼 수 있어요.
         </p>
+        <Link
+          href="/onboarding/swipe"
+          className="mt-3 inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-purple-600/10 border border-purple-300 dark:border-purple-800 text-purple-700 dark:text-purple-300 text-sm font-medium hover:bg-purple-600/20 transition-colors"
+        >
+          슬라이더가 낯설다면 — 카드 스와이프로 취향 잡기 →
+        </Link>
       </header>
 
       <div className="flex flex-wrap gap-2 border-b border-zinc-200 dark:border-zinc-800 pb-3">

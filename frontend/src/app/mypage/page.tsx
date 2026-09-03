@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useUserStore } from '@/store/useUserStore';
-import { getMe, getRecentGames, getFavorites, toggleFavoriteApi, type MeResponse, type RecentGame, type FavoriteGame } from '@/lib/api';
+import { getMe, getRecentGames, getFavorites, toggleFavoriteApi, getSteamLibrary, type MeResponse, type RecentGame, type FavoriteGame, type SteamLibrary } from '@/lib/api';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
 // 코드값 → 한글 라벨 매핑
@@ -36,6 +36,7 @@ export default function MyPage() {
   const [me,        setMe]        = useState<MeResponse | null>(null);
   const [recent,    setRecent]    = useState<RecentGame[]>([]);
   const [favorites, setFavorites] = useState<FavoriteGame[]>([]);
+  const [steamLib,  setSteamLib]  = useState<SteamLibrary | null>(null);
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState('');
   const [hydrated,  setHydrated]  = useState(false);
@@ -59,6 +60,9 @@ export default function MyPage() {
       })
       .catch(() => setError('정보를 불러오지 못했어요.'))
       .finally(() => setLoading(false));
+
+    // Steam 라이브러리는 별도 로드 (미연동/실패 시 섹션만 숨김)
+    getSteamLibrary().then(setSteamLib).catch(() => setSteamLib(null));
   }, [hydrated, isLoggedIn, router]);
 
   const handleRemoveFavorite = async (appId: number) => {
@@ -121,6 +125,45 @@ export default function MyPage() {
           </div>
         </div>
       </section>
+
+      {/* Steam 라이브러리 (연동 시에만) */}
+      {steamLib?.steam_linked && steamLib.top_games.length > 0 && (
+        <section className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              내 Steam 라이브러리
+            </h2>
+            <span className="text-[12px] text-zinc-400">
+              보유 {steamLib.library_count ?? steamLib.top_games.length}개 · 플레이타임 상위
+            </span>
+          </div>
+          <ul className="mt-4 flex flex-col divide-y divide-zinc-100 dark:divide-zinc-800">
+            {steamLib.top_games.slice(0, 5).map((g) => (
+              <li key={g.app_id} className="flex items-center justify-between py-2.5 gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-[13px] font-medium text-zinc-800 dark:text-zinc-200">
+                    {g.name}
+                  </p>
+                  <p className="text-[11px] text-zinc-400">{g.playtime_hours}시간 플레이</p>
+                </div>
+                {g.in_db ? (
+                  <Link
+                    href={`/game/${g.app_id}`}
+                    className="shrink-0 rounded-md bg-purple-600/10 px-2.5 py-1.5 text-[12px] font-medium text-purple-700 hover:bg-purple-600/20 dark:text-purple-300 transition-colors"
+                  >
+                    비슷한 숨은 명작 →
+                  </Link>
+                ) : (
+                  <span className="shrink-0 text-[11px] text-zinc-400">분석 예정</span>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-[11px] text-zinc-400">
+            프로필이 비공개면 목록이 비어 보여요 — Steam 프로필 공개 설정을 확인하세요.
+          </p>
+        </section>
+      )}
 
       {/* 최근 본 게임 */}
       <section className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">

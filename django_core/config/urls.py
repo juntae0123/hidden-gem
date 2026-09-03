@@ -17,7 +17,7 @@ from apps.users.views import (
     UserMeView, OnboardingView, RecentGamesView,
     PendingSurveyView, SubmitSurveyView,
     FavoriteToggleView, FavoriteListView,
-    TastePreferenceView, DeleteAccountView,
+    TastePreferenceView, DeleteAccountView, SteamLibraryView,
 )
 
 urlpatterns = [
@@ -42,4 +42,5 @@ urlpatterns = [
     path('api/auth/favorites/', FavoriteListView.as_view(), name='favorite_list'),
     path('api/auth/taste-preference/', TastePreferenceView.as_view(), name='taste_preference'),
     path('api/auth/delete-account/', DeleteAccountView.as_view(), name='delete_account'),
+    path('api/auth/steam-library/', SteamLibraryView.as_view(), name='steam_library'),
 ]
