@@ -66,11 +66,15 @@ MIN_DESCRIPTION_LEN = 11
 
 # Undocumented store endpoints rate-limit around 200 req / 5 min.
 STEAM_DELAY_SEC = 1.5
-SEARCH_DELAY_SEC = 1.0
+SEARCH_DELAY_SEC = 1.6
+
+# 429를 맞을 때마다 검색 페이지 간격을 늘리는 적응형 지연 (백필처럼 수백 페이지 넘길 때 필수)
+_adaptive = {"search_delay": SEARCH_DELAY_SEC}
 MAX_RETRIES = 4
 
 HTML_TAG = re.compile(r"<[^<]+?>")
 APPID_IN_HTML = re.compile(r'data-ds-appid="(\d+)"')
+RELEASED_IN_HTML = re.compile(r'search_released[^>]*>\s*([^<]+?)\s*<')
 
 # Steam release_date.date locales: "2026년 7월 9일" / "9 Jul, 2026" / "Jul 9, 2026"
 DATE_KO = re.compile(r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일")
@@ -106,7 +110,12 @@ def request_with_backoff(url: str, params: dict, label: str) -> Optional[request
         if resp.status_code == 200:
             return resp
         if resp.status_code == 429 or resp.status_code >= 500:
-            print(f"   {label} HTTP {resp.status_code} → {delay:.0f}s 대기")
+            if resp.status_code == 429 and label == "store search":
+                # 재시도만으로는 다음 페이지에서 또 429 - 이후 페이지 간격 자체를 늘린다
+                _adaptive["search_delay"] = min(_adaptive["search_delay"] + 0.5, 5.0)
+                print(f"   {label} HTTP 429 → {delay:.0f}s 대기 (페이지 간격 {_adaptive['search_delay']:.1f}s로 상향)")
+            else:
+                print(f"   {label} HTTP {resp.status_code} → {delay:.0f}s 대기")
             time.sleep(delay)
             delay *= 2
             continue
@@ -141,14 +150,29 @@ def parse_release_date(raw: str) -> Optional[date]:
 
 
 # ============== 1) 발견: 스토어 검색 (주 경로) ==============
-def discover_via_store_search(max_candidates: int) -> List[int]:
+def _parse_search_date(raw: str):
+    """검색 결과 HTML의 출시일 문자열 파싱 (실패 시 None)."""
+    raw = raw.strip()
+    for fmt in ("%Y년 %m월 %d일", "%d %b, %Y", "%b %d, %Y", "%b %Y", "%Y"):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def discover_via_store_search(max_candidates: int, stop_before: Optional[date] = None) -> List[int]:
     """List app_ids sorted by real release date (games only).
-    실제 출시일 역순으로 app_id를 수집한다 (게임만)."""
+    실제 출시일 역순으로 app_id를 수집한다 (게임만).
+    stop_before가 주어지면(백필) 그 날짜보다 오래된 페이지에 도달하는 순간 중단 -
+    2만 페이지를 무조건 도는 대신 필요한 깊이까지만 페이징한다."""
     app_ids: List[int] = []
     start = 0
     page_size = 50
+    pages = 0
 
-    print("발견: Steam 스토어 검색 (출시일 역순, 게임만)")
+    print("발견: Steam 스토어 검색 (출시일 역순, 게임만)"
+          + (f" — {stop_before} 이전 도달 시 중단" if stop_before else ""))
     while len(app_ids) < max_candidates:
         resp = request_with_backoff(STORE_SEARCH, {
             "query": "",
@@ -174,7 +198,8 @@ def discover_via_store_search(max_candidates: int) -> List[int]:
         if start == 0:
             print(f"   전체 게임 수: {payload.get('total_count', 0):,}")
 
-        found = APPID_IN_HTML.findall(payload.get("results_html", ""))
+        html = payload.get("results_html", "")
+        found = APPID_IN_HTML.findall(html)
         if not found:
             break
 
@@ -183,8 +208,19 @@ def discover_via_store_search(max_candidates: int) -> List[int]:
             if len(app_ids) >= max_candidates:
                 break
 
+        # 백필 조기 종료: 이 페이지의 출시일들이 전부 시작일보다 오래됐으면 더 볼 필요 없음
+        if stop_before:
+            page_dates = [d for d in (_parse_search_date(s) for s in RELEASED_IN_HTML.findall(html)) if d]
+            if page_dates and max(page_dates) < stop_before:
+                print(f"   {stop_before} 이전 구간 도달 → 페이징 중단 (후보 {len(app_ids)}개)")
+                break
+
+        pages += 1
+        if pages % 20 == 0:
+            print(f"   ...{pages}페이지 / 후보 {len(app_ids):,}개 (간격 {_adaptive['search_delay']:.1f}s)")
+
         start += page_size
-        time.sleep(SEARCH_DELAY_SEC)
+        time.sleep(_adaptive["search_delay"])
 
     # dedupe while preserving release-date order
     seen, ordered = set(), []
@@ -450,7 +486,7 @@ def main():
     # 발견: 필터 손실을 흡수하도록 여유있게 후보 수집
     max_candidates = args.candidates or args.limit * 8
     if args.source == "search":
-        candidates = discover_via_store_search(max_candidates=max_candidates)
+        candidates = discover_via_store_search(max_candidates=max_candidates, stop_before=start_date)
         if not candidates:
             print("스토어 검색 실패 → 공식 API 폴백")
             candidates = discover_via_applist(max_candidates=max_candidates)

@@ -98,9 +98,10 @@ def main() -> None:
     parser.add_argument("--from", dest="date_from", help="백필 시작일 YYYY-MM-DD (--days 대신)")
     parser.add_argument("--to", dest="date_to", help="백필 종료일 YYYY-MM-DD")
     parser.add_argument("--limit", type=int, default=50, help="주당 최대 처리 게임 수 (기본 50)")
-    parser.add_argument("--model", default="gpt-4o-mini", help="학생 모델")
+    parser.add_argument("--model", default="gpt-5.4-mini",
+                        help="학생 모델 (캘리브레이션 실측: gpt-4o-mini는 gem 분포가 뭉개짐)")
     parser.add_argument("--fewshot", default=str(DEFAULT_FEWSHOT), help="few-shot 예시 jsonl")
-    parser.add_argument("--fewshot-n", type=int, default=6)
+    parser.add_argument("--fewshot-n", type=int, default=12)
     parser.add_argument("--crawl-only", action="store_true", help="크롤링까지만 실행")
     parser.add_argument("--sync", action="store_true",
                         help="Batch API 대신 동기 호출 (배치 장애 시 폴백, 비용 2배)")
