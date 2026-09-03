@@ -9,6 +9,8 @@ v11 → v12 정석:
 """
 import logging
 import os
+
+import requests
 from django.contrib.auth import get_user_model
 from django.shortcuts import redirect
 from rest_framework.views import APIView
@@ -473,3 +475,67 @@ class SubmitSurveyView(APIView):
             return Response({"detail": f"잘못된 데이터: {e}"}, status=400)
 
         return Response({"success": True, "survey_id": survey.id})
+
+
+class SteamLibraryView(APIView):
+    """
+    Get the user's Steam library (top games by playtime).
+    Korean: Steam 연동 유저의 보유 게임 조회 — 플레이타임 상위 + 우리 DB 보유 여부.
+    상태 저장 없음(마이그레이션 불필요): 호출 시 Steam API에서 직접 조회.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from allauth.socialaccount.models import SocialAccount
+        from apps.games.models import Game
+
+        account = SocialAccount.objects.filter(
+            user=request.user, provider='steam'
+        ).first()
+        if account is None:
+            return Response({'steam_linked': False, 'top_games': []})
+
+        api_key = os.getenv('STEAM_API_KEY', '')
+        if not api_key:
+            return Response(
+                {'detail': 'STEAM_API_KEY not configured'}, status=503
+            )
+
+        try:
+            resp = requests.get(
+                'https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/',
+                params={
+                    'key': api_key,
+                    'steamid': account.uid,
+                    'include_appinfo': 1,
+                    'include_played_free_games': 1,
+                    'format': 'json',
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            games = resp.json().get('response', {}).get('games', [])
+        except (requests.RequestException, ValueError):
+            logger.warning('[Steam] GetOwnedGames 실패 (uid=%s)', account.uid)
+            return Response({'detail': 'steam_api_unavailable'}, status=502)
+
+        # 프로필이 비공개면 games가 비어서 옴
+        top = sorted(games, key=lambda g: g.get('playtime_forever', 0), reverse=True)[:10]
+        top_ids = [g['appid'] for g in top]
+        in_db = set(
+            Game.objects.filter(app_id__in=top_ids).values_list('app_id', flat=True)
+        )
+
+        return Response({
+            'steam_linked': True,
+            'library_count': len(games),
+            'top_games': [
+                {
+                    'app_id': g['appid'],
+                    'name': g.get('name', f"App {g['appid']}"),
+                    'playtime_hours': round(g.get('playtime_forever', 0) / 60, 1),
+                    'in_db': g['appid'] in in_db,
+                }
+                for g in top
+            ],
+        })

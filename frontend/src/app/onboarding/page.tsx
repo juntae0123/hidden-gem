@@ -58,7 +58,7 @@ export default function OnboardingPage() {
         age_group:  ageGroup,
       });
       setLogin(updated as unknown as Parameters<typeof setLogin>[0]);
-      router.replace('/');
+      router.replace('/onboarding/swipe');  // 가입 정보 → 취향 스캔으로 이어짐
     } catch (e) {
       setError((e as Error).message || '저장에 실패했어요. 다시 시도해주세요.');
       setSubmitting(false);

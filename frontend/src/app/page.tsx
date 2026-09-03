@@ -176,13 +176,24 @@ function HomeContent() {
         {isLoading && !currentError && <GameGridSkeleton count={9} />}
 
         {!isLoading && !currentError && displayGames.length === 0 && (
-          <ErrorState
-            type="not-found"
-            variant="page"
-            title={showSearch ? '검색 결과가 없어요' : '추천을 불러올 수 없어요'}
-            description={showSearch ? '다른 표현으로 검색해보세요' : '잠시 후 다시 시도해주세요'}
-            onRetry={showSearch ? undefined : showVibe ? () => refetchVibe() : () => refetchAI()}
-          />
+          <>
+            <ErrorState
+              type="not-found"
+              variant="page"
+              title={showSearch ? '검색 결과가 없어요' : '추천을 불러올 수 없어요'}
+              description={showSearch ? '다른 표현으로 검색해보세요' : '잠시 후 다시 시도해주세요'}
+              onRetry={showSearch ? undefined : showVibe ? () => refetchVibe() : () => refetchAI()}
+            />
+            {/* 검색 0건 폴백 — 빈 화면 대신 오늘의 추천으로 이탈 방지 */}
+            {showSearch && aiGames.length > 0 && (
+              <div className="mt-10">
+                <h3 className="text-[13px] font-medium text-zinc-700 dark:text-zinc-300 mb-4">
+                  대신 이런 게임은 어때요? · 오늘의 {themeLabel} 추천
+                </h3>
+                <GameGrid games={aiGames} />
+              </div>
+            )}
+          </>
         )}
 
         {!isLoading && !currentError && displayGames.length > 0 && (
