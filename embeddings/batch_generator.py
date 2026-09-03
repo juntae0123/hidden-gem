@@ -599,8 +599,12 @@ def wait_and_download(batch_id: str, interval: int = 30) -> Path:
             print("\nBatch 완료!")
             break
         elif status['status'] in ['failed', 'expired', 'cancelled']:
-            print(f"\nBatch 실패: {status['status']}")
+            print(f"\nBatch 종료: {status['status']}")
             _print_batch_errors(batch_id, status.get('error_file_id'))
+            if status.get('output_file_id'):
+                # expired/cancelled여도 완료된 요청 결과는 살아있다 - 버리지 않는다
+                print(f"   완료분 {status['completed']}건은 다운로드해서 적재 진행")
+                break
             return None
         
         time.sleep(interval)
