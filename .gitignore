@@ -51,3 +51,6 @@ __pycache__/backups/
 *.bak
 db_backup.sql
 upload_log.txt
+
+# 템플릿은 예외 (시크릿 없음)
+!.env.example

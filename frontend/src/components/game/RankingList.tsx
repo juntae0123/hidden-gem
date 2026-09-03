@@ -78,8 +78,9 @@ function RankingRow({
       {/* HOT 뱃지 */}
       {isHot && (
         <span
+          title="숨은 명작 지수 상위 3위"
           className={cn(
-            'px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0',
+            'px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 cursor-help',
             'bg-orange-500/10 text-orange-700 dark:text-orange-400'
           )}
         >

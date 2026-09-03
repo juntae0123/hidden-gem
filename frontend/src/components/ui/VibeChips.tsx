@@ -21,7 +21,7 @@ export function VibeChips({ selected, onSelect }: VibeChipsProps) {
   // 로딩 — 칩 자리만 스켈레톤
   if (isLoading) {
     return (
-      <div className="flex gap-2 overflow-x-auto pb-2">
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
         {Array.from({ length: 8 }).map((_, i) => (
           <div
             key={i}
@@ -36,7 +36,7 @@ export function VibeChips({ selected, onSelect }: VibeChipsProps) {
   if (error || !vibes) return null;
 
   return (
-    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
+    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none [mask-image:linear-gradient(to_right,transparent,black_24px,black_calc(100%-24px),transparent)]">
       {vibes.map((v: VibeItem) => {
         const active = v.key === selected;
         return (

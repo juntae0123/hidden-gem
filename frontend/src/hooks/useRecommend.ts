@@ -10,7 +10,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { recommendByGame, recommendByPreference, getVibes, recommendByVibe } from '@/lib/api';
+import { recommendByGame, recommendByPreference, getVibes, recommendByVibe, HIDDEN_GEM_MAX_REVIEWS } from '@/lib/api';
 
 // ==================== 매일 순환 테마 / Daily Rotating Themes ====================
 
@@ -102,8 +102,9 @@ export const DEFAULT_THEME_NAME = DAILY_THEMES[0].name;
  */
 export function useDefaultRecommendations(count: number = 9) {
   return useQuery({
-    queryKey: ['recommend', 'default', DEFAULT_THEME_NAME, count],
-    queryFn:  () => recommendByPreference({ ...DEFAULT_PREFERENCES }, count),
+    queryKey: ['recommend', 'default', DEFAULT_THEME_NAME, count, 'hidden'],
+    // 메인 '오늘의 추천'은 서비스 정체성 - 초유명작(위처, 디스코 엘리시움 등) 제외
+    queryFn:  () => recommendByPreference({ ...DEFAULT_PREFERENCES }, count, { maxReviewCount: HIDDEN_GEM_MAX_REVIEWS }),
     staleTime:          1000 * 60 * 30,  // 30분 fresh
     gcTime:             1000 * 60 * 60,  // 1시간 캐시 유지
     refetchOnWindowFocus: false,
@@ -136,8 +137,8 @@ export function useRecommendByGenre(
   count: number = 10
 ) {
   return useQuery({
-    queryKey: ['recommend', 'genre', genrePrefs, count],
-    queryFn:  () => recommendByPreference(genrePrefs!, count),
+    queryKey: ['recommend', 'genre', genrePrefs, count, 'hidden'],
+    queryFn:  () => recommendByPreference(genrePrefs!, count, { maxReviewCount: HIDDEN_GEM_MAX_REVIEWS }),
     enabled:  !!genrePrefs && Object.keys(genrePrefs).length > 0,
     staleTime: 1000 * 60 * 30,
     gcTime:    1000 * 60 * 60,

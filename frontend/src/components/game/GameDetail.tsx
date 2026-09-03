@@ -133,8 +133,10 @@ export function GameDetail({ appId }: GameDetailProps) {
     <article className="w-full">
       {/* Hero */}
       <div className="w-full rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
-        <div className="relative w-full aspect-[460/215] bg-zinc-200 dark:bg-zinc-800">
+        {/* 헤더 이미지: 원본 비율로 늘리면 1080p에서 화면을 다 먹음 - 높이를 캡하고 object-cover로 크롭 */}
+        <div className="relative w-full h-52 md:h-64 lg:h-72 bg-zinc-200 dark:bg-zinc-800">
           <GameImage appId={appId} name={game.name} fallback={game.header_image} size="hero" priority />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-zinc-100 dark:from-zinc-900 to-transparent" />
         </div>
 
         <div className="p-6 flex flex-col md:flex-row md:items-start justify-between gap-4">

@@ -10,6 +10,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { RankingList } from '@/components/game/RankingList';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { RankingListSkeleton } from '@/components/ui/LoadingSkeleton';
@@ -45,14 +46,14 @@ export default function RankingPage() {
     tab === 'genre' ? (GENRE_PREFS[genre] ?? ALL_PREFS) :
     null;
 
-  const { data, isLoading, error, refetch } = useRecommendByGenre(activePrefs, 10);
+  const { data, isLoading, error, refetch } = useRecommendByGenre(activePrefs, 30);
   const items = data?.recommendations ?? [];
 
   return (
     <div className="flex flex-col gap-6">
       <header>
         <h1 className="text-xl font-semibold">랭킹</h1>
-        <p className="text-sm text-zinc-500 mt-1">gem potential 기준 Top 10</p>
+        <p className="text-sm text-zinc-500 mt-1">숨은 명작 지수 Top 30 — 초유명작은 제외하고 인지도 대비 완성도가 높은 게임</p>
       </header>
 
       {/* 탭 */}
@@ -101,9 +102,23 @@ export default function RankingPage() {
 
       {/* 로그인 필요 */}
       {tab === 'mine' && (
-        <div className="rounded-xl p-6 text-center bg-purple-600/[0.04] border border-purple-600/30">
+        <div className="rounded-xl p-8 text-center bg-purple-600/[0.04] border border-purple-600/30">
           <div className="text-purple-700 dark:text-purple-300 text-sm font-medium">Steam 로그인이 필요해요</div>
           <p className="mt-1 text-[12px] text-zinc-500">로그인하면 당신의 라이브러리 기반으로 맞춤 랭킹을 보여드려요.</p>
+          <div className="mt-5 flex items-center justify-center gap-2">
+            <Link
+              href="/login"
+              className="px-4 py-2 rounded-lg bg-purple-600 text-white text-[13px] font-medium hover:bg-purple-500 transition-colors"
+            >
+              Steam으로 로그인
+            </Link>
+            <Link
+              href="/onboarding/swipe"
+              className="px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 text-[13px] text-zinc-700 dark:text-zinc-300 hover:border-purple-400 transition-colors"
+            >
+              로그인 없이 취향 잡기
+            </Link>
+          </div>
         </div>
       )}
 
@@ -113,7 +128,7 @@ export default function RankingPage() {
           {error && (
             <ErrorState error={error as Error} onRetry={() => refetch()} variant="inline" />
           )}
-          {isLoading && !error && <RankingListSkeleton count={10} />}
+          {isLoading && !error && <RankingListSkeleton count={12} />}
           {!isLoading && !error && <RankingList items={items} />}
         </>
       )}

@@ -259,6 +259,10 @@ class RecommendByPreferenceRequest(BaseModel):
         default=[],
         description="반드시 제외해야 할 Boolean 태그. 예) [\"has_permadeath\"]",
     )
+    max_review_count: Optional[int] = Field(
+        default=None, ge=0,
+        description="Steam 리뷰 수 상한. 유명작을 제외하고 '숨은' 게임만 남길 때 사용 (예: 20000)",
+    )
     must_not: Optional[Dict[str, float]] = Field(
         default=None,
         description=(
