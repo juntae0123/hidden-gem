@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'allauth.account',
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
+    'allauth.socialaccount.providers.openid',   # steam provider 의존성
     'allauth.socialaccount.providers.steam',
     'apps.games',
     'apps.users',
