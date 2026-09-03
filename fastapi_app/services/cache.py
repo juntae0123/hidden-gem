@@ -107,6 +107,7 @@ class RecommendationCache:
         count: int,
         must_not: Optional[dict] = None,
         use_masking: bool = True,
+        max_review_count: Optional[int] = None,
     ) -> str:
         """
         Generate cache key for preference-based recommendation results (v4).
@@ -126,6 +127,7 @@ class RecommendationCache:
             "pref": dict(sorted(preferences.items())),
             "must_not": dict(sorted((must_not or {}).items())),
             "masking": use_masking,
+            "max_reviews": max_review_count,
         }
         pref_str = json.dumps(payload, sort_keys=True)
         return f"rec:pref:{self._hash(pref_str)}:{count}"

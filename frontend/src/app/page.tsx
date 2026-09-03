@@ -144,7 +144,7 @@ function HomeContent() {
           </Link>
         </div>
         <div className="w-full max-w-2xl">
-          <SearchBar value={inputValue} onChange={setInputValue} onSubmit={handleSubmit} />
+          <SearchBar value={inputValue} onChange={setInputValue} onSubmit={handleSubmit} showChips={false} />
         </div>
       </section>
 
@@ -158,7 +158,9 @@ function HomeContent() {
       <section>
         <h2 className="text-[13px] font-medium text-zinc-700 dark:text-zinc-300 mb-4">
           {showSearch
-            ? `"${submittedQuery}" 검색 결과 ${searchGames.length}개`
+            ? searchResult?.reference_game
+              ? `${searchResult.reference_game}와 비슷한 게임 ${searchGames.length}개 (기준 게임·시리즈 제외)`
+              : `"${submittedQuery}" 검색 결과 ${searchGames.length}개`
             : showVibe
               ? `${selectedVibeLabel} 추천 ${vibeGames.length}개`
               : `오늘의 AI 추천 · ${themeLabel} 게임`}

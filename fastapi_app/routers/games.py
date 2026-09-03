@@ -153,9 +153,10 @@ async def semantic_search(
 
     # 5. 포맷 + 캐시 저장
     recommendations = recommender.format_semantic_results(results)
+    reference_game = results[0].get("reference_game") if results else None
     response = RecommendationResponse(
-        query_type="semantic",
-        reference_game=None,
+        query_type="semantic_by_reference" if reference_game else "semantic",
+        reference_game=reference_game,
         total_candidates=len(recommendations),
         recommendations=recommendations,
     )
@@ -300,6 +301,7 @@ async def recommend_by_preference(
         request.count,
         must_not=request.must_not or {},
         use_masking=request.use_masking,
+        max_review_count=request.max_review_count,
     )
     cached = await recommendation_cache.get(cache_key)
     if cached:
@@ -350,6 +352,7 @@ async def recommend_by_preference(
         count=request.count,
         min_gem_potential=request.min_gem_potential,
         use_masking=request.use_masking,
+        max_review_count=request.max_review_count,
     )
 
     # 6. 포맷 + 캐시 저장

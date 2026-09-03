@@ -19,6 +19,15 @@ import { recordTasteAction } from '@/lib/api';
 import { useUserStore } from '@/store/useUserStore';
 import { DnaCard } from '@/components/ui/DnaCard';
 
+/** 콜드스타트 완화용 프리셋 — 클릭 한 번으로 슬라이더가 잡히고 바로 추천 */
+const PRESETS: { label: string; prefs: Record<string, number> }[] = [
+  { label: '아늑한 힐링',   prefs: { cozy_factor: 9, time_pressure: 1.5, horror_factor: 0.5, difficulty_accessibility: 8, soundtrack_impact: 7 } },
+  { label: '하드코어 전략', prefs: { strategic_depth: 9, management_complexity: 8, learning_curve: 8, reflex_demand: 2, replay_value: 8 } },
+  { label: '감성 서사',     prefs: { narrative_depth: 9, choice_consequence: 8, melancholy: 7, lore_richness: 8, action_pacing: 2.5 } },
+  { label: '손맛 액션',     prefs: { reflex_demand: 9, action_pacing: 9, time_pressure: 7, visual_spectacle: 7, learning_curve: 5 } },
+  { label: '공포 서바이벌', prefs: { horror_factor: 9, time_pressure: 7, exploration_reward: 7, cozy_factor: 0.5, session_length: 6 } },
+];
+
 const buildInitialPrefs = (): Record<string, number> => {
   const prefs: Record<string, number> = {};
   Object.values(METRIC_CATEGORIES_KO).forEach(({ metrics }) => {
@@ -88,6 +97,7 @@ export default function SearchPage() {
   const [activeCategory, setActiveCategory] = useState<string>('vibe');
   const mutation        = useRecommendByPreference();
   const ensureSessionId = useUserStore(s => s.ensureSessionId);
+  const isLoggedIn      = useUserStore(s => s.isLoggedIn);
   const swipeApplied    = useRef(false);
 
   // 스와이프 온보딩에서 넘어온 초기 취향 적용 + 즉시 추천
@@ -123,6 +133,17 @@ export default function SearchPage() {
     setPrefs((p) => ({ ...p, [key]: value }));
   };
 
+  const applyPreset = (preset: (typeof PRESETS)[number]) => {
+    const merged = { ...buildInitialPrefs(), ...preset.prefs };
+    setPrefs(merged);
+    recordTasteAction({
+      session_id:  ensureSessionId(),
+      action_type: 'search',
+      context: { query: `preset:${preset.label}`, referrer: '/search' },
+    });
+    mutation.mutate({ preferences: preset.prefs, count: 12 });
+  };
+
   const handleSubmit = () => {
     const nonNeutral = Object.fromEntries(
       Object.entries(prefs).filter(([, v]) => Math.abs(v - 5.0) >= 0.5)
@@ -156,6 +177,21 @@ export default function SearchPage() {
         >
           슬라이더가 낯설다면 — 카드 스와이프로 취향 잡기 →
         </Link>
+
+        {/* 프리셋: 빈 슬라이더 49개 앞에서 멈추지 않게 한 클릭 시작점 */}
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          <span className="text-[12px] text-zinc-500 mr-1">빠른 시작</span>
+          {PRESETS.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              onClick={() => applyPreset(p)}
+              className="px-3 py-1.5 rounded-full text-[12px] border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:border-purple-400 hover:text-purple-600 dark:hover:text-purple-300 transition-colors"
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
       </header>
 
       <div className="flex flex-wrap gap-2 border-b border-zinc-200 dark:border-zinc-800 pb-3">
@@ -243,6 +279,13 @@ export default function SearchPage() {
               </h2>
               <DnaCard prefs={prefs} games={results} />
             </div>
+            {!isLoggedIn && (
+              <p className="mb-4 text-[12px] text-zinc-500">
+                이 취향은 페이지를 떠나면 사라져요 —{' '}
+                <Link href="/login" className="text-purple-600 dark:text-purple-400 hover:underline">로그인</Link>
+                하면 저장되고 다음 추천에 반영됩니다.
+              </p>
+            )}
             <GameGrid games={results} />
           </>
         )}

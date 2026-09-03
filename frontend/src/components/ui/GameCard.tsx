@@ -8,7 +8,7 @@
 
 import Link from 'next/link';
 import { Sparkles } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, METRIC_LABELS } from '@/lib/utils';
 import { GemBadge } from './GemBadge';
 import { MatchBar } from './MatchBar';
 import { GameImage } from './GameImage';
@@ -36,6 +36,11 @@ export function GameCard({
   const matchValue = game.similarity_score ?? 0;
   const gemScore   = game.gem_potential ?? 0;
   const reasonText = game.match_reasons?.[0] ?? '';
+  // 카드에서 '왜 맞는지'를 보여주는 핵심 지표 2개 (값 높은 순)
+  const topMetrics = Object.entries(game.key_metrics ?? {})
+    .filter(([, v]) => typeof v === 'number')
+    .sort((a, b) => (b[1] as number) - (a[1] as number))
+    .slice(0, 2);
   const genres     = game.genres
     ?.split(',').map(g => g.trim()).filter(Boolean).slice(0, 3) ?? [];
 
@@ -94,6 +99,18 @@ export function GameCard({
             {genres.map(g => (
               <span key={g} className="px-1.5 py-0.5 rounded text-[10px] bg-purple-600/10 text-purple-700 dark:text-purple-300">
                 {g}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {topMetrics.length > 0 && (
+          <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+            {topMetrics.map(([k, v], i) => (
+              <span key={k} className="flex items-center gap-1">
+                {i > 0 && <span className="text-zinc-300 dark:text-zinc-700">·</span>}
+                <span>{METRIC_LABELS[k] ?? k}</span>
+                <span className="font-mono text-purple-600 dark:text-purple-400">{(v as number).toFixed(1)}</span>
               </span>
             ))}
           </div>

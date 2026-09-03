@@ -29,6 +29,7 @@ v4 → v5 핵심 변경사항:
 """
 
 import json
+import re
 import math
 from enum import Enum
 from typing import Dict, List, Optional, Set, Tuple
@@ -816,9 +817,13 @@ class GameRecommender:
         count: int = 5,
         min_gem_potential: float = 0.0,
         use_masking: bool = True,
+        max_review_count: Optional[int] = None,
     ) -> List[Dict]:
         """
         Preference-based recommendation with four-tier weighting (v5).
+
+        max_review_count: 지정 시 Steam 리뷰 수가 이를 넘는 게임 제외.
+            '숨은 명작' 노출 화면(오늘의 추천/랭킹)에서 초유명작을 걸러내는 용도.
         Korean: 4단계 가중치 기반 선호도 추천 v5. 전체 49개 지표 사용.
 
         preferences 지표 → primary(5x)
@@ -850,6 +855,11 @@ class GameRecommender:
             .where(Game.is_active == True)    # noqa: E712
             .where(Game.is_analyzed == True)  # noqa: E712
         )
+        if max_review_count is not None:
+            # 유명작 제외: 리뷰 수 상한 (NULL은 정보 없음이므로 통과시킴)
+            stmt = stmt.where(
+                (Game.review_count <= max_review_count) | (Game.review_count.is_(None))
+            )
         result = await db.execute(stmt)
         candidates = result.scalars().all()
 
@@ -911,6 +921,45 @@ class GameRecommender:
 
     # ==================== 시맨틱 검색 / Semantic Search ====================
 
+    _FRANCHISE_STOPWORDS = {
+        "the", "of", "and", "edition", "enhanced", "definitive", "remastered", "director",
+        "directors", "cut", "complete", "game", "goty", "deluxe", "ultimate", "collection",
+    }
+
+    @classmethod
+    def _franchise_token(cls, name: str) -> Optional[str]:
+        """게임 이름에서 프랜차이즈를 대표하는 첫 의미 토큰 (예: 'The Witcher 3' → 'witcher')."""
+        for tok in re.findall(r"[a-zA-Z가-힣]{3,}", name.lower()):
+            if tok not in cls._FRANCHISE_STOPWORDS:
+                return tok
+        return None
+
+    async def _find_game_by_name(self, db: AsyncSession, name: str) -> Optional[Game]:
+        """참조 게임 이름으로 DB 매칭. 전체 문자열 → 프랜차이즈 토큰 순으로 완화, 리뷰 많은 쪽 우선."""
+        candidates = [name]
+        tok = self._franchise_token(name)
+        if tok and tok != name.lower():
+            candidates.append(tok)
+        for cand in candidates:
+            stmt = (
+                select(Game)
+                .where(Game.is_active == True)  # noqa: E712
+                .where(Game.name.ilike(f"%{cand}%"))
+                .order_by(Game.review_count.desc().nullslast())
+                .limit(1)
+            )
+            game = (await db.execute(stmt)).scalars().first()
+            if game is not None:
+                return game
+        return None
+
+    def _exclude_franchise(self, results: List[Dict], ref_game: Game) -> List[Dict]:
+        """참조 게임과 같은 프랜차이즈(이름 토큰 공유)를 결과에서 제외."""
+        tok = self._franchise_token(ref_game.name or "")
+        if not tok:
+            return results
+        return [r for r in results if tok not in (r["game"].name or "").lower()]
+
     async def analyze_query(self, query: str) -> Dict:
         """
         Analyze natural language query via GPT.
@@ -926,15 +975,17 @@ Return ONLY valid JSON:
 {{
   "english_query": "translate to English, focus on game feel/atmosphere",
   "metric_hints": {{"metric_name": score_0_to_10}},
+  "reference_game": "official English title of a specific game the user names as a reference (e.g. '~같은 게임', '~처럼', 'like ~'), else null",
   "reasoning": "brief explanation"
 }}
 
 Valid metric names: {valid_metrics}
 
 Examples:
-- "혼자 조용히 즐기는 힐링 게임" → {{"english_query": "cozy relaxing solo healing game", "metric_hints": {{"cozy_factor": 9, "horror_factor": 0, "multiplayer_scale": 0}}}}
-- "전략적이고 어려운 로그라이크" → {{"english_query": "strategic challenging roguelike", "metric_hints": {{"strategic_depth": 9, "learning_curve": 8, "replay_value": 9}}}}
-- "림월드 같은 경영 생존 게임" → {{"english_query": "colony management survival sandbox game like RimWorld", "metric_hints": {{"management_complexity": 9, "freedom_level": 8, "strategic_depth": 8}}}}
+- "혼자 조용히 즐기는 힐링 게임" → {{"english_query": "cozy relaxing solo healing game", "metric_hints": {{"cozy_factor": 9, "horror_factor": 0, "multiplayer_scale": 0}}, "reference_game": null}}
+- "전략적이고 어려운 로그라이크" → {{"english_query": "strategic challenging roguelike", "metric_hints": {{"strategic_depth": 9, "learning_curve": 8, "replay_value": 9}}, "reference_game": null}}
+- "림월드 같은 경영 생존 게임" → {{"english_query": "colony management survival sandbox game like RimWorld", "metric_hints": {{"management_complexity": 9, "freedom_level": 8, "strategic_depth": 8}}, "reference_game": "RimWorld"}}
+- "위쳐같은게임" → {{"english_query": "dark fantasy open world story RPG like The Witcher", "metric_hints": {{"narrative_depth": 9, "lore_richness": 9, "dark_fantasy_vibe": 8}}, "reference_game": "The Witcher 3: Wild Hunt"}}
 """
         response = await client.chat.completions.create(
             model="gpt-4.1-mini",
@@ -987,6 +1038,22 @@ Examples:
         analysis = await self.analyze_query(query)
         english_query = analysis.get("english_query", query)
         metric_hints = analysis.get("metric_hints", {})
+
+        # 2-1. "X 같은 게임" 패턴: 참조 게임이 DB에 있으면 앵커 추천으로 라우팅.
+        #      임베딩 검색은 참조 게임 자체(와 그 시리즈)를 1위로 돌려주는 고질적 실패가 있어
+        #      기준 게임을 제외하는 by-game 경로 + 프랜차이즈 제외가 정답이다.
+        ref_name = (analysis.get("reference_game") or "").strip()
+        if ref_name:
+            ref_game = await self._find_game_by_name(db, ref_name)
+            if ref_game is not None:
+                _, ref_results = await self.recommend_by_game(
+                    db, ref_game.app_id, count=limit * 3, query_hint=query,
+                )
+                ref_results = self._exclude_franchise(ref_results, ref_game)[:limit]
+                for r in ref_results:
+                    r["reference_game"] = ref_game.name
+                if ref_results:
+                    return ref_results
 
         # 3. 임베딩 + pgvector
         query_vec = await self.embed_query(english_query)

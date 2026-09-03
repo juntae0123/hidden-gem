@@ -268,13 +268,21 @@ export async function recommendByGame(
  * Recommend by preference vector.
  * 선호도 벡터 기반 추천.
  */
+/** 초유명작 제외 기준 — 이 리뷰 수를 넘는 게임은 '숨은 명작' 화면에서 제외 */
+export const HIDDEN_GEM_MAX_REVIEWS = 20000;
+
 export async function recommendByPreference(
   preferences: Record<string, number>,
-  count: number = 12
+  count: number = 12,
+  options: { maxReviewCount?: number } = {}
 ): Promise<RecommendationResponse> {
   const { data } = await apiClient.post<RecommendationResponse>(
     '/games/recommend/by-preference',
-    { preferences, count }
+    {
+      preferences,
+      count,
+      ...(options.maxReviewCount !== undefined && { max_review_count: options.maxReviewCount }),
+    }
   );
   return data;
 }

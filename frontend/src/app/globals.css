@@ -26,3 +26,11 @@ body {
     zoom: 0.95;
   }
 }
+
+/* 가로 스크롤 칩 줄에서 스크롤바 숨김 (스크롤 동작은 유지) */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}

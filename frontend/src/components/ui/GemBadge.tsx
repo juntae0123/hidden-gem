@@ -44,8 +44,9 @@ export function GemBadge({
 
   return (
     <div
+      title={`숨은 명작 지수 ${Math.round(score)} — 인지도 대비 품질 (매치율과 다른 값)`}
       className={cn(
-        'inline-flex items-center rounded-md font-mono font-medium',
+        'inline-flex items-center rounded-md font-mono font-medium cursor-help',
         TIER_STYLES[tier],
         SIZE_STYLES[size],
         className

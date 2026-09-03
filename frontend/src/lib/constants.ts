@@ -95,35 +95,35 @@ export const METRIC_DESCRIPTIONS: Record<string, string> = {
 // 지표 카테고리 (한국어) / Metric categories in Korean
 export const METRIC_CATEGORIES_KO: Record<string, { label: string; metrics: string[] }> = {
   vibe: {
-    label: '🎭 분위기',
+    label: '분위기',
     metrics: ['cozy_factor', 'horror_factor', 'gore_level', 'humor_rating', 'dark_fantasy_vibe', 'epic_scale', 'melancholy'],
   },
   demands: {
-    label: '⚡ 난이도/요구사항',
+    label: '난이도/요구사항',
     metrics: ['reflex_demand', 'strategic_depth', 'grind_factor', 'time_pressure', 'learning_curve'],
   },
   mechanics: {
-    label: '🎮 게임 메카닉',
+    label: '게임 메카닉',
     metrics: ['freedom_level', 'action_pacing', 'rng_dependency', 'growth_reward', 'exploration_reward', 'management_complexity', 'stealth_importance', 'session_length', 'narrative_linearity', 'puzzle_complexity', 'platforming_precision'],
   },
   social: {
-    label: '👥 소셜/멀티',
+    label: '소셜/멀티',
     metrics: ['coop_synergy', 'competitive_stress', 'npc_interaction', 'user_creation', 'multiplayer_scale'],
   },
   presentation: {
-    label: '📖 연출/스토리',
+    label: '연출/스토리',
     metrics: ['lore_richness', 'choice_consequence', 'visual_spectacle', 'environmental_storytelling', 'soundtrack_impact'],
   },
   system: {
-    label: '⚙️ 시스템/UX',
+    label: '시스템/UX',
     metrics: ['build_variety', 'progression_clarity', 'save_flexibility', 'difficulty_accessibility', 'tutorial_quality', 'ui_ux_polish', 'modding_support'],
   },
   art: {
-    label: '🎨 아트/오디오',
+    label: '아트/오디오',
     metrics: ['art_style_uniqueness', 'audio_design', 'animation_quality'],
   },
   other: {
-    label: '✨ 기타',
+    label: '기타',
     metrics: ['world_reactivity', 'community_dependency', 'narrative_depth', 'replay_value', 'endgame_content', 'monetization_fairness'],
   },
 }
