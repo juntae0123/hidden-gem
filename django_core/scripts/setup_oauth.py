@@ -8,6 +8,7 @@ Korean: OAuth 초기 설정 (Site + SocialApp) 자동화.
 필요 환경변수:
     GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
     STEAM_API_KEY  (https://steamcommunity.com/dev/apikey 에서 발급)
+    SITE_DOMAIN    (운영에서만 - 미설정 시 localhost:8001)
 """
 import os
 import sys
@@ -27,10 +28,12 @@ def setup_site():
     Update Site 1 to localhost:8001.
     Korean: Site 1을 localhost:8001로 업데이트.
     """
+    # 운영에서는 SITE_DOMAIN 환경변수로 지정 (예: hidden-gem.up.railway.app)
+    domain = os.getenv('SITE_DOMAIN', 'localhost:8001')
     site, created = Site.objects.update_or_create(
         id=1,
         defaults={
-            'domain': 'localhost:8001',
+            'domain': domain,
             'name': 'Hidden Gem',
         }
     )
