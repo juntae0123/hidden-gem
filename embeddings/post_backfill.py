@@ -62,13 +62,28 @@ def run_step(name: str, cmd: List[str], fatal: bool = True) -> int:
 
 
 def pipeline_running() -> bool:
-    """같은 컨테이너 안에서 weekly_pipeline 프로세스가 살아 있는지 (/proc 스캔, ps 불필요)."""
-    me = str(Path("/proc/self").resolve().name)
-    for p in Path("/proc").iterdir():
-        if not p.name.isdigit() or p.name == me:
+    """weekly_pipeline 프로세스가 살아 있는지 (/proc 스캔, ps 불필요).
+
+    /proc이 없는 환경(Windows 호스트 등)에서는 판정할 수 없다. 애초에 루프는 batch
+    컨테이너 안에서 도니 호스트에서는 보이지도 않는다 → False를 돌려주고 경고만 남긴다
+    (이 스크립트도 컨테이너 안에서 실행하는 것이 정상 경로).
+    """
+    proc_dir = Path("/proc")
+    if not proc_dir.is_dir():
+        log("주의: /proc이 없어 실행 중 프로세스를 확인할 수 없습니다 "
+            "(컨테이너 밖에서 실행 중). 루프 종료 여부는 data/backfill.log 의 "
+            "'파이프라인 완료' 로그로 확인하세요.")
+        return False
+    try:
+        me = Path("/proc/self").resolve().name
+        entries = list(proc_dir.iterdir())
+    except OSError:
+        return False
+    for entry in entries:
+        if not entry.name.isdigit() or entry.name == me:
             continue
         try:
-            cmd = (p / "cmdline").read_bytes().replace(b"\0", b" ")
+            cmd = (entry / "cmdline").read_bytes().replace(b"\0", b" ")
         except OSError:
             continue
         if b"embeddings.weekly_pipeline" in cmd:
