@@ -65,7 +65,23 @@ def collect() -> dict:
     return out
 
 
-def _rows(res: dict) -> List[dict]:
+_DETAIL_CACHE: Dict[int, dict] = {}
+
+
+def _detail(app_id: int) -> dict:
+    """리뷰 수는 추천 응답에 없어 상세 엔드포인트로 채운다 (유명작 필터 판정에 필요)."""
+    if app_id in _DETAIL_CACHE:
+        return _DETAIL_CACHE[app_id]
+    try:
+        r = requests.get(f"{API}/games/{app_id}", timeout=20)
+        d = r.json() if r.status_code == 200 else {}
+    except requests.RequestException:
+        d = {}
+    _DETAIL_CACHE[app_id] = d
+    return d
+
+
+def _rows(res: dict, enrich: bool = False) -> List[dict]:
     if not isinstance(res, dict) or "_error" in res:
         return []
     items = res.get("recommendations") or res.get("results") or res.get("games") or []
@@ -73,13 +89,22 @@ def _rows(res: dict) -> List[dict]:
     for it in items:
         if not isinstance(it, dict):
             continue
-        rows.append({
+        sb = it.get("score_breakdown") or {}
+        row = {
             "app_id": it.get("app_id"),
             "name": (it.get("name") or "")[:40],
-            "score": it.get("match_score", it.get("score")),
-            "gem": it.get("gem_percentile", it.get("gem_score")),
+            "score": it.get("similarity_score", it.get("match_score", it.get("score"))),
+            "gem_bonus": sb.get("gem_score"),          # 표시 점수에 실제로 더해진 gem 기여분
+            "gem_potential": it.get("gem_potential"),  # 응답이 노출하는 gem 값
             "reviews": it.get("review_count"),
-        })
+        }
+        if enrich and row["reviews"] is None and row["app_id"]:
+            d = _detail(row["app_id"])
+            row["reviews"] = d.get("review_count")
+            row["ratio"] = d.get("steam_positive_ratio")
+            m = d.get("metrics") or {}
+            row["gem_percentile"] = m.get("gem_percentile") if isinstance(m, dict) else None
+        rows.append(row)
     return rows
 
 
@@ -90,12 +115,32 @@ def save(label: str) -> int:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     ok = sum(1 for v in data["scenarios"].values() if "_error" not in v)
     print(f"저장: {path}  (시나리오 {ok}/{len(data['scenarios'])} 성공)")
+    # 리뷰 수/백분위를 상세 엔드포인트로 채워 스냅샷에 함께 저장 (나중 판정용)
+    enriched = {}
+    for k, v in data["scenarios"].items():
+        enriched[k] = _rows(v, enrich=True)
+    data["rows"] = enriched
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+
     for k, v in data["scenarios"].items():
         if "_error" in v:
             print(f"   실패 {k}: {v['_error']}")
-        else:
-            r = _rows(v)
-            print(f"   {k:28} {len(r)}건  1위 {r[0]['name'] if r else '-'}")
+            continue
+        r = enriched[k]
+        rev = [x["reviews"] for x in r if x.get("reviews") is not None]
+        over = sum(1 for x in rev if x > 20000)
+        print(f"   {k:28} {len(r)}건  1위 {r[0]['name'][:24] if r else '-':26} "
+              f"리뷰중앙 {sorted(rev)[len(rev)//2] if rev else '-':>7}  2만초과 {over}건"
+              f"{'  리뷰데이터 없음' if not rev else ''}")
+    # 유명작 필터가 실제로 작동하는지 즉시 판정
+    for name in [k for k in enriched if k.endswith(":히든젬")]:
+        base = name.replace(":히든젬", ":전체")
+        if base in enriched:
+            a = [x["app_id"] for x in enriched[base]]
+            b = [x["app_id"] for x in enriched[name]]
+            if a == b:
+                print(f"   주의: {base} 와 {name} 결과가 동일 — max_review_count 가 아무것도 "
+                      f"걸러내지 못했다 (상위권에 2만 초과 게임이 없거나 review_count 가 비어있음)")
     return 0 if ok else 1
 
 
@@ -106,7 +151,8 @@ def diff(a: str, b: str) -> int:
     print(f"{a} → {b}  시나리오 {len(keys)}개\n")
     tot_over = tot_move = 0
     for k in keys:
-        ra, rb = _rows(pa["scenarios"][k]), _rows(pb["scenarios"][k])
+        ra = pa.get("rows", {}).get(k) or _rows(pa["scenarios"][k])
+        rb = pb.get("rows", {}).get(k) or _rows(pb["scenarios"][k])
         if not ra or not rb:
             print(f"[{k}] 비교 불가 (한쪽 결과 없음)"); continue
         ida = [x["app_id"] for x in ra]; idb = [x["app_id"] for x in rb]
@@ -118,9 +164,9 @@ def diff(a: str, b: str) -> int:
             gone = [x for x in ra if x["app_id"] not in idb]
             new = [x for x in rb if x["app_id"] not in ida]
             for x in gone[:3]:
-                print(f"     빠짐: {x['name'][:30]:32} 점수 {x['score']} gem {x['gem']} 리뷰 {x['reviews']}")
+                print(f"     빠짐:   {x['name'][:30]:32} 점수 {x['score']} gem보너스 {x.get('gem_bonus')} 리뷰 {x.get('reviews')}")
             for x in new[:3]:
-                print(f"     들어옴: {x['name'][:30]:32} 점수 {x['score']} gem {x['gem']} 리뷰 {x['reviews']}")
+                print(f"     들어옴: {x['name'][:30]:32} 점수 {x['score']} gem보너스 {x.get('gem_bonus')} 리뷰 {x.get('reviews')}")
         # 같은 게임의 점수 변화
         sa = {x["app_id"]: x["score"] for x in ra if x["score"] is not None}
         sb = {x["app_id"]: x["score"] for x in rb if x["score"] is not None}
@@ -128,6 +174,12 @@ def diff(a: str, b: str) -> int:
         if both:
             print(f"     공통 게임 점수 변화 평균 {sum(both)/len(both):+.2f} "
                   f"(최대 {max(both):+.1f} / 최소 {min(both):+.1f})")
+        ga = {x["app_id"]: x.get("gem_bonus") for x in ra if x.get("gem_bonus") is not None}
+        gb = {x["app_id"]: x.get("gem_bonus") for x in rb if x.get("gem_bonus") is not None}
+        gd = [gb[i] - ga[i] for i in ga if i in gb]
+        if gd:
+            print(f"     공통 게임 gem 보너스 변화 평균 {sum(gd)/len(gd):+.2f} "
+                  f"(최대 {max(gd):+.1f} / 최소 {min(gd):+.1f})")
     n = len(keys)
     if n:
         print(f"\n요약: 시나리오당 평균 상위{TOP_N} 유지 {tot_over/n:.1f}개, 순서변동 {tot_move/n:.1f}개")

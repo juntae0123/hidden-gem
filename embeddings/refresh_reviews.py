@@ -67,18 +67,31 @@ def ensure_log_table() -> None:
 
 
 # ============== 대상 ==============
+TEACHER_VERSION = "gpt5.4_batch"
+
+
+def _cohort_clause(cohort: str) -> tuple:
+    """대상 코호트. 근거 기반 gem 지수를 쓰려면 교사 4,190개도 리뷰 데이터가 있어야 한다."""
+    if cohort == "teacher":
+        return "g.analysis_method = :ver", {"ver": TEACHER_VERSION}
+    if cohort == "all":
+        return "g.analysis_method IN (:ver, :ver2)", {"ver": STUDENT_VERSION, "ver2": TEACHER_VERSION}
+    return "g.analysis_method = :ver", {"ver": STUDENT_VERSION}
+
+
 def fetch_targets(mode: str, stale_days: int, limit: Optional[int],
-                  app_ids: Optional[List[int]]) -> List[Dict]:
+                  app_ids: Optional[List[int]], cohort: str = "student") -> List[Dict]:
+    base, params = _cohort_clause(cohort)
     if app_ids:
         where, params = "g.app_id = ANY(:ids)", {"ids": app_ids}
     elif mode == "all-new":
-        where, params = "g.analysis_method = :ver", {"ver": STUDENT_VERSION}
+        where = base
     elif mode == "recheck":
-        where = """g.analysis_method = :ver AND g.is_active = FALSE AND g.is_analyzed = TRUE
-                   AND (l.refreshed_at IS NULL OR l.refreshed_at < NOW() - (:days || ' days')::interval)"""
-        params = {"ver": STUDENT_VERSION, "days": str(stale_days)}
+        where = (base + """ AND g.is_active = FALSE AND g.is_analyzed = TRUE
+                   AND (l.refreshed_at IS NULL OR l.refreshed_at < NOW() - (:days || ' days')::interval)""")
+        params = {**params, "days": str(stale_days)}
     else:  # new
-        where, params = "g.analysis_method = :ver AND l.app_id IS NULL", {"ver": STUDENT_VERSION}
+        where = base + " AND l.app_id IS NULL"
 
     sql = f"""
         SELECT g.app_id, g.name, g.review_count, g.is_active
@@ -168,6 +181,9 @@ def main():
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--min-reviews", type=int, default=MIN_REVIEWS_FOR_EXPOSURE,
                         help=f"노출 게이트 (기본 {MIN_REVIEWS_FOR_EXPOSURE}, .env MIN_REVIEWS_FOR_EXPOSURE)")
+    parser.add_argument("--cohort", choices=["student", "teacher", "all"], default="student",
+                        help="대상 코호트. teacher/all 은 기존 4,190개(교사)도 리뷰를 채운다 — "
+                             "근거 기반 gem 지수를 한 스케일로 쓰려면 필요")
     parser.add_argument("--dry-run", action="store_true", help="DB 미변경")
     parser.add_argument("--no-gate", action="store_true", help="조회만 하고 is_active는 건드리지 않음")
     args = parser.parse_args()
@@ -180,9 +196,9 @@ def main():
 
     if not args.gate_only:
         m = "recheck" if args.recheck else "all-new" if args.all_new else "new"
-        targets = fetch_targets(m, args.stale_days, args.limit, args.app_id)
+        targets = fetch_targets(m, args.stale_days, args.limit, args.app_id, args.cohort)
         est_min = len(targets) * (REQUEST_DELAY_SEC + 0.3) / 60
-        print(f"대상 ({m}): {len(targets):,}건, 예상 {est_min:.0f}분")
+        print(f"대상 ({m}, {args.cohort}): {len(targets):,}건, 예상 {est_min:.0f}분")
         if targets:
             stats = run(targets, args.dry_run)
             print(f"\n조회 {stats['fetched']:,}건 (리뷰 있음 {stats['with_reviews']:,}) / 실패 {stats['failed']}건")
@@ -192,7 +208,7 @@ def main():
         return
 
     with engine.begin() as conn:
-        if not args.no_gate:
+        if not args.no_gate and args.cohort != "teacher":
             r = apply_gate(conn, args.min_reviews)
             print(f"\n게이트 적용: 비활성화 {r['deactivated']:,}건, 활성화 {r['activated']:,}건")
         print_distribution(conn, args.min_reviews)
