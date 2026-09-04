@@ -652,11 +652,16 @@ MEASURED_BASE_INPUT_TOK = 3_100            # 시스템 프롬프트 + 게임 1�
 MEASURED_OUTPUT_TOK = 1_560
 
 # Batch API 50% 할인 적용 가격 (USD / 1M tok). 확인된 모델만 등록한다.
+# gpt-5.4-mini 정가(2026-09 공식 가격표): 입력 $0.75 / 캐시 입력 $0.075 / 출력 $4.50
+#   → 배치 50% 적용가가 아래 값. 캐시 입력은 정가의 1/10 이고, 우리 요청은 few-shot 12개가
+#     매 요청 접두부로 반복돼 입력의 약 95%가 캐시 대상이다(동기 실측 94.3%).
+#     배치에 캐시 할인이 함께 붙는지는 공식 문서에 명시가 없어, 아래 값은 '캐시 미적용 상한'이다.
+#     실제 청구액은 대시보드 Cost 로 확인할 것.
 BATCH_PRICING = {
-    "gpt-5.4": {"input": 1.25, "output": 7.50},     # 교사(distillation source)
+    "gpt-5.4": {"input": 1.25, "output": 7.50},     # 교사(distillation source) — 재확인 필요
     "gpt-4o": {"input": 1.25, "output": 5.00},
     "gpt-4o-mini": {"input": 0.075, "output": 0.30},
-    # gpt-5.4-mini: 공식 단가 확인 후 등록. 그 전엔 .env OPENAI_PRICE_*_PER_M 으로 지정.
+    "gpt-5.4-mini": {"input": 0.375, "output": 2.25, "cached_input": 0.0375},
 }
 
 
@@ -680,9 +685,15 @@ def estimate_cost(num_games: int, model: str, fewshot_examples: list = None) -> 
     total_output = num_games * MEASURED_OUTPUT_TOK
 
     prices = resolve_pricing(model)
-    cost = None
+    cost = cost_cached = None
     if prices:
         cost = (total_input / 1e6) * prices["input"] + (total_output / 1e6) * prices["output"]
+        # 캐시 하한: few-shot 접두부(요청당 fs_tokens)가 전부 캐시 적중한다고 가정
+        cp = prices.get("cached_input")
+        if cp is not None and fs_tokens:
+            cached_tok = num_games * fs_tokens
+            cost_cached = ((total_input - cached_tok) / 1e6) * prices["input"] \
+                + (cached_tok / 1e6) * cp + (total_output / 1e6) * prices["output"]
 
     return {
         "model": model,
@@ -693,6 +704,7 @@ def estimate_cost(num_games: int, model: str, fewshot_examples: list = None) -> 
         "output_tokens": total_output,
         "cost_usd": round(cost, 2) if cost is not None else None,
         "cost_krw": round(cost * 1400, 0) if cost is not None else None,
+        "cost_usd_cached": round(cost_cached, 2) if cost_cached is not None else None,
         "price_source": prices["source"] if prices else None,
     }
 
@@ -779,6 +791,10 @@ def main():
     print(f"   토큰: ~{cost['input_tokens']:,} input / ~{cost['output_tokens']:,} output (실측 계수)")
     if cost["cost_usd"] is not None:
         print(f"   ${cost['cost_usd']} USD (약 ₩{cost['cost_krw']:,.0f}) — 단가 출처: {cost['price_source']}")
+        if cost.get("cost_usd_cached") is not None:
+            print(f"   캐시 적중 시 하한 ${cost['cost_usd_cached']} USD "
+                  f"(few-shot 접두부 재사용분에 캐시 단가 적용)")
+            print(f"   → 실제 청구액은 두 값 사이. 대시보드 Cost 로 확인")
     else:
         print(f"   비용: 단가 미등록 모델({cost['model']}) — 달러 추정 생략. "
               f".env OPENAI_PRICE_INPUT_PER_M / OPENAI_PRICE_OUTPUT_PER_M 로 지정하면 표시됨")
