@@ -363,8 +363,10 @@ def load_existing_app_ids() -> Set[int]:
         print(f" DB 기존 게임: {len(existing):,}개 (중복 제외 기준)")
         return existing
     except Exception as e:
-        print(f"DB 접속 실패 → 중복 체크 생략: {e}")
-        return set()
+        # 조용히 빈 집합을 돌려주면 이미 분석된 게임(교사 4,190개 포함)을 재수집·재분석하고
+        # batch_processor 가 그 metrics 를 학생 값으로 덮어쓴다. 되돌릴 백업이 없으므로 즉시 중단.
+        print(f"DB 접속 실패 — 중복 체크 없이 진행하면 기존 데이터를 덮어쓸 수 있어 중단합니다: {e}")
+        raise SystemExit(4)
 
 
 def upsert_games(rows: List[Dict]) -> int:

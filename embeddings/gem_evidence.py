@@ -230,7 +230,8 @@ def apply(scored: List[dict], yes: bool, write: str) -> int:
     """
     label = "근거 지수 원점수" if write == "raw" else "근거 지수 백분위"
     if not yes and input(f"\n{len(scored):,}건의 gem_percentile 을 {label}로 갱신할까요? (y/n): ").strip().lower() != "y":
-        print("취소됨"); return 0
+        print("취소됨 — 아무것도 쓰지 않았습니다")
+        return 1        # 0을 돌려주면 호출부가 성공으로 보고 무근거 게임 0 쓰기를 이어서 실행한다
     key = "gem_evidence" if write == "raw" else "new_pct"
     updated = 0
     with engine.begin() as conn:
@@ -263,6 +264,8 @@ def main():
                     help="raw(기본): 근거 지수 원점수 0~100 — 절대 기준, 코퍼스 변동에 안 흔들림. "
                          "percentile: 근거 지수의 백분위")
     ap.add_argument("--yes", action="store_true")
+    ap.add_argument("--force", action="store_true",
+                    help="교사 코호트 리뷰 근거가 없어도 적용 (스케일 혼재 감수)")
     ap.add_argument("--no-evidence", choices=["keep", "zero"], default="zero",
                     help="리뷰 근거가 없는 게임 처리. zero(기본): gem_percentile=0 으로 통일해 "
                          "한 컬럼에 두 기준이 섞이는 것을 막는다(노출 게이트로 어차피 비노출). "
@@ -276,6 +279,17 @@ def main():
     rows = fetch_rows()
     scored, none_ = compute(rows, a.cap, a.obscurity_exp, z, a.obscurity_floor)
     report(scored, none_, a.cap, a.obscurity_exp, z, a.obscurity_floor)
+
+    # 교사 코호트에 리뷰 근거가 없으면 적용을 하드 거부한다.
+    # 그 상태로 쓰면 한 컬럼에 (교사=LLM 백분위 0~100) + (학생=근거 지수 0~72) + (0) 세 스케일이
+    # 섞이고, 뱃지 70+ 는 거의 교사 게임만 뽑게 되어 의도와 정반대가 된다.
+    teacher_blind = sum(1 for r in none_ if r["analysis_method"] == TEACHER)
+    if a.apply and teacher_blind > 100 and not a.force:
+        print(f"\n적용 거부: 교사 코호트 {teacher_blind:,}건에 리뷰 근거가 없습니다.")
+        print("   먼저 실행: python -m embeddings.refresh_reviews --cohort teacher --new")
+        print("   (그래도 진행하려면 --force — 스케일 혼재를 감수한다는 뜻)")
+        return 2
+
     if a.apply:
         rc = apply(scored, a.yes, a.write)
         if rc == 0 and a.no_evidence == "zero" and none_:
