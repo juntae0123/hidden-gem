@@ -49,14 +49,19 @@
 
 ## 3. 서로 충돌하는 것들 (하나를 건드리면 다른 쪽이 깨진다)
 
-### C-1. `gem_percentile` 은 4곳에서 읽히고 **전부 `or` 폴백**이 걸려 있다
+### C-1. `gem_percentile` 은 4곳에서 읽히고 **폴백 방식이 곳마다 다르다**
 ```
-score_v6.py:294          gem_pct = gem_percentile or 50
-recommender.py:898       float(game.metrics.gem_percentile or 50)
-recommender.py:560-563   gem_percentile ?? gem_potential ?? 50
-recommender.py:1171+     metric.gem_percentile or metric.gem_potential
+score_v6.py:294          gem_pct = gem_percentile or 50            → 0 이 50 으로 바뀐다
+recommender.py:898       float(game.metrics.gem_percentile or 50)  → 0 이 50 으로 바뀐다
+recommender.py:1171+     metric.gem_percentile or metric.gem_potential → 0 이 다른 컬럼으로 넘어간다
+recommender.py:560-563   is not None 분기 → 0 을 그대로 보존한다 (여기만 올바르다)
 ```
-→ 이 컬럼에 **0을 쓰면 50으로 읽힌다.** 값의 의미를 바꾸려면 읽는 쪽 4곳을 같은 커밋에서 고쳐야 한다.
+**정정(2026-09-04)**: 초판은 "전부 `or` 폴백"이라고 적었다. 틀렸다.
+`_calculate_gem_bonus`(`:560-563`)는 `is not None` 으로 분기해 **실제 값 0 을 보존**하고
+NULL 일 때만 폴백한다. 즉 세 곳은 0 을 잃고 한 곳은 보존한다 — **같은 컬럼을 읽는
+네 곳이 서로 다르게 해석한다는 것이 진짜 문제**다.
+→ 이 컬럼에 **0을 쓰면 세 곳에서 50(또는 다른 컬럼)으로 읽힌다.** 값의 의미를 바꾸려면
+읽는 쪽 4곳을 같은 커밋에서 고쳐야 하고, 고치는 방향은 `:560-563` 쪽이다.
 → `gem_potential` 폴백이 있으므로 두 스케일(I-2)이 자동으로 섞인다.
 
 ### C-2. 리뷰 수는 **세 곳에서 독립적으로** 점수에 들어간다
@@ -86,13 +91,33 @@ must_not 필터        → NULL 은 통과시킨다
 `data/batch_output_*.jsonl` 을 루프도, 홀드아웃 감사도 만든다. mtime 최신을 고르면
 **교사 게임 결과를 프로덕션에 적재한다.** → 새로 생긴 파일만 인정하는 차집합 방식으로만 안전하다.
 
+### C-9. 캐시 키에 점수 로직 버전이 없다 (측정 자체를 무효화한다)
+```
+semantic:{query_hash}:{limit}   rec:game:{app_id}:{count}   rec:pref:{pref_hash}:{count}
+```
+키에 코드 버전이 없고, 조건 일부도 빠져 있다(`exclude_same_developer`, `required_tags`,
+`excluded_tags`, `min_gem_potential`). 그래서 **점수 공식을 고친 뒤 같은 질의를 던지면
+변경 전 결과가 그대로 돌아온다.** 회귀 비교의 결론이 조용히 뒤집힌다.
+또 `invalidate_all` 은 '키 0개'와 'Redis 예외'를 모두 0 으로 돌려주므로(`cache.py:170-195`)
+반환값만으로 성공을 판정할 수 없다 — `GET /ops/cache` 의 `total_keys` 로 확인해야 한다.
+→ 조치: `rec_snapshot --save` 가 매 회차 무효화 + 확인을 강제하고, 실패 시 스냅샷을
+  쓰지 않고 죽는다. 근본 해결은 캐시 키에 `CACHE_VERSION` prefix + 누락 조건 추가.
+
 ### C-7. Steam API 를 두 스크립트가 동시에 두드릴 수 있다
 크롤러(store 검색 1.6s + appdetails 1.5s)와 `refresh_reviews`(appreviews 1.0s)는 같은 IP를 쓴다.
 합치면 Steam 비공식 한도(약 200req/5min)를 넘어 **둘 다 429** 를 맞는다. → 동시 실행 금지.
 
-### C-8. 점수 경로가 둘이고 예산이 다르다
-취향 분석 = Core75+XFactor18+Gem**6**, 유사 게임 = (지표60%+임베딩40%)×94+Gem**×5**.
-→ 한쪽 공식만 고치면 두 화면의 점수가 서로 비교 불가능해진다. gem 관련 수정은 항상 양쪽을 본다.
+### C-8. 점수 경로가 **셋**이고 예산이 다르다
+```
+A 취향 분석  score_v6.calculate_score_v6   Core75 + XFactor18 + Gem 6
+B 유사 게임  recommend_by_game             (지표60% + 임베딩40%) × 94 + Gem ×5
+C 문장 검색  semantic_search               (임베딩85% + 힌트15%) × 94 + Gem ×5
+```
+**정정(2026-09-04)**: 초판은 경로가 둘이라고 적었다. 셋이다. 경로 C 는 힌트 점수라는
+고유 항을 갖고, `score_breakdown` 의 gem 키 이름도 A(`gem_score`)와 B·C(`gem_bonus`)가
+다르다 — 감사 도구가 이걸 몰라 B·C 의 gem 기여분을 못 읽고 있었다.
+→ 한쪽 공식만 고치면 세 화면의 점수가 서로 비교 불가능해진다. gem 관련 수정은 항상
+세 경로를 모두 본다.
 
 ---
 
@@ -122,7 +147,11 @@ must_not 필터        → NULL 은 통과시킨다
 
 - [ ] **끝까지 따라갔나** — 이 값을 읽는 곳을 `grep` 으로 전부 찾았나? 폴백(`or`, `COALESCE`,
       `getattr` 기본값)이 걸려 있나? 0과 NULL을 구분하나?
-- [ ] **양쪽 경로를 봤나** — `score_v6` 과 `recommender` 둘 다 확인했나? (C-8)
+- [ ] **세 경로를 봤나** — 경로 A(`score_v6`) / B(`recommend_by_game`) / C(`semantic_search`)
+      전부 확인했나? 응답 키 이름(`gem_score` vs `gem_bonus`)까지 봤나? (C-8)
+- [ ] **캐시를 비웠나** — 캐시 키에 로직 버전이 없다. 점수를 고친 뒤 측정하려면 먼저
+      `POST /ops/cache/invalidate` + `GET /ops/cache` 로 `total_keys == 0` 을 확인해야 한다.
+      확인 없이 얻은 "변화 없음"은 증거가 아니다 (§C-9)
 - [ ] **코호트를 좁혔나** — `analysis_method` 조건이 있나? 교사 데이터가 대상에 들어가나? (I-1)
 - [ ] **원본을 보존했나** — 되돌리는 명령이 있나? 백업 테이블이 실제로 원본을 담나?
 - [ ] **분포에 대고 검증했나** — 실제 데이터에서 상위·하위 20건을 눈으로 봤나? 극단값(0, NULL,
@@ -134,6 +163,7 @@ must_not 필터        → NULL 은 통과시킨다
 ---
 
 ## 6. 관련 문서
+- `docs/external_review_log_0904.md` — 외부 검토 3건 기록과 판정(출처·근거 포함)
 - `docs/scoring_mechanism_asis.md` — 점수·지표 메커니즘 현황도(D-1~D-14)
 - `docs/code_review_0904.md` — 코드 리뷰 전문
 - `docs/gem_transition_plan.md` — gem 전환 계획과 안전 절차
