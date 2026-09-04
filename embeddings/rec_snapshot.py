@@ -188,13 +188,77 @@ def diff(a: str, b: str) -> int:
     return 0
 
 
+def variance(label: str) -> int:
+    """점수 구성요소의 실측 분산 — 명목 예산이 아니라 이게 순위를 결정한다.
+
+    예산이 Core 75 / X-Factor 18 / Gem 6 이어도, 어떤 항이 상한에 포화되어 있으면
+    그 항은 순위에 아무 영향을 주지 않는다(모든 후보에 같은 점수를 더할 뿐).
+    반대로 예산이 작아도 편차가 크면 그 항이 실질적으로 순위를 가른다.
+    """
+    import statistics as st
+    path = SNAP_DIR / f"{label}.json"
+    if not path.exists():
+        print(f"스냅샷 없음: {path}"); return 1
+    d = json.loads(path.read_text(encoding="utf-8"))
+    BUDGET = {"core_score": 75.0, "xfactor_score": 18.0, "gem_score": 6.0, "final_score": 99.0}
+    comp = {k: [] for k in BUDGET}
+    per_sc = {}
+    for k, v in d["scenarios"].items():
+        items = (v or {}).get("recommendations") or []
+        rows = [it.get("score_breakdown") or {} for it in items]
+        rows = [r for r in rows if "core_score" in r]      # 경로 A 만 이 구성을 가진다
+        if not rows:
+            continue
+        per_sc[k] = rows
+        for c in comp:
+            comp[c] += [r[c] for r in rows if r.get(c) is not None]
+    if not per_sc:
+        print("경로 A(score_v6) 시나리오가 없다 — by-preference 결과가 있는 스냅샷인지 확인"); return 1
+
+    n = sum(len(r) for r in per_sc.values())
+    print(f"[{label}] 경로 A 시나리오 {len(per_sc)}개 / 결과 {n}건\n")
+    print(f"{'구성요소':>14} {'예산':>6} {'평균':>7} {'σ':>7} {'최소':>7} {'최대':>7} {'포화율':>7}")
+    sds = {}
+    for c in ("core_score", "xfactor_score", "gem_score", "final_score"):
+        v = comp[c]
+        if not v:
+            continue
+        sd = st.pstdev(v); sds[c] = sd
+        sat = sum(1 for x in v if x >= BUDGET[c] * 0.97) / len(v) * 100
+        print(f"{c:>14} {BUDGET[c]:>6.0f} {st.mean(v):>7.2f} {sd:>7.2f} {min(v):>7.1f} {max(v):>7.1f} {sat:>6.0f}%")
+
+    tot = sum(sds.get(c, 0) for c in ("core_score", "xfactor_score", "gem_score"))
+    if tot:
+        print("\n랭킹 지배력 — 예산 비중 vs 실측 σ 비중 (σ 비중이 실제 영향력이다)")
+        for c in ("core_score", "xfactor_score", "gem_score"):
+            print(f"   {c:>14}: 예산 {BUDGET[c]/99*100:>5.1f}%  →  실측 {sds.get(c, 0)/tot*100:>5.1f}%")
+
+    print("\n시나리오별 (상위 결과 안에서 무엇이 순위를 가르는가)")
+    print(f"{'시나리오':>18} {'Core σ':>8} {'X-F σ':>8} {'Gem σ':>8} {'Core 폭':>9} {'X-F 폭':>8} {'Gem 폭':>8}")
+    for k, rows in per_sc.items():
+        co = [r["core_score"] for r in rows]
+        xf = [r.get("xfactor_score", 0) for r in rows]
+        gm = [r.get("gem_score", 0) for r in rows]
+        print(f"{k[:18]:>18} {st.pstdev(co):>8.2f} {st.pstdev(xf):>8.2f} {st.pstdev(gm):>8.2f} "
+              f"{max(co)-min(co):>9.1f} {max(xf)-min(xf):>8.1f} {max(gm)-min(gm):>8.1f}")
+    print("\n읽는 법: 포화율 97%+ 인 항은 순위에 영향이 없다(전원 같은 점수를 받는다).")
+    print("         Gem σ 가 Core σ 보다 크면, 취향 매칭보다 gem 값이 순위를 더 가르고 있다는 뜻이다.")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="추천 결과 스냅샷/회귀 비교")
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--save", metavar="LABEL")
     g.add_argument("--diff", nargs=2, metavar=("BEFORE", "AFTER"))
+    g.add_argument("--variance", metavar="LABEL",
+                   help="저장된 스냅샷의 점수 구성요소 분산 분석 (명목 예산 vs 실측 영향력)")
     a = ap.parse_args()
-    return save(a.save) if a.save else diff(*a.diff)
+    if a.save:
+        return save(a.save)
+    if a.diff:
+        return diff(*a.diff)
+    return variance(a.variance)
 
 
 if __name__ == "__main__":
