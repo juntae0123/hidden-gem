@@ -20,6 +20,15 @@ gem_percentile은 12,837건 통합으로 재계산됨(교사 데이터가 상위
 
 ---
 
+## 0. 실행 위치 (중요)
+
+모든 `embeddings.*` 스크립트는 **batch 컨테이너 안에서** 돌린다. `.env`의 활성
+`DATABASE_URL`이 `db:5432`(도커 네트워크 호스트명)라 Windows 호스트에서 그냥
+`python -m embeddings.X`로 실행하면 DB에 붙지 못하고, `requests`/`sqlalchemy` 같은
+의존성도 호스트 venv엔 없다. 항상 앞에 `docker compose exec batch` 를 붙인다.
+(호스트에서 직접 돌리려면 `.env`의 로컬용 `DATABASE_URL=...@localhost:5432` 주석을
+해제해야 하는데, 그러면 컨테이너 쪽이 깨지므로 권장하지 않는다.)
+
 ## 1. 후처리 한 번에 (데스크탑, 도커)
 
 ```
