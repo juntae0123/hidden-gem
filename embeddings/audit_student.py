@@ -43,7 +43,9 @@ from embeddings.batch_processor import (  # noqa: E402
 )
 
 AUDIT_DIR = DATA_DIR / "audit"
-TEACHER = "gpt5.4-batch-v1"
+# DB의 실제 교사 라벨. 최초 4,190개 구축 시 games.analysis_method 에 기록된 값이며,
+# batch_processor의 extraction_version 기본값("gpt5.4-batch-v1")과 다르다 — 혼동 주의.
+TEACHER = "gpt5.4_batch"
 STUDENT = "fewshot_5.4based"
 FEWSHOT_FILE = DATA_DIR / "fewshot" / "fewshot_examples.jsonl"
 
@@ -62,7 +64,10 @@ def _fewshot_app_ids() -> set:
 
 
 # ============== 1) holdout 샘플 ==============
-def make_holdout(n: int, seed: int) -> Path:
+def make_holdout(n: int, seed: int, teacher_label: str = None) -> Path:
+    global TEACHER
+    if teacher_label:
+        TEACHER = teacher_label
     exclude = _fewshot_app_ids()
     with engine.connect() as conn:
         rows = conn.execute(text("""
@@ -73,6 +78,17 @@ def make_holdout(n: int, seed: int) -> Path:
               AND COALESCE(g.description, '') <> ''
         """), {"ver": TEACHER}).fetchall()
     rows = [dict(r._mapping) for r in rows if r.app_id not in exclude]
+    if not rows:
+        with engine.connect() as conn:
+            dist = conn.execute(text("""
+                SELECT analysis_method, COUNT(*) FROM games
+                WHERE is_analyzed = TRUE GROUP BY 1 ORDER BY 2 DESC
+            """)).fetchall()
+        print(f"교사 라벨 '{TEACHER}' 게임이 0건입니다. DB의 analysis_method 분포:")
+        for method, n in dist:
+            print(f"   {method}: {n:,}건")
+        print("→ 위 목록에서 교사(GPT-5.4로 최초 구축한) 라벨을 골라 --teacher-label 로 지정하세요.")
+        raise SystemExit(2)
     rows.sort(key=lambda r: r["gem_potential"])
     random.seed(seed)
     k = 5
@@ -290,16 +306,21 @@ def new_sample(k: int = 15) -> None:
 
 
 def main():
+    global TEACHER
     p = argparse.ArgumentParser(description="학생 모델 품질 감사")
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument("--make-holdout", type=int, metavar="N")
     g.add_argument("--compare", metavar="FILE")
     g.add_argument("--new-sample", action="store_true")
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--teacher-label", default=None,
+                   help=f"교사 games.analysis_method 값 (기본 {TEACHER})")
     a = p.parse_args()
     if a.make_holdout:
-        make_holdout(a.make_holdout, a.seed)
+        make_holdout(a.make_holdout, a.seed, a.teacher_label)
     elif a.compare:
+        if a.teacher_label:
+            TEACHER = a.teacher_label
         path = Path(a.compare)
         if not path.exists():
             path = DATA_DIR / a.compare

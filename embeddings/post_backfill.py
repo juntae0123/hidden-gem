@@ -134,8 +134,15 @@ def main() -> None:
 
     # 3. 홀드아웃 감사 (교사 vs 학생)
     if not args.skip_holdout:
-        run_step("holdout-make", [PY, "-m", "embeddings.audit_student", "--make-holdout", str(args.holdout_n)])
+        rc_make = run_step("holdout-make", [PY, "-m", "embeddings.audit_student",
+                                            "--make-holdout", str(args.holdout_n)], fatal=False)
+        holdout_csv = AUDIT_DIR / "holdout.csv"
+        if rc_make != 0 or not holdout_csv.exists():
+            log("holdout 생성 실패 → 감사 단계 건너뛰고 리뷰/게이트로 진행 "
+                "(교사 라벨 확인 후 audit_student --make-holdout 로 따로 실행)")
+            args.skip_holdout = True
         before = set(DATA_DIR.glob("batch_output_*.jsonl"))
+    if not args.skip_holdout:
         base = [PY, "-m", "embeddings.batch_generator",
                 "--csv", str(AUDIT_DIR / "holdout.csv"), "--full", "--yes",
                 "--model", "gpt-5.4-mini", "--fewshot", str(FEWSHOT), "--fewshot-n", "12"]
