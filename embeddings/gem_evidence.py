@@ -57,15 +57,22 @@ def wilson_lower(positive: int, total: int, z: float) -> float:
     return max(0.0, (centre - margin) / d)
 
 
-def obscurity(total: int, cap: int, exp: float) -> float:
-    """무명도 0~1. 리뷰 cap 이상이면 0."""
-    if total >= cap:
+def obscurity(total: int, cap: int, exp: float, floor: int = 0) -> float:
+    """무명도 0~1. 리뷰 cap 이상이면 0.
+
+    floor: 이 리뷰 수 미만은 모두 floor 로 취급한다. 리뷰가 더 적을수록 무명도가
+    계속 올라가면 리뷰 2~3개짜리가 상위를 독식하고(실측: 리뷰 2개 100% → 51.8),
+    같은 리뷰 수 구간이 동점으로 뭉친다. 하한을 두면 그 구간에서는 Wilson(=표본이
+    많을수록 높다)만 남아 "적은 리뷰가 유리"라는 역인센티브가 사라진다.
+    """
+    m = max(total, floor)
+    if m >= cap:
         return 0.0
-    return (1.0 - math.log1p(max(total, 0)) / math.log1p(cap)) ** exp
+    return (1.0 - math.log1p(max(m, 0)) / math.log1p(cap)) ** exp
 
 
-def gem_score(positive: int, total: int, cap: int, exp: float, z: float) -> float:
-    return 100.0 * wilson_lower(positive, total, z) * obscurity(total, cap, exp)
+def gem_score(positive: int, total: int, cap: int, exp: float, z: float, floor: int = 0) -> float:
+    return 100.0 * wilson_lower(positive, total, z) * obscurity(total, cap, exp, floor)
 
 
 def fetch_rows() -> List[dict]:
@@ -81,14 +88,15 @@ def fetch_rows() -> List[dict]:
     return [dict(r._mapping) for r in rows]
 
 
-def compute(rows: List[dict], cap: int, exp: float, z: float) -> Tuple[List[dict], List[dict]]:
+def compute(rows: List[dict], cap: int, exp: float, z: float,
+            floor: int = 0) -> Tuple[List[dict], List[dict]]:
     scored, no_evidence = [], []
     for r in rows:
         n = int(r["reviews"] or 0)
         ratio = r["ratio"]
         if n <= 0 or ratio is None:
             no_evidence.append(r); continue
-        r["gem_evidence"] = gem_score(int(round(ratio * n)), n, cap, exp, z)
+        r["gem_evidence"] = gem_score(int(round(ratio * n)), n, cap, exp, z, floor)
         scored.append(r)
     scored.sort(key=lambda x: x["gem_evidence"])
     n = len(scored)
@@ -103,10 +111,20 @@ def gem_bonus(gem: float, reviews: int, confidence: float, with_review_bonus: bo
     return min((gem / 100.0 * 0.7 + rb) * (confidence if confidence is not None else 0.5), 1.0)
 
 
-def report(scored: List[dict], no_evidence: List[dict], cap: int, exp: float, z: float) -> None:
+def report(scored: List[dict], no_evidence: List[dict], cap: int, exp: float, z: float,
+           floor: int = 0) -> None:
     import statistics as st
     print(f"\n근거 보유 {len(scored):,}건 / 근거 없음(리뷰 0 또는 비율 NULL) {len(no_evidence):,}건")
-    print(f"공식: 100 x Wilson하한(z={z}) x 무명도^{exp}   (CAP={cap:,})")
+    print(f"공식: 100 x Wilson하한(z={z}) x 무명도^{exp}   (CAP={cap:,}, 무명도 하한 리뷰 {floor})")
+    ne_by = {}
+    for r in no_evidence:
+        ne_by[r["analysis_method"]] = ne_by.get(r["analysis_method"], 0) + 1
+    if ne_by:
+        print("   근거 없음 코호트 분포: " + ", ".join(f"{k}={v:,}" for k, v in sorted(ne_by.items())))
+        if ne_by.get(TEACHER, 0) > 100:
+            print(f"   경고: 교사 코호트 {ne_by[TEACHER]:,}건에 리뷰 데이터가 없다. 이 상태로 적용하면")
+            print(f"         기존 카탈로그 전체가 gem 0 이 되고, max_review_count 유명작 필터도 무력하다.")
+            print(f"         먼저 실행: refresh_reviews --cohort teacher --new")
 
     for label, sel in (("교사(기존 4,190)", TEACHER), ("신작(학생)", STUDENT)):
         sub = [r for r in scored if r["analysis_method"] == sel]
@@ -236,7 +254,10 @@ def main():
     ap = argparse.ArgumentParser(description="리뷰 실측 기반 히든젬 지수")
     ap.add_argument("--cap", type=int, default=20000, help="이 리뷰 수 이상은 무명도 0 (기본 20000)")
     ap.add_argument("--obscurity-exp", type=float, default=0.5, help="무명도 지수 (기본 0.5)")
-    ap.add_argument("--confidence", choices=["90", "95"], default="90", help="Wilson 하한 신뢰수준")
+    ap.add_argument("--confidence", choices=["90", "95"], default="95", help="Wilson 하한 신뢰수준")
+    ap.add_argument("--obscurity-floor", type=int, default=50,
+                    help="이 리뷰 수 미만은 무명도를 동일 취급 (기본 50). 0 이면 하한 없음 — "
+                         "리뷰 2~3개짜리가 상위를 독식하므로 권장하지 않음")
     ap.add_argument("--apply", action="store_true", help="gem_percentile 갱신 (기본은 미리보기)")
     ap.add_argument("--write", choices=["raw", "percentile"], default="raw",
                     help="raw(기본): 근거 지수 원점수 0~100 — 절대 기준, 코퍼스 변동에 안 흔들림. "
@@ -253,18 +274,24 @@ def main():
     print("Hidden Gem - 근거 기반 히든젬 지수")
     print("=" * 62)
     rows = fetch_rows()
-    scored, none_ = compute(rows, a.cap, a.obscurity_exp, z)
-    report(scored, none_, a.cap, a.obscurity_exp, z)
+    scored, none_ = compute(rows, a.cap, a.obscurity_exp, z, a.obscurity_floor)
+    report(scored, none_, a.cap, a.obscurity_exp, z, a.obscurity_floor)
     if a.apply:
         rc = apply(scored, a.yes, a.write)
         if rc == 0 and a.no_evidence == "zero" and none_:
+            # 학생 코호트만 0으로. 교사는 리뷰를 아직 조회하지 않은 것일 수 있고,
+            # 그 상태로 0을 박으면 기존 카탈로그 전체가 gem 보너스를 잃는다.
+            target = [r for r in none_ if r["analysis_method"] == STUDENT]
+            skipped = len(none_) - len(target)
             with engine.begin() as conn:
-                for i in range(0, len(none_), 1000):
+                for i in range(0, len(target), 1000):
                     conn.execute(
                         text("UPDATE game_metrics SET gem_percentile = 0 WHERE game_id = :gid"),
-                        [{"gid": r["game_id"]} for r in none_[i:i + 1000]],
+                        [{"gid": r["game_id"]} for r in target[i:i + 1000]],
                     )
-            print(f"근거 없음 {len(none_):,}건 → gem_percentile = 0 (스케일 혼재 방지)")
+            print(f"근거 없음 학생 {len(target):,}건 → gem_percentile = 0 (스케일 혼재 방지)")
+            if skipped:
+                print(f"   교사 등 {skipped:,}건은 건드리지 않음 — 리뷰 조회 후 재실행할 것")
         return rc
     print("\n미리보기만 수행 (--apply 로 반영). 파라미터를 바꿔가며 분포를 먼저 확인할 것.")
     return 0
