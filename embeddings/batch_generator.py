@@ -641,37 +641,49 @@ def wait_and_download(batch_id: str, interval: int = 30, max_wait_minutes: int =
 
 
 # ============== 비용 계산 ==============
+# 실측 (2026-09-03 백필, gpt-5.4-mini + 12-shot, 결과 파일 usage 합산):
+#   요청당 입력 ≈ 26,500 tok (그중 ~95% 캐시 히트), 출력 ≈ 1,560 tok.
+#   예전 추정(char/4)은 한글 텍스트에서 입력을 40% 가까이 적게 잡았고, 단가표에 없는
+#   모델은 조용히 gpt-4o-mini 가격으로 계산해 실제보다 훨씬 싸게 보였다.
+#   → 토큰은 실측 계수로, 단가는 등록된 모델만 달러 표시. 미등록이면 토큰만 보여주고 경고.
+#   단가는 .env 로 덮어쓸 수 있다: OPENAI_PRICE_INPUT_PER_M / OPENAI_PRICE_OUTPUT_PER_M (배치 할인 적용가)
+MEASURED_INPUT_TOK_PER_FEWSHOT = 1_950     # 예시 1개당 (12개 → ~23.4k) 실측 역산
+MEASURED_BASE_INPUT_TOK = 3_100            # 시스템 프롬프트 + 게임 1건
+MEASURED_OUTPUT_TOK = 1_560
+
+# Batch API 50% 할인 적용 가격 (USD / 1M tok). 확인된 모델만 등록한다.
+BATCH_PRICING = {
+    "gpt-5.4": {"input": 1.25, "output": 7.50},     # 교사(distillation source)
+    "gpt-4o": {"input": 1.25, "output": 5.00},
+    "gpt-4o-mini": {"input": 0.075, "output": 0.30},
+    # gpt-5.4-mini: 공식 단가 확인 후 등록. 그 전엔 .env OPENAI_PRICE_*_PER_M 으로 지정.
+}
+
+
+def resolve_pricing(model: str):
+    """등록 단가 또는 .env 지정 단가. 둘 다 없으면 None (달러 표시 안 함)."""
+    env_in, env_out = os.getenv("OPENAI_PRICE_INPUT_PER_M"), os.getenv("OPENAI_PRICE_OUTPUT_PER_M")
+    if env_in and env_out:
+        return {"input": float(env_in), "output": float(env_out), "source": ".env"}
+    base = model.split("-20")[0]           # gpt-5.4-mini-2026-03-17 → gpt-5.4-mini
+    if base in BATCH_PRICING:
+        return {**BATCH_PRICING[base], "source": "등록 단가표"}
+    return None
+
+
 def estimate_cost(num_games: int, model: str, fewshot_examples: list = None) -> dict:
-    """예상 비용 계산 (few-shot 토큰 오버헤드 반영)
-    Few-shot examples are prepended to EVERY request, so they multiply input cost."""
+    """예상 비용. 토큰은 실측 계수, 달러는 단가가 확인된 경우에만."""
     fewshot_examples = fewshot_examples or []
-    base_input_tokens = 2500   # 시스템 프롬프트 + 게임 데이터
-    avg_output_tokens = 1500   # JSON 응답 (49지표+content+reasoning ≈ 1000~1500)
-
-    # few-shot 오버헤드: 예시당 (출력 JSON + 입력 프롬프트) 대략 char/4
-    fs_tokens = sum(
-        len(json.dumps(ex["output"], ensure_ascii=False)) // 4
-        + len(str(ex.get("description", ""))[:2000]) // 4 + 80
-        for ex in fewshot_examples
-    )
-    avg_input_tokens = base_input_tokens + fs_tokens
-
-    # Batch API 50% 할인 적용 가격 (per 1M tokens)
-    pricing = {
-        "gpt-5.4": {"input": 1.25, "output": 7.50},   # 교사(distillation source)
-        "gpt-4o": {"input": 1.25, "output": 5.00},
-        "gpt-4o-mini": {"input": 0.075, "output": 0.30},  # 싼 학생 모델 예시
-    }
-    
-    prices = pricing.get(model, pricing["gpt-4o-mini"])
-    
+    fs_tokens = MEASURED_INPUT_TOK_PER_FEWSHOT * len(fewshot_examples)
+    avg_input_tokens = MEASURED_BASE_INPUT_TOK + fs_tokens
     total_input = num_games * avg_input_tokens
-    total_output = num_games * avg_output_tokens
-    
-    cost_input = (total_input / 1_000_000) * prices["input"]
-    cost_output = (total_output / 1_000_000) * prices["output"]
-    total_cost = cost_input + cost_output
-    
+    total_output = num_games * MEASURED_OUTPUT_TOK
+
+    prices = resolve_pricing(model)
+    cost = None
+    if prices:
+        cost = (total_input / 1e6) * prices["input"] + (total_output / 1e6) * prices["output"]
+
     return {
         "model": model,
         "games": num_games,
@@ -679,8 +691,9 @@ def estimate_cost(num_games: int, model: str, fewshot_examples: list = None) -> 
         "fewshot_tokens_per_req": fs_tokens,
         "input_tokens": total_input,
         "output_tokens": total_output,
-        "cost_usd": round(total_cost, 2),
-        "cost_krw": round(total_cost * 1400, 0)  # 대략적 환율
+        "cost_usd": round(cost, 2) if cost is not None else None,
+        "cost_krw": round(cost * 1400, 0) if cost is not None else None,
+        "price_source": prices["source"] if prices else None,
     }
 
 
@@ -763,8 +776,12 @@ def main():
     print(f"   모델: {cost['model']}")
     print(f"   게임: {cost['games']:,}개")
     print(f"   few-shot: {cost['fewshot_n']}개 (요청당 +{cost['fewshot_tokens_per_req']:,} tok)")
-    print(f"   토큰: ~{cost['input_tokens']:,} input / ~{cost['output_tokens']:,} output")
-    print(f"   ${cost['cost_usd']} USD (약 ₩{cost['cost_krw']:,.0f})")
+    print(f"   토큰: ~{cost['input_tokens']:,} input / ~{cost['output_tokens']:,} output (실측 계수)")
+    if cost["cost_usd"] is not None:
+        print(f"   ${cost['cost_usd']} USD (약 ₩{cost['cost_krw']:,.0f}) — 단가 출처: {cost['price_source']}")
+    else:
+        print(f"   비용: 단가 미등록 모델({cost['model']}) — 달러 추정 생략. "
+              f".env OPENAI_PRICE_INPUT_PER_M / OPENAI_PRICE_OUTPUT_PER_M 로 지정하면 표시됨")
     
     # 4. JSONL 생성
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
