@@ -28,6 +28,7 @@ import argparse
 import csv
 import json
 import random
+from datetime import datetime
 import shutil
 import sys
 from pathlib import Path
@@ -48,6 +49,8 @@ AUDIT_DIR = DATA_DIR / "audit"
 TEACHER = "gpt5.4_batch"
 STUDENT = "fewshot_5.4based"
 FEWSHOT_FILE = DATA_DIR / "fewshot" / "fewshot_examples.jsonl"
+BASELINE_FILE = AUDIT_DIR / "quality_baseline.json"
+DRIFT_TOLERANCE = 1.30      # 기준선 대비 평균 MAE가 이 배수를 넘으면 품질 회귀로 본다
 
 
 def _fewshot_app_ids() -> set:
@@ -269,6 +272,45 @@ def compare(result_file: Path) -> None:
         for r in report_rows:
             w.writerow({k: r.get(k, "") for k in w.fieldnames})
     print(f"\n저장: {per_game}, {AUDIT_DIR / 'holdout_metrics.csv'}, {AUDIT_DIR / 'holdout_pairs.csv'}")
+
+    # ===== 품질 기준선 / 드리프트 게이트 =====
+    # 이후 회차에서 같은 검사를 돌렸을 때 학생 모델 품질이 떨어졌는지 자동으로 잡는다.
+    summary = {
+        "n": len(common), "numeric_mae_mean": round(sum(maes) / len(maes), 4),
+        "numeric_mae_over_2_5": sum(1 for m in maes if m > 2.5),
+        "gem_mae": round(gem_mae, 3), "gem_spearman": round(gem_rho, 3),
+        "gem_bucket_agreement": round(diag / len(gp), 3),
+        "per_metric_mae": {r["metric"]: r["mae"] for r in report_rows if r["type"] == "numeric"},
+    }
+    drift_failed = False
+    if BASELINE_FILE.exists():
+        base = json.loads(BASELINE_FILE.read_text(encoding="utf-8"))
+        b_mae = base.get("numeric_mae_mean")
+        print(f"\n품질 기준선 대조 (기준선 {base.get('recorded_at', '?')[:10]}, n={base.get('n')})")
+        if b_mae:
+            ratio = summary["numeric_mae_mean"] / b_mae
+            print(f"   49지표 평균 MAE {b_mae:.2f} → {summary['numeric_mae_mean']:.2f} "
+                  f"({(ratio - 1) * 100:+.0f}%)")
+            drift_failed = ratio > DRIFT_TOLERANCE
+            worst = sorted(
+                ((summary["per_metric_mae"].get(k, 0) - v, k, v, summary["per_metric_mae"].get(k, 0))
+                 for k, v in (base.get("per_metric_mae") or {}).items()), reverse=True)[:5]
+            print("   악화 상위 5개 (기준선 → 현재):")
+            for d, k, bv, cv in worst:
+                print(f"      {k:26} {bv:.2f} → {cv:.2f} ({d:+.2f})")
+            print("   → " + ("품질 회귀 감지: few-shot/모델 변경 여부 확인 필요"
+                             if drift_failed else "기준선 대비 이상 없음"))
+    else:
+        BASELINE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        BASELINE_FILE.write_text(json.dumps(
+            {"recorded_at": datetime.now().isoformat(), "model_hint": "gpt-5.4-mini + 12shot", **summary},
+            ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"\n품질 기준선 신규 기록: {BASELINE_FILE}")
+        print("   이후 --compare 실행 시 이 값과 자동 대조해 품질 회귀를 잡는다.")
+    (AUDIT_DIR / "quality_last.json").write_text(json.dumps(
+        {"recorded_at": datetime.now().isoformat(), **summary}, ensure_ascii=False, indent=2), encoding="utf-8")
+    if drift_failed:
+        raise SystemExit(3)
 
     # 오적재 방지: 결과 파일을 audit 폴더로 이동
     if result_file.parent.resolve() == DATA_DIR.resolve():

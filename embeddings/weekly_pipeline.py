@@ -168,6 +168,8 @@ def main() -> None:
                         help="배치 최대 대기 분. 초과 시 취소 후 완료분만 수거 (기본 45)")
     parser.add_argument("--loop", action="store_true",
                         help="신작/pending이 더 없을 때까지 회차 반복 (백필용)")
+    parser.add_argument("--audit-n", type=int, default=0,
+                        help="루프 종료 후 교사 게임 N개로 품질 드리프트 점검 (0=끔, 권장 30, 약 $0.2)")
     parser.add_argument("--max-loops", type=int, default=60, help="루프 상한 (기본 60)")
     args = parser.parse_args()
 
@@ -264,6 +266,30 @@ def main() -> None:
     if not args.crawl_only:
         # 게이트에 걸려 비활성인 신작 중 30일 넘게 재조회 안 한 것 — 리뷰가 붙었으면 다시 켠다
         run_step("recheck", [py, "-m", "embeddings.refresh_reviews", "--recheck", "--stale-days", "30"])
+
+    if args.audit_n and processed_total:
+        # 품질 드리프트 게이트: 교사 게임 N개를 학생 모델로 다시 매겨 기준선과 대조한다.
+        # 학생 모델/few-shot/프롬프트가 조용히 바뀌어 데이터 품질이 내려가는 것을 잡는 장치.
+        # N=30 이면 비용 $0.2 수준. 회귀가 감지되면 audit_student 가 exit 3 → 알림 후 중단.
+        log(f"품질 드리프트 점검 (교사 {args.audit_n}건 재분석 후 기준선 대조)")
+        run_step("audit-make", [py, "-m", "embeddings.audit_student",
+                               "--make-holdout", str(args.audit_n)])
+        before_audit = latest_batch_output()
+        run_step("audit-batch", [py, "-m", "embeddings.batch_generator",
+                                 "--csv", str(DATA_DIR / "audit" / "holdout.csv"),
+                                 "--full", "--yes", "--model", args.model,
+                                 "--fewshot", args.fewshot, "--fewshot-n", str(args.fewshot_n), "--sync"])
+        audit_out = latest_batch_output()
+        if audit_out and audit_out != before_audit:
+            result = subprocess.run([py, "-m", "embeddings.audit_student", "--compare", str(audit_out)],
+                                    cwd=PROJECT_ROOT)
+            if result.returncode == 3:
+                notify("품질 드리프트 감지 — 신작 지표 품질이 기준선보다 악화됨. "
+                       "data/audit/quality_last.json 확인 후 few-shot/모델 점검 필요")
+            elif result.returncode != 0:
+                notify(f"품질 점검 단계 실패 (exit {result.returncode})")
+        else:
+            notify("품질 점검용 배치 결과 없음 — 점검 생략")
 
     elapsed = datetime.now() - started
     notify(f"파이프라인 완료: {iterations}회차, 처리 {processed_total}개 (소요 {elapsed})")
