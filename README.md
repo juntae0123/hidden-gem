@@ -73,8 +73,19 @@ graph LR
 
 ```
 crawl(신작 발견, DB 중복 제외) → batch(few-shot 분석) → load(UPSERT)
-  → embed(임베딩 생성) → percentile(gem 백분위 전체 재계산)
+  → embed(임베딩 생성) → reviews(Steam 리뷰 수 조회 + 노출 게이트)
+  → percentile(gem 백분위 전체 재계산) → recheck(비활성 신작 30일 주기 재평가)
 ```
+
+- 노출 게이트: 분석·임베딩은 전수로 수행하되, 서비스 노출(`is_active`)은
+  리뷰 수가 기준(기본 10, Steam이 리뷰 점수를 표시하는 최소치) 이상인 게임만.
+  기존 데이터가 인기순 샘플이었던 것과 달리 신작은 출시작 전수라 리뷰 0개
+  무명작이 그대로 들어오기 때문. 데이터는 지우지 않고 리뷰가 붙으면 재활성화
+  (`embeddings/exposure_policy.py`, `refresh_reviews.py`)
+- 학생 모델 감사: 교사 데이터 게임을 층화 샘플해 학생 모델로 다시 분석하고
+  같은 게임의 교사 vs 학생 값을 직접 비교(지표 MAE·상관, gem 스피어만·구간
+  혼동표, confidence 분산). 회차별 분포 감시와 별개로 주기적 실행
+  (`embeddings/audit_student.py`)
 
 - Windows Task Scheduler 주 1회 실행, 단계 실패 시 Discord 알림 후 중단
 - Batch API 장애 대비 동기 폴백(`--sync`), 미완료 배치의 부분 결과 수거 도구,
@@ -179,7 +190,11 @@ embeddings/           데이터 파이프라인
   weekly_pipeline.py         주간 수집 오케스트레이터
   steam_crawler.py           신작 발견 (적응형 스로틀링)
   batch_generator.py         few-shot 배치 생성/제출
-  batch_processor.py         결과 파싱/UPSERT
+  batch_processor.py         결과 파싱/UPSERT (응답 모델명으로 라벨 판정)
+  generate_embeddings.py     신작 임베딩 + 활성화
+  exposure_policy.py         노출 규칙 (리뷰 수 게이트)
+  refresh_reviews.py         Steam 리뷰 수 갱신 / 재평가
+  audit_student.py           교사 vs 학생 홀드아웃 감사
 scripts/              백업/이미지/스케줄러 유틸
 docs/                 설계 노트, 보안 점검, 운영 가이드
 ```
