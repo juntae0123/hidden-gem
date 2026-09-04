@@ -209,6 +209,7 @@ def parse_batch_result(result_file: Path) -> Tuple[Dict[int, Dict], Dict[str, in
     Batch API 출력 JSONL을 app_id 기준으로 파싱한다."""
     results: Dict[int, Dict] = {}
     stats = {"success": 0, "http_error": 0, "parse_error": 0, "no_app_id": 0}
+    models: Dict[str, int] = {}
 
     print(f"파일 읽는 중: {result_file}")
 
@@ -254,12 +255,37 @@ def parse_batch_result(result_file: Path) -> Tuple[Dict[int, Dict], Dict[str, in
                 "row": build_metric_row(parsed),
                 "usage": body.get("usage", {}),
             }
+            model = body.get("model") or "unknown"
+            models[model] = models.get(model, 0) + 1
             stats["success"] += 1
 
     print(f"파싱 완료: 성공 {stats['success']}, "
           f"HTTP오류 {stats['http_error']}, 파싱실패 {stats['parse_error']}, "
           f"app_id없음 {stats['no_app_id']}")
+    if models:
+        print("   응답 모델: " + ", ".join(f"{m}={n}" for m, n in sorted(models.items())))
+    stats["models"] = models
     return results, stats
+
+
+TEACHER_VERSION = "gpt5.4-batch-v1"      # 최초 4,190개 구축 (GPT-5.4 교사 모델)
+STUDENT_VERSION = "fewshot_5.4based"     # 이후 신작 (few-shot 학생 모델, 임베딩/활성화 대상)
+
+
+def infer_version(models: Dict[str, int]) -> str:
+    """응답에 기록된 모델명으로 extraction_version을 정한다.
+
+    --version을 생략했을 때 교사 라벨이 기본으로 붙어 신작이 임베딩 대상
+    (analysis_method='fewshot_5.4based')에서 빠지는 사고를 막는다.
+    gpt-5.4 본모델(mini/nano 아님)만 교사 라벨, 그 외 전부 학생 라벨.
+    """
+    if not models:
+        return STUDENT_VERSION
+    teacher = all(
+        m.startswith("gpt-5.4") and not any(t in m for t in ("mini", "nano"))
+        for m in models
+    )
+    return TEACHER_VERSION if teacher else STUDENT_VERSION
 
 
 # ============== app_id -> games.id 매핑 ==============
@@ -462,8 +488,9 @@ def main():
     parser.add_argument("result_file", help="Batch API 결과 JSONL 경로")
     parser.add_argument("--dry-run", action="store_true",
                         help="DB 미변경, 파싱/검증만 수행")
-    parser.add_argument("--version", default="gpt5.4-batch-v1",
-                        help="extraction_version 값 (신작 few-shot이면 fewshot_5.4based)")
+    parser.add_argument("--version", default=None,
+                        help="extraction_version 값. 생략 시 결과 파일의 모델명으로 판정 "
+                             "(gpt-5.4 본모델=gpt5.4-batch-v1, 그 외=fewshot_5.4based)")
     parser.add_argument("--yes", action="store_true", help="확인 프롬프트 생략")
     args = parser.parse_args()
 
@@ -480,14 +507,20 @@ def main():
 
     print(f"결과 파일: {result_path}")
     print(f"DB: {DB_URL[:30]}...")
-    print(f" extraction_version: {args.version}")
     print(f"제외 컬럼: {', '.join(sorted(FORBIDDEN_COLUMNS))}")
     print("=" * 60)
 
-    results, _ = parse_batch_result(result_path)
+    results, stats = parse_batch_result(result_path)
     if not results:
         print("파싱된 결과가 없습니다!")
         return
+
+    if args.version:
+        version = args.version
+        print(f" extraction_version: {version} (지정)")
+    else:
+        version = infer_version(stats.get("models") or {})
+        print(f" extraction_version: {version} (응답 모델명으로 판정)")
 
     validate_results(results)
 
@@ -501,7 +534,7 @@ def main():
             print("취소됨")
             return
 
-    success, failed, missing = upsert_metrics(results, args.version)
+    success, failed, missing = upsert_metrics(results, version)
 
     print("\n" + "=" * 60)
     print("처리 완료!")
