@@ -655,8 +655,9 @@ MEASURED_OUTPUT_TOK = 1_560
 # gpt-5.4-mini 정가(2026-09 공식 가격표): 입력 $0.75 / 캐시 입력 $0.075 / 출력 $4.50
 #   → 배치 50% 적용가가 아래 값. 캐시 입력은 정가의 1/10 이고, 우리 요청은 few-shot 12개가
 #     매 요청 접두부로 반복돼 입력의 약 95%가 캐시 대상이다(동기 실측 94.3%).
-#     배치에 캐시 할인이 함께 붙는지는 공식 문서에 명시가 없어, 아래 값은 '캐시 미적용 상한'이다.
-#     실제 청구액은 대시보드 Cost 로 확인할 것.
+#     배치에도 캐시 할인이 함께 적용된다 — 대시보드 Cost 에 'batch api | cached input' 항목이
+#     별도로 잡히고, 정가 캐시 단가의 정확히 50%였다(2026-09-04 실측 검증: 계산 $42.97 vs 청구 $42.43).
+#     따라서 배치가 동기보다 항상 싸다(동기 = 배치의 2배).
 BATCH_PRICING = {
     "gpt-5.4": {"input": 1.25, "output": 7.50},     # 교사(distillation source) — 재확인 필요
     "gpt-4o": {"input": 1.25, "output": 5.00},
@@ -792,9 +793,8 @@ def main():
     if cost["cost_usd"] is not None:
         print(f"   ${cost['cost_usd']} USD (약 ₩{cost['cost_krw']:,.0f}) — 단가 출처: {cost['price_source']}")
         if cost.get("cost_usd_cached") is not None:
-            print(f"   캐시 적중 시 하한 ${cost['cost_usd_cached']} USD "
-                  f"(few-shot 접두부 재사용분에 캐시 단가 적용)")
-            print(f"   → 실제 청구액은 두 값 사이. 대시보드 Cost 로 확인")
+            print(f"   캐시 반영 실단가 기준 ${cost['cost_usd_cached']} USD  ← 실제 청구액에 가까움")
+            print(f"   (few-shot 접두부가 매 요청 반복되어 캐시 적중, 배치에도 캐시 할인 적용됨)")
     else:
         print(f"   비용: 단가 미등록 모델({cost['model']}) — 달러 추정 생략. "
               f".env OPENAI_PRICE_INPUT_PER_M / OPENAI_PRICE_OUTPUT_PER_M 로 지정하면 표시됨")
