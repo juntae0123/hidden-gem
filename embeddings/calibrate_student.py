@@ -46,9 +46,11 @@ BACKUP_TABLE = "student_raw_metrics"
 STUDENT = "fewshot_5.4based"
 
 MIN_PAIRS = 60
-MIN_R = 0.45         # 순서 일치가 이 아래면 보정 불가
-MIN_BIAS = 0.5       # 0~10 지표: 이 아래 편향은 보정 안 함
-MIN_BIAS_GEM = 5.0   # gem_potential(0~100)
+MIN_R = 0.45          # 순서 일치가 이 아래면 보정 불가
+MIN_BIAS = 0.5        # 0~10 지표: 이 아래 편향은 보정 안 함
+MIN_BIAS_GEM = 5.0    # gem_potential(0~100)
+MIN_SLOPE = 0.7       # 이 아래면 '범위 압축'(평균 회귀) — 변별력을 죽이므로 거부
+MAX_MAE_RATIO = 0.85  # 보정 후 MAE가 (교사 평균만 찍는) 상수 예측 MAE의 이 비율을 넘으면 퇴화로 판정
 
 
 def fit():
@@ -76,12 +78,33 @@ def fit():
             report.append((metric, n, r, bias, None, "r 낮음 → 보정 불가(그대로)")); continue
         if abs(bias) < min_bias:
             report.append((metric, n, r, bias, None, "편향 작음 → 불필요")); continue
-        # 최소제곱 y = a + b x  (b는 0.5~2.0으로 제한: 과도한 확대/축소 방지)
-        b, a = np.polyfit(x, y, 1)
-        b = float(np.clip(b, 0.5, 2.0)); a = float(y.mean() - b * x.mean())
-        resid = float(np.abs(y - (a + b * x)).mean())
+        # 최소제곱 y = a + b x
+        b_raw, a_raw = np.polyfit(x, y, 1)
+        b = float(np.clip(b_raw, 0.5, 2.0)); a = float(y.mean() - b * x.mean())
+        resid = float(np.abs(y - np.clip(a + b * x, 0, hi)).mean())
+        # 상수 예측(교사 평균) 대비 개선폭. 홀드아웃 교사 범위가 좁으면(범위 제한)
+        # 최소제곱은 모든 값을 교사 평균 쪽으로 밀어 넣어 "MAE는 좋아 보이지만 변별력이 죽는"
+        # 퇴화 매핑이 나온다. 그걸 여기서 걸러낸다.
+        mad_const = float(np.abs(y - y.mean()).mean())
+        ratio = resid / mad_const if mad_const > 0 else 1.0
+        if b_raw < MIN_SLOPE:
+            report.append((metric, n, r, bias, resid,
+                           f"거부: 기울기 {b_raw:.2f} < {MIN_SLOPE} — 범위 압축(평균 회귀)"))
+            continue
+        mae_before = float(np.abs(y - x).mean())
+        if resid >= mae_before:
+            report.append((metric, n, r, bias, resid,
+                           f"거부: 보정 후 MAE {resid:.2f} ≥ 보정 전 {mae_before:.2f} — 개선 없음"))
+            continue
+        if ratio > MAX_MAE_RATIO:
+            report.append((metric, n, r, bias, resid,
+                           f"거부: 상수 예측 대비 개선 {(1-ratio)*100:.0f}%뿐 — 퇴화 매핑"))
+            continue
         params[metric] = {"a": round(a, 4), "b": round(b, 4), "n": n, "r": round(r, 3),
-                          "bias_before": round(bias, 3), "mae_after": round(resid, 3), "hi": hi}
+                          "bias_before": round(bias, 3), "mae_after": round(resid, 3),
+                          "mae_before": round(mae_before, 3), "mae_const": round(mad_const, 3), "hi": hi,
+                          "holdout_student_range": [float(x.min()), float(x.max())],
+                          "holdout_teacher_range": [float(y.min()), float(y.max())]}
         report.append((metric, n, r, bias, resid, f"보정 y={a:+.2f}+{b:.2f}x"))
 
     print(f"{'지표':26} {'n':>4} {'r':>6} {'편향(교사-학생)':>14} {'보정후MAE':>9}  처리")
@@ -93,7 +116,13 @@ def fit():
                                        "params": params}, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\n보정 대상 지표 {len(params)}개 → {PARAMS_FILE}")
     if "gem_potential" not in params:
-        print("gem_potential은 보정 대상이 아님 (편향 작음 또는 r 낮음) — 위 표 확인")
+        print("gem_potential은 보정 대상에서 제외됨 — 위 표의 사유 확인.")
+        print("  (교사 홀드아웃 gem 범위가 좁으면 선형 보정이 모든 신작을 교사 평균 근처로")
+        print("   밀어 넣어 변별력을 죽인다. 이럴 때 보정은 '개선'이 아니라 값 조작이다.)")
+    for metric, p_ in params.items():
+        sr = p_["holdout_student_range"]
+        print(f"  주의({metric}): 검증된 학생값 구간은 {sr[0]:.0f}~{sr[1]:.0f}. "
+              f"이 밖의 값에 적용되는 부분은 외삽이다.")
     return 0
 
 
