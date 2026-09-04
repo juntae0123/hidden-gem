@@ -218,7 +218,7 @@ def main() -> None:
             notify(f"crawl-only 완료: {total}개 (data/new_games.csv)")
             return total
 
-        before = latest_batch_output()
+        before_set = set(DATA_DIR.glob("batch_output_*.jsonl"))
         batch_cmd = [py, "-m", "embeddings.batch_generator",
                      "--csv", str(NEW_GAMES_CSV), "--full", "--yes",
                      "--model", args.model,
@@ -226,8 +226,11 @@ def main() -> None:
         batch_cmd += ["--sync"] if args.sync else ["--upload", "--wait", "--wait-timeout", str(args.wait_timeout)]
         run_step(f"batch#{i}", batch_cmd)
 
-        output = latest_batch_output()
-        if output is None or output == before:
+        # mtime 기준 '가장 최신'을 쓰면 감사/홀드아웃 산출물(교사 게임 결과)을 집어와
+        # 교사 데이터를 학생 값으로 덮어쓸 수 있다. 이번 실행에서 새로 생긴 파일만 인정한다.
+        new_files = [p for p in DATA_DIR.glob("batch_output_*.jsonl") if p not in before_set]
+        output = max(new_files, key=lambda p: p.stat().st_mtime) if new_files else None
+        if output is None:
             notify(f"회차 {i}: 배치 결과 파일 없음 — 이번 회차 적재 생략 (pending으로 남아 다음 회차 재시도)")
             return total
 
