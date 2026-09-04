@@ -587,14 +587,28 @@ def check_batch_status(batch_id: str) -> dict:
     }
 
 
-def wait_and_download(batch_id: str, interval: int = 30) -> Path:
-    """완료까지 대기 후 다운로드"""
-    print(f"\nBatch 완료 대기 중... (매 {interval}초 확인)")
-    
+def wait_and_download(batch_id: str, interval: int = 30, max_wait_minutes: int = 0) -> Path:
+    """완료까지 대기 후 다운로드.
+
+    max_wait_minutes > 0 이면 그 시간 안에 안 끝날 때 배치를 취소하고
+    완료분만 수거한다 (straggler 대응). 미완료 게임은 pending으로 남아
+    다음 파이프라인 실행에서 자동 재큐잉된다.
+    """
+    print(f"\nBatch 완료 대기 중... (매 {interval}초 확인"
+          + (f", 최대 {max_wait_minutes}분" if max_wait_minutes else "") + ")")
+    deadline = time.time() + max_wait_minutes * 60 if max_wait_minutes else None
+    cancel_requested = False
+
     while True:
         status = check_batch_status(batch_id)
         print(f"   {status['status']} | {status['completed']}/{status['total']} 완료")
-        
+
+        if deadline and not cancel_requested and time.time() > deadline \
+                and status['status'] in ('validating', 'in_progress', 'finalizing'):
+            print(f"   대기 시간 초과 → 배치 취소, 완료분 {status['completed']}건만 수거")
+            client.batches.cancel(batch_id)
+            cancel_requested = True
+
         if status['status'] == 'completed':
             print("\nBatch 완료!")
             break
@@ -689,6 +703,8 @@ def main():
                         help="확인 프롬프트 생략 (스케줄러/자동화용)")
     parser.add_argument("--sync", action="store_true",
                         help="Batch API 대신 동기 호출로 즉시 처리 (배치 장애 시 폴백, 비용 2배)")
+    parser.add_argument("--wait-timeout", type=int, default=0,
+                        help="--wait 시 최대 대기 분. 초과하면 취소 후 완료분만 수거 (0=무제한)")
     
     args = parser.parse_args()
 
@@ -789,7 +805,7 @@ def main():
             
             # 대기?
             if args.wait:
-                output_result = wait_and_download(batch_id)
+                output_result = wait_and_download(batch_id, max_wait_minutes=args.wait_timeout)
                 if output_result:
                     print(f"\n완료! 다음 명령어 실행:")
                     print(f"   python -m embeddings.batch_processor {output_result.name}")
