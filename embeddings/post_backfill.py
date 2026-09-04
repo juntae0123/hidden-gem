@@ -87,6 +87,9 @@ def main() -> None:
     ap.add_argument("--skip-reviews", action="store_true")
     ap.add_argument("--skip-holdout", action="store_true")
     ap.add_argument("--holdout-n", type=int, default=150)
+    ap.add_argument("--holdout-mode", choices=["sync", "batch"], default="sync",
+                    help="sync(기본): 동기+프롬프트 캐시 — 같은 프롬프트라 결과 동일, 대시보드로 동기 단가 실측 겸용. "
+                         "batch: Batch API(캐시 할인 없음)")
     ap.add_argument("--round1-output", default=str(DATA_DIR / "batch_output_20260903_190201.jsonl"))
     args = ap.parse_args()
 
@@ -118,21 +121,20 @@ def main() -> None:
     if not args.skip_holdout:
         run_step("holdout-make", [PY, "-m", "embeddings.audit_student", "--make-holdout", str(args.holdout_n)])
         before = set(DATA_DIR.glob("batch_output_*.jsonl"))
-        rc = run_step("holdout-batch", [
-            PY, "-m", "embeddings.batch_generator",
-            "--csv", str(AUDIT_DIR / "holdout.csv"), "--full", "--yes",
-            "--model", "gpt-5.4-mini", "--fewshot", str(FEWSHOT), "--fewshot-n", "12",
-            "--upload", "--wait", "--wait-timeout", "40",
-        ], fatal=False)
-        out = newest_batch_output(before)
-        if rc != 0 or out is None:
-            log("배치 경로 실패 → 동기 호출로 재시도")
-            run_step("holdout-sync", [
-                PY, "-m", "embeddings.batch_generator",
+        base = [PY, "-m", "embeddings.batch_generator",
                 "--csv", str(AUDIT_DIR / "holdout.csv"), "--full", "--yes",
-                "--model", "gpt-5.4-mini", "--fewshot", str(FEWSHOT), "--fewshot-n", "12", "--sync",
-            ], fatal=False)
+                "--model", "gpt-5.4-mini", "--fewshot", str(FEWSHOT), "--fewshot-n", "12"]
+        if args.holdout_mode == "sync":
+            log("holdout: 동기 호출 (few-shot 접두부 캐시 적중 → 대시보드 증가분 = 동기 단가 실측)")
+            rc = run_step("holdout-sync", base + ["--sync"], fatal=False)
             out = newest_batch_output(before)
+        else:
+            rc = run_step("holdout-batch", base + ["--upload", "--wait", "--wait-timeout", "40"], fatal=False)
+            out = newest_batch_output(before)
+            if rc != 0 or out is None:
+                log("배치 경로 실패 → 동기 호출로 재시도")
+                run_step("holdout-sync", base + ["--sync"], fatal=False)
+                out = newest_batch_output(before)
         if out is None:
             log("holdout 결과 파일 없음 — 감사 건너뜀 (나중에 audit_student --compare 로 수동)")
         else:
