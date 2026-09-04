@@ -228,24 +228,46 @@ def verify(baseline_backup: int) -> None:
             "SELECT COUNT(*) FROM game_metrics WHERE embedding IS NULL"
         )).scalar()
 
-        # 신작 3개 상태
+        # 신작 상태: 미완료 건수 + 최근 10건만 (수백 건 나열 방지)
+        n_new_null = conn.execute(text("""
+            SELECT COUNT(*) FROM game_metrics m JOIN games g ON g.id = m.game_id
+            WHERE g.analysis_method = 'fewshot_5.4based' AND m.embedding IS NULL
+        """)).scalar()
         news = conn.execute(text("""
             SELECT g.app_id, g.name,
                    (m.embedding IS NOT NULL) AS has_emb,
                    m.gem_potential, m.gem_percentile
             FROM game_metrics m JOIN games g ON g.id = m.game_id
             WHERE g.analysis_method = 'fewshot_5.4based'
-            ORDER BY g.app_id
+            ORDER BY m.extracted_at DESC NULLS LAST, g.app_id DESC
+            LIMIT 10
         """)).fetchall()
 
     print("\n검증")
     print(f"   embedding 보유: {n_emb:,}건 (백업 기준 {baseline_backup:,} + 신규)")
-    print(f"   embedding NULL: {n_null}건 (소프트웨어 49건 예상)")
-    print(f"\n   신작 상태:")
+    print(f"   embedding NULL: {n_null}건 (소프트웨어 49건 + 신작 미완료 {n_new_null}건)")
+    print(f"\n   신작 상태 (최근 10건):")
     for app_id, name, has_emb, gem, pct in news:
         flag = "ok" if has_emb else "여전히 NULL"
         print(f"     {app_id} {str(name)[:24]:26} embedding={flag} "
               f"gem={gem} pct={pct}")
+
+
+# ============== 활성화 ==============
+def activate_ready_games() -> int:
+    """노출 조건을 갖춘 신작을 켠다 (규칙은 exposure_policy 한곳에서 관리).
+
+    조건: metrics 완비 + embedding 존재 + review_count >= MIN_REVIEWS_FOR_EXPOSURE.
+    크롤러가 넣은 신작은 review_count=0이므로 여기서는 보통 켜지지 않고,
+    refresh_reviews가 리뷰 수를 채운 뒤 같은 규칙으로 켠다. 멱등.
+    """
+    from embeddings.exposure_policy import MIN_REVIEWS_FOR_EXPOSURE, activate_eligible
+    with engine.begin() as conn:
+        n = activate_eligible(conn)
+    print(f"\n활성화: {n}건 (metrics + embedding + 리뷰 {MIN_REVIEWS_FOR_EXPOSURE}개 이상)")
+    if n == 0:
+        print("   리뷰 수 미조회 게임은 refresh_reviews 실행 후 활성화됨")
+    return n
 
 
 # ============== main ==============
@@ -254,6 +276,8 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="DB 미변경, 미리보기만")
     parser.add_argument("--all", action="store_true",
                         help="소프트웨어 49건 포함 (기본은 신작만)")
+    parser.add_argument("--no-activate", action="store_true",
+                        help="임베딩 생성 후 is_active 전환을 하지 않음 (검수용)")
     args = parser.parse_args()
 
     print("=" * 62)
@@ -269,6 +293,8 @@ def main():
     targets = fetch_targets(include_all=args.all)
     if not targets:
         print("embedding NULL인 대상이 없습니다.")
+        if not args.dry_run and not args.no_activate:
+            activate_ready_games()   # 이전 실행에서 임베딩만 되고 비활성으로 남은 건 처리
         return
 
     scope = "신작 + 소프트웨어" if args.all else "신작만"
@@ -285,7 +311,8 @@ def main():
 
     if not args.dry_run and stats["written"] > 0:
         verify(backup_n)
-        print("\n다음: 신작 by-game 추천 검증 → 문제없으면 is_active=True")
+    if not args.dry_run and not args.no_activate:
+        activate_ready_games()
 
 
 if __name__ == "__main__":
