@@ -238,12 +238,21 @@ def compare(result_file: Path) -> None:
             w.writerow([a, t["name"], t["gem_potential"], s.get("gem_potential"),
                         (s.get("gem_potential") or 0) - (t["gem_potential"] or 0),
                         t["confidence_score"], s.get("confidence_score")])
+    # 지표별 쌍 (calibrate_student 입력): app_id, metric, teacher, student
+    with open(AUDIT_DIR / "holdout_pairs.csv", "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["app_id", "metric", "teacher", "student"])
+        for a in common:
+            t = teacher[a]; s = results[a]["row"]
+            for c in NUMERIC_METRIC_FIELDS + ["gem_potential", "confidence_score"]:
+                if t.get(c) is not None and s.get(c) is not None:
+                    w.writerow([a, c, t[c], s.get(c)])
     with open(AUDIT_DIR / "holdout_metrics.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["metric", "type", "mae", "r", "teacher_mean", "student_mean", "agreement", "flag"])
         w.writeheader()
         for r in report_rows:
             w.writerow({k: r.get(k, "") for k in w.fieldnames})
-    print(f"\n저장: {per_game}, {AUDIT_DIR / 'holdout_metrics.csv'}")
+    print(f"\n저장: {per_game}, {AUDIT_DIR / 'holdout_metrics.csv'}, {AUDIT_DIR / 'holdout_pairs.csv'}")
 
     # 오적재 방지: 결과 파일을 audit 폴더로 이동
     if result_file.parent.resolve() == DATA_DIR.resolve():
