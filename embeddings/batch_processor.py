@@ -268,7 +268,7 @@ def parse_batch_result(result_file: Path) -> Tuple[Dict[int, Dict], Dict[str, in
     return results, stats
 
 
-TEACHER_VERSION = "gpt5.4-batch-v1"      # 최초 4,190개 구축 (GPT-5.4 교사 모델)
+TEACHER_VERSION = "gpt5.4_batch"         # 최초 4,190개 구축 시 games.analysis_method 에 쓰인 실제 값
 STUDENT_VERSION = "fewshot_5.4based"     # 이후 신작 (few-shot 학생 모델, 임베딩/활성화 대상)
 
 
