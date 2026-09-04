@@ -74,7 +74,7 @@ def fetch_rows() -> List[dict]:
             SELECT g.app_id, g.name, g.analysis_method, g.is_active,
                    COALESCE(g.review_count, 0) AS reviews,
                    g.steam_positive_ratio AS ratio,
-                   m.game_id, m.gem_potential, m.gem_percentile
+                   m.game_id, m.gem_potential, m.gem_percentile, m.confidence_score AS confidence
             FROM games g JOIN game_metrics m ON m.game_id = g.id
             WHERE m.gem_potential IS NOT NULL
         """)).fetchall()
@@ -95,6 +95,12 @@ def compute(rows: List[dict], cap: int, exp: float, z: float) -> Tuple[List[dict
     for i, r in enumerate(scored):
         r["new_pct"] = round(i / (n - 1) * 100) if n > 1 else 50   # PERCENT_RANK 와 동일 정의
     return scored, no_evidence
+
+
+def gem_bonus(gem: float, reviews: int, confidence: float, with_review_bonus: bool = True) -> float:
+    """score_v6 _gem_bonus 재현 (표시 점수에 최대 +5). 전환 전/후 실제 영향을 보기 위함."""
+    rb = 0.3 * (1.0 - reviews / 1000.0) if (with_review_bonus and reviews < 1000) else 0.0
+    return min((gem / 100.0 * 0.7 + rb) * (confidence if confidence is not None else 0.5), 1.0)
 
 
 def report(scored: List[dict], no_evidence: List[dict], cap: int, exp: float, z: float) -> None:
@@ -144,6 +150,58 @@ def report(scored: List[dict], no_evidence: List[dict], cap: int, exp: float, z:
         print(f"   {r['gem_evidence']:5.1f}  리뷰 {int(r['reviews']):>7,}  {r['ratio']*100:5.1f}%  "
               f"LLM {r['gem_potential']:>3.0f}  {str(r['name'])[:38]}")
 
+    # ===== 전환 괴리 (여기가 '적용하면 뭐가 달라지나'의 답) =====
+    print("\n" + "=" * 62)
+    print("전환 괴리 분석 — 현재 gem_percentile → 근거 지수")
+    print("=" * 62)
+    have_old = [r for r in scored if r["gem_percentile"] is not None]
+    if have_old:
+        deltas = [r["gem_evidence"] - float(r["gem_percentile"]) for r in have_old]
+        print(f"값 변화 ({len(have_old):,}건): 평균 {st.mean(deltas):+.1f}  중앙 {st.median(deltas):+.1f}  "
+              f"|Δ|>20 인 게임 {sum(1 for d in deltas if abs(d) > 20):,}건 "
+              f"({sum(1 for d in deltas if abs(d) > 20)/len(deltas)*100:.0f}%)")
+        for label, sel in (("교사", TEACHER), ("신작", STUDENT)):
+            sub = [r for r in have_old if r["analysis_method"] == sel]
+            if sub:
+                d = [r["gem_evidence"] - float(r["gem_percentile"]) for r in sub]
+                print(f"   {label}: 현재 μ {st.mean([float(r['gem_percentile']) for r in sub]):5.1f} "
+                      f"→ 근거 μ {st.mean([r['gem_evidence'] for r in sub]):5.1f}  (Δ {st.mean(d):+.1f})")
+
+        gain = [r for r in have_old if r["gem_evidence"] >= 70 > float(r["gem_percentile"])]
+        lose = [r for r in have_old if float(r["gem_percentile"]) >= 70 > r["gem_evidence"]]
+        keep = sum(1 for r in have_old if r["gem_evidence"] >= 70 and float(r["gem_percentile"]) >= 70)
+        print(f"\n뱃지(70+) 변동: 유지 {keep:,} / 신규 획득 {len(gain):,} / 상실 {len(lose):,}")
+        print("   상실 상위 10건 (유명작이 빠지는 게 의도 — 아닌 게 섞였는지 확인)")
+        for r in sorted(lose, key=lambda x: -float(x["gem_percentile"]))[:10]:
+            print(f"      {float(r['gem_percentile']):5.1f} → {r['gem_evidence']:5.1f}  "
+                  f"리뷰 {int(r['reviews']):>7,}  {str(r['name'])[:34]}")
+        print("   신규 상위 10건")
+        for r in sorted(gain, key=lambda x: -x["gem_evidence"])[:10]:
+            print(f"      {float(r['gem_percentile']):5.1f} → {r['gem_evidence']:5.1f}  "
+                  f"리뷰 {int(r['reviews']):>7,}  {r['ratio']*100:5.1f}%  {str(r['name'])[:34]}")
+
+        # 실제 추천 점수에 미치는 영향 (+5 보너스 항)
+        b_old = [gem_bonus(float(r["gem_percentile"]), int(r["reviews"]), r.get("confidence"), True) * 5
+                 for r in have_old]
+        b_new = [gem_bonus(r["gem_evidence"], int(r["reviews"]), r.get("confidence"), True) * 5
+                 for r in have_old]
+        b_new_fix = [gem_bonus(r["gem_evidence"], int(r["reviews"]), r.get("confidence"), False) * 5
+                     for r in have_old]
+        print(f"\n표시 점수의 gem 보너스(최대 +5) 영향")
+        print(f"   현재            μ {st.mean(b_old):.2f}  σ {st.pstdev(b_old):.2f}")
+        print(f"   근거 지수 그대로 μ {st.mean(b_new):.2f}  σ {st.pstdev(b_new):.2f}  ← review_bonus 이중 계상 상태")
+        print(f"   review_bonus 제거 μ {st.mean(b_new_fix):.2f}  σ {st.pstdev(b_new_fix):.2f}  ← 권장")
+
+    if no_evidence:
+        ne_old = [float(r["gem_percentile"]) for r in no_evidence if r["gem_percentile"] is not None]
+        print(f"\n근거 없음 {len(no_evidence):,}건 (리뷰 0 또는 비율 NULL)")
+        if ne_old:
+            print(f"   이들은 --no-evidence 정책에 따름. 현재 gem_percentile μ {st.mean(ne_old):.1f} "
+                  f"(keep 이면 LLM 스케일이 그대로 남아 한 컬럼에 두 기준이 섞인다)")
+        act = sum(1 for r in no_evidence if r["is_active"])
+        print(f"   그중 서비스 노출 중(is_active): {act:,}건 "
+              f"{'← 리뷰 게이트가 정상 동작하면 0이어야 한다' if act else '(정상)'}")
+
 
 def apply(scored: List[dict], yes: bool, write: str) -> int:
     """gem_percentile 컬럼에 기록. write=raw 면 근거 지수 원점수, percentile 이면 백분위.
@@ -184,6 +242,10 @@ def main():
                     help="raw(기본): 근거 지수 원점수 0~100 — 절대 기준, 코퍼스 변동에 안 흔들림. "
                          "percentile: 근거 지수의 백분위")
     ap.add_argument("--yes", action="store_true")
+    ap.add_argument("--no-evidence", choices=["keep", "zero"], default="zero",
+                    help="리뷰 근거가 없는 게임 처리. zero(기본): gem_percentile=0 으로 통일해 "
+                         "한 컬럼에 두 기준이 섞이는 것을 막는다(노출 게이트로 어차피 비노출). "
+                         "keep: 기존 LLM 기반 값 유지")
     a = ap.parse_args()
     z = Z_90 if a.confidence == "90" else Z_95
 
@@ -194,7 +256,16 @@ def main():
     scored, none_ = compute(rows, a.cap, a.obscurity_exp, z)
     report(scored, none_, a.cap, a.obscurity_exp, z)
     if a.apply:
-        return apply(scored, a.yes, a.write)
+        rc = apply(scored, a.yes, a.write)
+        if rc == 0 and a.no_evidence == "zero" and none_:
+            with engine.begin() as conn:
+                for i in range(0, len(none_), 1000):
+                    conn.execute(
+                        text("UPDATE game_metrics SET gem_percentile = 0 WHERE game_id = :gid"),
+                        [{"gid": r["game_id"]} for r in none_[i:i + 1000]],
+                    )
+            print(f"근거 없음 {len(none_):,}건 → gem_percentile = 0 (스케일 혼재 방지)")
+        return rc
     print("\n미리보기만 수행 (--apply 로 반영). 파라미터를 바꿔가며 분포를 먼저 확인할 것.")
     return 0
 
