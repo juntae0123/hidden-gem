@@ -42,6 +42,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 from embeddings.steam_crawler import request_with_backoff  # noqa: E402
 from embeddings.exposure_policy import (  # noqa: E402
     MIN_REVIEWS_FOR_EXPOSURE, STUDENT_VERSION, apply_gate, print_distribution,
+    threshold_report,
 )
 
 DB_URL = os.getenv("DATABASE_URL")
@@ -176,6 +177,8 @@ def main():
     mode.add_argument("--recheck", action="store_true", help="비활성 신작 재조회 (--stale-days)")
     mode.add_argument("--all-new", action="store_true", help="신작 전부 재조회")
     mode.add_argument("--gate-only", action="store_true", help="조회 없이 게이트만 적용")
+    mode.add_argument("--threshold-report", action="store_true",
+                      help="조회·변경 없이 후보 임계값별 통과 수만 출력 (기준 결정용)")
     parser.add_argument("--app-id", type=int, nargs="*", help="특정 app_id만")
     parser.add_argument("--stale-days", type=int, default=30)
     parser.add_argument("--limit", type=int, default=None)
@@ -194,7 +197,13 @@ def main():
     print(f"게이트: review_count >= {args.min_reviews}")
     ensure_log_table()
 
-    if not args.gate_only:
+    if args.threshold_report:
+        with engine.connect() as conn:
+            threshold_report(conn)
+            print_distribution(conn, args.min_reviews)
+        return
+
+    if not args.gate_only and not args.threshold_report:
         m = "recheck" if args.recheck else "all-new" if args.all_new else "new"
         targets = fetch_targets(m, args.stale_days, args.limit, args.app_id, args.cohort)
         est_min = len(targets) * (REQUEST_DELAY_SEC + 0.3) / 60
