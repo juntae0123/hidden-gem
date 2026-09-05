@@ -5,7 +5,10 @@
 
 steady  스테디 히든젬  established, 리뷰 ≥ 30, Wilson ≥ 0.5     → 발굴 지수(Wilson × 무명도) desc
 rising  요즘 뜨는      established+new, 30일 Δ ≥ 20, Wilson ≥ 0.5 → 30일 상대 증가율 desc  (review_history 필요)
-new     신작           출시 ≤ 180일, 리뷰 ≥ 3, Wilson ≥ 0.35      → 초기 속도(리뷰/일) desc, 동률 Wilson
+new     신작           출시 ≤ 180일, 리뷰 ≥ 3, Wilson ≥ 0.70      → 누적 리뷰 수 desc, 동률 Wilson  (R-17, 2026-09-05 변경)
+                       (이전: 속도 = 리뷰/출시일수. 생애 평균 속도는 D+3~16 출시작의 초기 스파이크에 편향돼
+                        AAA 신작이 상위를 채웠다 — s6 실측: 낚시 방법 3,180/일(D+16) > 메챠 카멜레온 995/일(D+88, 누적 8.7만).
+                        '지금의 속도'는 review_history 30일 Δ 가 쌓이면 rising 이 맡는다. new 는 '이번 시즌 가장 많이 검증된 신작'.)
 new_quiet 조용한 신작   위 조건 + 리뷰 < 100                      → Wilson desc, 동률 속도 — 아직 소리 없는 신생 게임의 쇼케이스
 
 개발자 취지(2026-09-05): "신작으로 신생 게임을 보호해서 그들만의 리그를 만들고 보여주자."
@@ -13,8 +16,8 @@ new_quiet 조용한 신작   위 조건 + 리뷰 < 100                      → 
 
 지금까지 /ranking 화면은 장르 프리셋 by-preference 결과였다 — 랭킹이 아니었다. 이것이 첫 랭킹이다.
 카나리아(개발자 지정): MECCHA CHAMELEON(app 4704690, 리뷰 8.7만, 출시 ≤180일)은 **신작 후보에 들어가야** 한다
-(리뷰 수로 먼저 나누면 '유명'으로 빠져 사라진다). 오늘 기준 속도 1위이기도 하지만 "영구 1위"는 테스트 조건이 아니다 —
-다른 신작이 더 빨리 리뷰를 모으면 1위가 바뀌는 게 정상이다 (검토 C-5).
+(리뷰 수로 먼저 나누면 '유명'으로 빠져 사라진다). 개발자 원문은 "신작랭킹 1위가 아니면 말이 안 된다" — 누적 리뷰 정렬(R-17)에서는
+180일 안에 더 많이 검증받은 신작이 나오면 1위가 바뀌는 게 정상이고, 그때는 그 게임이 새 카나리아다. rec_snapshot 이 회차마다 1위를 찍는다.
 """
 
 import logging
@@ -126,6 +129,19 @@ async def rank_steady(db, genre, limit):
     return [_item(i + 1, g, "steady", gem_evidence=ev) for i, (ev, _, _, g) in enumerate(rows[:limit])]
 
 
+NEW_RANK_MIN_WILSON = 0.70          # 쇼케이스 기준 — Steam '대체로 긍정적'(70%) 하한. 노출 게이트(R-4, 0.35)와는 목적이 다르다
+NEW_QUIET_MIN_WILSON = 0.35         # 조용한 신작은 보호 목적 — 노출 게이트와 같게
+
+
+def new_rank_key(review_count: int, wilson: float, velocity: Optional[float], quiet: bool) -> tuple:
+    """정렬 키(내림차순). new: 누적 리뷰 → Wilson → 속도. new_quiet: Wilson → 속도 → 누적 (평가 먼저).
+    순수 함수 — 테스트에서 직접 검증한다 (test_lifecycle::test_new_rank_key_*)."""
+    v = velocity or 0.0
+    if quiet:
+        return (wilson, v, review_count)
+    return (review_count, wilson, v)
+
+
 async def rank_new(db, genre, limit, quiet: bool = False):
     pool = await _base_pool(db, genre)
     rows = []
@@ -138,17 +154,14 @@ async def rank_new(db, genre, limit, quiet: bool = False):
         if quiet and rc >= settings.LIFECYCLE_NEW_MIN_REVIEWS:
             continue                                   # 조용한 신작: 리뷰 100 미만만
         w = wilson_lower(g.steam_positive_ratio, g.review_count)
-        if w < 0.35:
+        if w < (NEW_QUIET_MIN_WILSON if quiet else NEW_RANK_MIN_WILSON):
             continue
         v = velocity_per_day(g.review_count, days_since_release(g.release_date))
         if v is None:
             continue
-        rows.append((v, w, g))
-    if quiet:
-        rows.sort(key=lambda r: (r[1], r[0]), reverse=True)   # 평가 먼저, 속도는 동률용
-    else:
-        rows.sort(key=lambda r: (r[0], r[1]), reverse=True)
-    return [_item(i + 1, g, "new", velocity_per_day=v) for i, (v, _, g) in enumerate(rows[:limit])]
+        rows.append((new_rank_key(rc, w, v, quiet), v, g))
+    rows.sort(key=lambda r: r[0], reverse=True)
+    return [_item(i + 1, g, "new", velocity_per_day=v) for i, (_, v, g) in enumerate(rows[:limit])]
 
 
 async def rank_rising(db, genre, limit):

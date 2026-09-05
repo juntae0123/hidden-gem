@@ -104,3 +104,26 @@ def test_wilson_monotone_in_n():
     assert wilson_lower(0.9, 1000) > wilson_lower(0.9, 30) > wilson_lower(0.9, 3)
     assert wilson_lower(1.0, 3) < 0.5                         # 3/3 도 0.5 를 못 넘는다 — 스테디 진입 불가
     assert wilson_lower(1.0, 3) >= 0.35                       # 신작 노출 기준은 통과
+
+
+# ---------- R-17 신작 랭킹 정렬 키 ----------
+
+def test_new_rank_key_prefers_cumulative_reviews():
+    """new: 누적 리뷰 → Wilson → 속도. s6 실측 재현 — 메챠 카멜레온(87,553, D+88)이 낚시 방법(50,880, D+16, 속도 3배)보다 위."""
+    from routers.ranking import new_rank_key
+    meccha = new_rank_key(87553, 0.873, 994.9, quiet=False)
+    fishing = new_rank_key(50880, 0.948, 3180.0, quiet=False)
+    assert meccha > fishing
+    # 누적이 같으면 평가가 가른다
+    assert new_rank_key(1000, 0.9, 1.0, False) > new_rank_key(1000, 0.8, 50.0, False)
+
+
+def test_new_quiet_rank_key_prefers_wilson():
+    """new_quiet: 평가 먼저 — 리뷰 40개 100% 가 리뷰 90개 80% 보다 위."""
+    from routers.ranking import new_rank_key
+    assert new_rank_key(40, 0.91, 0.5, quiet=True) > new_rank_key(90, 0.72, 5.0, quiet=True)
+
+
+def test_new_rank_gate_constants():
+    from routers.ranking import NEW_RANK_MIN_WILSON, NEW_QUIET_MIN_WILSON
+    assert NEW_RANK_MIN_WILSON == 0.70 and NEW_QUIET_MIN_WILSON == 0.35
