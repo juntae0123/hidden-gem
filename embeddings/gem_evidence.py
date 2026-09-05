@@ -23,7 +23,7 @@ Hidden Gem - 근거 기반 히든젬 지수 (Steam 리뷰 실측 → gem_percent
 gem_potential(LLM 원본)은 건드리지 않는다 — 보존하고, 근거가 없는 게임의 폴백으로만 둔다.
 
 사용법 (R-3, 2026-09-05 이후 — 별도 컬럼에 쓴다):
-    docker compose exec batch python -m embeddings.migrate --file deploy/migrations/20260905_gem_evidence_columns.sql
+    docker compose exec batch python -m embeddings.migrate --file 20260905_gem_evidence_columns.sql
     docker compose exec batch python -m embeddings.gem_evidence                # 미리보기(분포/샘플)
     docker compose exec batch python -m embeddings.gem_evidence --fill --yes   # gem_evidence_score / _status 채움 (전 게임)
     # 서빙 전환: .env GEM_SOURCE=evidence → fastapi 재시작. 되돌리기: GEM_SOURCE=legacy (컬럼은 그대로)
