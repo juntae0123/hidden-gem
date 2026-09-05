@@ -97,7 +97,10 @@ def test_admit_default_vs_include_new_vs_new_only():
     assert admit(*thin, today=TODAY) is False and admit(*thin, include_new=True, today=TODAY) is True
     assert admit(*fat_new, today=TODAY) is True
     assert admit(*old, today=TODAY) is True and admit(*old, new_only=True, today=TODAY) is False
-    assert admit(*thin, new_only=True, today=TODAY) is True
+    # R-16: 신작 리그 기본은 리뷰 ≥100 신작만, 조용한 신작은 include_new 로
+    assert admit(*thin, new_only=True, today=TODAY) is False
+    assert admit(*thin, new_only=True, include_new=True, today=TODAY) is True
+    assert admit(*fat_new, new_only=True, today=TODAY) is True
 
 
 def test_wilson_monotone_in_n():

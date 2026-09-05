@@ -16,7 +16,8 @@
 후보 풀 (--pool) — **실제 서빙과 같은 입장 규칙(lifecycle.admit)을 쓴다.** 필터를 여기 복제하지 않는다 (검토 E-2).
     default     기본 by-preference 와 동일: 근거 얇은 신작(new & 리뷰<100)·미출시 제외   ← v7 전환 판단은 이걸로
     include-new 신작 포함 토글 ON
-    new-only    신작 리그
+    new-only    신작 리그 (리뷰 ≥100 신작 — 서빙 기본, R-16)
+    new-only-all 신작 리그 + 조용한 신작(리뷰<100)
     hidden-gem  default + max_review_count 20000 (히든젬 화면)
     all         활성·분석 전체 (이전 회차 30/31 과 비교용)
 
@@ -123,7 +124,7 @@ def top_ids(scores: np.ndarray, ids: List[int], n: int) -> List[int]:
 
 # ---------- 채점 ----------
 
-POOLS = ("default", "include-new", "new-only", "hidden-gem", "all")
+POOLS = ("default", "include-new", "new-only", "new-only-all", "hidden-gem", "all")
 
 
 def _admit(g: Game, pool: str) -> bool:
@@ -133,8 +134,8 @@ def _admit(g: Game, pool: str) -> bool:
         return False
     return admit(
         g.review_count, g.release_date,
-        include_new=(pool == "include-new"),
-        new_only=(pool == "new-only"),
+        include_new=(pool in ("include-new", "new-only-all")),
+        new_only=pool.startswith("new-only"),          # new-only = 리그 기본(리뷰 ≥100) / new-only-all = 조용한 신작 포함 (R-16)
     )
 
 
