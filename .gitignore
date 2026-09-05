@@ -57,3 +57,6 @@ upload_log.txt
 
 # 외부 검토 전달용 임시 묶음
 /전달폴더*/
+
+# Cowork 파일 전달 폴더 (도구가 만든 사본)
+/Claude outputs/
