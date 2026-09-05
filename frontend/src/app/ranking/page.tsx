@@ -22,16 +22,23 @@ import type { RankingType } from '@/types/game';
 const TABS: { key: RankingType; label: string; desc: string }[] = [
   { key: 'steady', label: '스테디 히든젬', desc: '출시 6개월 지난 게임 중, 인지도 대비 평가가 높은 순 — 리뷰 30건 이상만' },
   { key: 'rising', label: '요즘 뜨는',     desc: '최근 30일 리뷰 증가율 순 — 유명작이 독식하지 않게 비율로 봅니다' },
-  { key: 'new',    label: '신작',         desc: '출시 6개월 이내, 하루 평균 리뷰 수 순 — 데이터가 적어 발굴 판단은 보류 중' },
+  { key: 'new',    label: '신작 리그',     desc: '출시 6개월 이내 게임끼리만의 리그 — 정착 게임과 비교하지 않아요' },
+];
+
+// 신작 리그 안의 두 시선: 지금 달리는 신작(속도) / 아직 조용한 신작(리뷰 100 미만, 평가 순)
+const NEW_VIEWS: { key: RankingType; label: string; desc: string }[] = [
+  { key: 'new',       label: '지금 달리는', desc: '하루 평균 리뷰 수 순' },
+  { key: 'new_quiet', label: '아직 조용한', desc: '리뷰 100건 미만 중 평가가 좋은 순 — 첫 리뷰가 필요한 게임들' },
 ];
 
 export default function RankingPage() {
   const [type, setType]   = useState<RankingType>('steady');
   const [genre, setGenre] = useState<string | null>(null);
 
+  const isNewTab = type === 'new' || type === 'new_quiet';
   const { data, isLoading, error, refetch } = useRanking(type, genre, 30);
   const items = data?.items ?? [];
-  const tab = TABS.find((t) => t.key === type)!;
+  const tab = TABS.find((t) => t.key === (isNewTab ? 'new' : type))!;
 
   return (
     <div className="flex flex-col gap-6">
@@ -49,7 +56,7 @@ export default function RankingPage() {
             onClick={() => setType(t.key)}
             className={cn(
               'px-3 py-2 text-[13px] -mb-px border-b-2',
-              type === t.key
+              (t.key === 'new' ? isNewTab : type === t.key)
                 ? 'border-purple-600 text-purple-700 dark:text-purple-300'
                 : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200',
             )}
@@ -58,6 +65,29 @@ export default function RankingPage() {
           </button>
         ))}
       </div>
+
+      {/* 신작 리그 하위 시선 */}
+      {isNewTab && (
+        <div className="flex flex-wrap items-center gap-2">
+          {NEW_VIEWS.map((v) => (
+            <button
+              key={v.key}
+              type="button"
+              onClick={() => setType(v.key)}
+              title={v.desc}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-[12px] border',
+                type === v.key
+                  ? 'bg-emerald-500/10 border-emerald-500 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-emerald-400',
+              )}
+            >
+              {v.label}
+            </button>
+          ))}
+          <span className="text-[11px] text-zinc-500">{NEW_VIEWS.find((v) => v.key === type)?.desc}</span>
+        </div>
+      )}
 
       {/* 장르 칩 — 모든 탭 공통 */}
       <div className="flex flex-wrap gap-2">
@@ -98,9 +128,10 @@ export default function RankingPage() {
 
       {!isLoading && !error && items.length > 0 && <RankingTable items={items} type={type} />}
 
-      {type === 'new' && items.length > 0 && (
+      {isNewTab && items.length > 0 && (
         <p className="text-[12px] text-zinc-500">
-          신작은 리뷰가 적어 발굴 지수를 매기지 않아요. 여기서 마음에 드는 게임을 골라 리뷰를 남기는 것이 다음 히든젬을 만드는 일이에요.
+          신작 리그는 신생 게임을 보호하는 그들만의 리그예요. 정착 게임과 발굴 지수로 비교하지 않고, 신작끼리만 봅니다.
+          마음에 드는 게임에 첫 리뷰를 남기는 사람이 다음 히든젬을 만듭니다.
         </p>
       )}
     </div>

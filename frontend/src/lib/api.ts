@@ -276,7 +276,7 @@ export const HIDDEN_GEM_MAX_REVIEWS = 20000;
 export async function recommendByPreference(
   preferences: Record<string, number>,
   count: number = 12,
-  options: { maxReviewCount?: number; includeNew?: boolean } = {}
+  options: { maxReviewCount?: number; includeNew?: boolean; newOnly?: boolean } = {}
 ): Promise<RecommendationResponse> {
   const { data } = await apiClient.post<RecommendationResponse>(
     '/games/recommend/by-preference',
@@ -286,6 +286,8 @@ export async function recommendByPreference(
       ...(options.maxReviewCount !== undefined && { max_review_count: options.maxReviewCount }),
       // R-11: 리뷰 100 미만 신작은 기본 제외. 토글로만 들어온다.
       include_new: options.includeNew ?? false,
+      // 신작 리그: 신작끼리만 취향 일치로 경쟁 (신생 게임 보호)
+      new_only: options.newOnly ?? false,
     }
   );
   return data;

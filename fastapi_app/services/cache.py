@@ -120,6 +120,7 @@ class RecommendationCache:
         excluded_tags: Optional[List[str]] = None,
         min_gem_potential: float = 0.0,
         include_new: bool = False,
+        new_only: bool = False,
     ) -> str:
         """
         Generate cache key for preference-based recommendation results (v4).
@@ -145,6 +146,7 @@ class RecommendationCache:
             "exc_tags": sorted(excluded_tags or []),
             "min_gem": min_gem_potential,
             "new": include_new,
+            "new_only": new_only,
         }
         pref_str = json.dumps(payload, sort_keys=True)
         return f"rec:pref:{CACHE_VERSION}:{self._hash(pref_str)}:{count}"

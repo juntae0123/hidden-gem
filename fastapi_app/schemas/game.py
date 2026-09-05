@@ -280,6 +280,10 @@ class RecommendByPreferenceRequest(BaseModel):
         default=False,
         description="출시 180일 이내 신작 포함 여부. 기본 제외 — 프런트 '신작 포함' 토글 (R-12)",
     )
+    new_only: bool = Field(
+        default=False,
+        description="신작만 — '신작 리그'. 신작끼리 취향 일치로 경쟁시킨다 (개발자 취지: 신생 게임 보호). true 면 include_new 는 무시",
+    )
     min_gem_potential: float = Field(
         default=0,
         ge=0,
