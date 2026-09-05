@@ -10,7 +10,8 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { recommendByGame, recommendByPreference, getVibes, recommendByVibe, HIDDEN_GEM_MAX_REVIEWS } from '@/lib/api';
+import { recommendByGame, recommendByPreference, getVibes, recommendByVibe, fetchRanking, HIDDEN_GEM_MAX_REVIEWS } from '@/lib/api';
+import type { RankingType } from '@/types/game';
 
 // ==================== 매일 순환 테마 / Daily Rotating Themes ====================
 
@@ -161,17 +162,35 @@ export function useRecommendByPreference() {
     mutationFn: ({
       preferences,
       count = 12,
+      includeNew = false,
     }: {
       preferences: Record<string, number>;
       count?: number;
-    }) => recommendByPreference(preferences, count),
+      includeNew?: boolean;
+    }) => recommendByPreference(preferences, count, { includeNew }),
     onSuccess: (data, variables) => {
       // 동일 선호도 재요청 시 캐시에서 즉시 반환
       queryClient.setQueryData(
-        ['recommend', 'preference', variables.preferences, variables.count],
+        ['recommend', 'preference', variables.preferences, variables.count, variables.includeNew ?? false],
         data
       );
     },
+  });
+}
+
+// ==================== Ranking (R-12) ====================
+
+/**
+ * 진짜 랭킹 — 사용자 무관 지표. 6시간 서버 캐시와 맞춘 staleTime.
+ * Korean: steady(발굴 지수) / rising(30일 증가율) / new(초기 속도).
+ */
+export function useRanking(type: RankingType, genre: string | null, limit: number = 30) {
+  return useQuery({
+    queryKey: ['ranking', type, genre ?? '-', limit],
+    queryFn:  () => fetchRanking(type, genre, limit),
+    staleTime: 1000 * 60 * 30,
+    gcTime:    1000 * 60 * 60,
+    retry: 1,
   });
 }
 

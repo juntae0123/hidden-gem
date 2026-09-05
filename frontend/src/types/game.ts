@@ -151,6 +151,43 @@ export interface RecommendedGame {
   key_metrics: Record<string, number>;
   /** v5 신규 — 점수 분해 (선택적) */
   score_breakdown?: ScoreBreakdown | null;
+  /** R-11 생애주기: 신작(출시 ≤180일) / 정착 / 유명(리뷰 2만+). 신작은 발굴 판단 보류 */
+  lifecycle?: Lifecycle;
+  days_since_release?: number | null;
+  review_count?: number | null;
+}
+
+export type Lifecycle = 'new' | 'established' | 'famous' | '';
+
+/** GET /games/ranking 응답 한 줄 (R-12) */
+export interface RankingItem {
+  rank: number;
+  app_id: number;
+  name: string;
+  genres: string;
+  header_image: string;
+  one_line_summary: string;
+  review_count: number | null;
+  positive_ratio: number | null;
+  wilson_lower: number | null;
+  lifecycle: Lifecycle;
+  days_since_release: number | null;
+  gem_evidence: number | null;       // steady
+  velocity_per_day: number | null;   // new
+  delta_30d: number | null;          // rising
+  growth_30d_pct: number | null;     // rising
+  badge: string;
+}
+
+export type RankingType = 'steady' | 'rising' | 'new';
+
+export interface RankingResponse {
+  type: RankingType;
+  genre: string | null;
+  total: number;
+  status: 'ok' | 'collecting';
+  note: string;
+  items: RankingItem[];
 }
 
 export interface RecommendationResponse {

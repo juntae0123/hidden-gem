@@ -13,6 +13,8 @@ import type {
   Game,
   GameDetail,
   RecommendationResponse,
+  RankingResponse,
+  RankingType,
 } from '@/types/game';
 
 const API_BASE_URL =
@@ -274,7 +276,7 @@ export const HIDDEN_GEM_MAX_REVIEWS = 20000;
 export async function recommendByPreference(
   preferences: Record<string, number>,
   count: number = 12,
-  options: { maxReviewCount?: number } = {}
+  options: { maxReviewCount?: number; includeNew?: boolean } = {}
 ): Promise<RecommendationResponse> {
   const { data } = await apiClient.post<RecommendationResponse>(
     '/games/recommend/by-preference',
@@ -282,8 +284,27 @@ export async function recommendByPreference(
       preferences,
       count,
       ...(options.maxReviewCount !== undefined && { max_review_count: options.maxReviewCount }),
+      // R-11: 리뷰 100 미만 신작은 기본 제외. 토글로만 들어온다.
+      include_new: options.includeNew ?? false,
     }
   );
+  return data;
+}
+
+// ==================== Ranking (R-12) ====================
+
+/**
+ * 사용자 무관 지표 랭킹. steady = 발굴 지수 / rising = 30일 상대 증가율 / new = 초기 속도(리뷰/일).
+ * Korean: 취향 프리셋이 아닌 진짜 랭킹. 이전 /ranking 은 by-preference 결과였다.
+ */
+export async function fetchRanking(
+  type: RankingType,
+  genre: string | null = null,
+  limit: number = 30,
+): Promise<RankingResponse> {
+  const params = new URLSearchParams({ type, limit: String(limit) });
+  if (genre) params.set('genre', genre);
+  const { data } = await apiClient.get<RankingResponse>(`/games/ranking?${params.toString()}`);
   return data;
 }
 
@@ -315,9 +336,10 @@ export async function getVibes(): Promise<VibeItem[]> {
 export async function recommendByVibe(
   vibeKey: string,
   count: number = 12,
+  includeNew: boolean = false,
 ): Promise<RecommendationResponse> {
   const { data } = await apiClient.post<RecommendationResponse>(
-    `/games/recommend/by-vibe?vibe_key=${encodeURIComponent(vibeKey)}&count=${count}`,
+    `/games/recommend/by-vibe?vibe_key=${encodeURIComponent(vibeKey)}&count=${count}&include_new=${includeNew}`,
   );
   return data;
 }
