@@ -33,6 +33,7 @@ embedding 컬럼은 건드리지 않는다 (임베딩 파이프라인 전담).
 """
 
 import os
+import re
 import sys
 import argparse
 from pathlib import Path
@@ -213,7 +214,8 @@ def main():
     print("=" * 64)
     print("Hidden Gem - gem_percentile 전체 재계산")
     print("=" * 64)
-    print(f"DB: {DB_URL[:34]}...")
+    masked_db = re.sub(r"://([^:]+):[^@]+@", r"://\1:***@", DB_URL)   # 비밀번호는 로그에 남기지 않는다
+    print(f"DB: {masked_db}")
     print("공식: ROUND(PERCENT_RANK() OVER (ORDER BY gem_potential) * 100)")
     print("미변경 컬럼: embedding, gem_potential")
     print("=" * 64)

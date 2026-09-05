@@ -59,6 +59,7 @@ class SemanticSearchRequest(BaseModel):
     )
     limit: int = Field(default=12, ge=1, le=50)
     min_gem_potential: float = Field(default=0.0, ge=0.0, le=100.0)
+    include_new: bool = Field(default=False, description="출시 180일 이내 신작 포함 (기본 제외, R-11)")
 
 
 # ==================== 검색 / Search ====================
@@ -129,6 +130,7 @@ async def semantic_search(
     # 1. 캐시 확인
     cache_key = recommendation_cache.semantic_key(
         request.query, request.limit, min_gem_potential=request.min_gem_potential,
+        include_new=request.include_new,
     )
     cached = await recommendation_cache.get(cache_key)
     if cached:
@@ -146,6 +148,7 @@ async def semantic_search(
             query=request.query,
             limit=request.limit,
             min_gem_potential=request.min_gem_potential,
+            include_new=request.include_new,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"시맨틱 검색 실패: {str(e)}")
@@ -255,6 +258,7 @@ async def recommend_by_game(
     # 1. 캐시 확인 (query_hint 포함 키)
     cache_key = recommendation_cache.by_game_key(
         request.app_id, request.count, exclude_same_developer=request.exclude_same_developer,
+        include_new=request.include_new,
     )
     cached = await recommendation_cache.get(cache_key)
     if cached:
@@ -267,6 +271,7 @@ async def recommend_by_game(
         count=request.count,
         exclude_same_developer=request.exclude_same_developer,
         query_hint=getattr(request, "query_hint", None),
+        include_new=request.include_new,
     )
 
     if not target_game:
@@ -310,6 +315,7 @@ async def recommend_by_preference(
         required_tags=request.required_tags,
         excluded_tags=request.excluded_tags,
         min_gem_potential=request.min_gem_potential,
+        include_new=request.include_new,
     )
     cached = await recommendation_cache.get(cache_key)
     if cached:
@@ -361,6 +367,7 @@ async def recommend_by_preference(
         min_gem_potential=request.min_gem_potential,
         use_masking=request.use_masking,
         max_review_count=request.max_review_count,
+        include_new=request.include_new,
     )
 
     # 6. 포맷 + 캐시 저장
@@ -384,6 +391,7 @@ async def recommend_by_preference(
 async def recommend_by_vibe(
     vibe_key: str = Query(..., description="Vibe key (예: cozy_escape)"),
     count: int = Query(12, ge=1, le=50),
+    include_new: bool = Query(False, description="출시 180일 이내 신작 포함 (기본 제외, R-11)"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -397,7 +405,7 @@ async def recommend_by_vibe(
         raise HTTPException(404, f"Unknown vibe: {vibe_key}")
 
     results = await recommender.recommend_by_preference(
-        db=db, preferences=prefs, count=count,
+        db=db, preferences=prefs, count=count, include_new=include_new,
     )
     recommendations = recommender.format_recommendations_by_preference(
         results, prefs,

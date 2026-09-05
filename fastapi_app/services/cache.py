@@ -90,21 +90,23 @@ class RecommendationCache:
         """
         return hashlib.md5(text.encode()).hexdigest()[:8]
 
-    def semantic_key(self, query: str, limit: int, min_gem_potential: float = 0.0) -> str:
+    def semantic_key(self, query: str, limit: int, min_gem_potential: float = 0.0,
+                     include_new: bool = False) -> str:
         """
         Generate cache key for semantic search results.
         Korean: 시맨틱 검색 결과 캐시 키 생성.
         """
         norm = self._normalize_query(query)
-        payload = json.dumps({"q": norm, "min_gem": min_gem_potential}, sort_keys=True)
+        payload = json.dumps({"q": norm, "min_gem": min_gem_potential, "new": include_new}, sort_keys=True)
         return f"semantic:{CACHE_VERSION}:{self._hash(payload)}:{limit}"
 
-    def by_game_key(self, app_id: int, count: int, exclude_same_developer: bool = False) -> str:
+    def by_game_key(self, app_id: int, count: int, exclude_same_developer: bool = False,
+                    include_new: bool = False) -> str:
         """
         Generate cache key for game-based recommendation results.
         Korean: 게임 기반 추천 결과 캐시 키 생성.
         """
-        flag = "x" if exclude_same_developer else "a"   # 결과를 바꾸는 조건은 키에 들어가야 한다
+        flag = ("x" if exclude_same_developer else "a") + ("n" if include_new else "")   # 결과를 바꾸는 조건은 전부 키에
         return f"rec:game:{CACHE_VERSION}:{app_id}:{count}:{flag}"
 
     def by_preference_key(
@@ -117,6 +119,7 @@ class RecommendationCache:
         required_tags: Optional[List[str]] = None,
         excluded_tags: Optional[List[str]] = None,
         min_gem_potential: float = 0.0,
+        include_new: bool = False,
     ) -> str:
         """
         Generate cache key for preference-based recommendation results (v4).
@@ -141,6 +144,7 @@ class RecommendationCache:
             "req_tags": sorted(required_tags or []),
             "exc_tags": sorted(excluded_tags or []),
             "min_gem": min_gem_potential,
+            "new": include_new,
         }
         pref_str = json.dumps(payload, sort_keys=True)
         return f"rec:pref:{CACHE_VERSION}:{self._hash(pref_str)}:{count}"
