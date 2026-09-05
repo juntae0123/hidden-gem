@@ -1167,7 +1167,18 @@ Examples:
         query_vec = await self.embed_query(english_query)
         query_vec_str = str(query_vec.tolist())
 
-        sql = text("""
+        # R-11 입장 규칙을 SQL 에서 적용한다. 파이썬에서 걸러내면 pgvector 상위 N 이 근거 얇은 신작으로 채워져
+        # 결과가 굶는다 (s2 실측: "짧게 즐기는 로그라이크" 1건, "스토리 좋은 힐링게임" 5건). lifecycle.admit 과 같은 규칙.
+        lifecycle_sql = """
+              AND (g.release_date IS NULL OR g.release_date <= CURRENT_DATE)        -- upcoming 제외
+        """
+        if not include_new:
+            lifecycle_sql += """
+              AND NOT (g.release_date IS NOT NULL
+                       AND g.release_date >= CURRENT_DATE - :new_days
+                       AND COALESCE(g.review_count, 0) < :new_min_rc)              -- 근거 얇은 신작 제외
+            """
+        sql = text(f"""
             SELECT
                 g.id AS game_id,
                 g.app_id,
@@ -1179,16 +1190,20 @@ Examples:
               AND g.is_analyzed = true
               AND gm.embedding IS NOT NULL
               AND (:min_gem = 0 OR gm.gem_potential >= :min_gem)
+              {lifecycle_sql}
             ORDER BY gm.embedding <=> :query_vec ::vector
             LIMIT :limit
         """)
 
-        result = await db.execute(sql, {
+        params = {
             "query_vec": query_vec_str,
             "min_gem": min_gem_potential,
-            # 신작을 기본 제외하므로(활성 풀의 약 1/4 이 신작) 후보를 더 뽑아 결과 부족을 막는다
-            "limit": limit * (2 if include_new else 3),
-        })
+            "limit": limit * 2,
+        }
+        if not include_new:
+            params["new_days"] = settings.LIFECYCLE_NEW_DAYS
+            params["new_min_rc"] = settings.LIFECYCLE_NEW_MIN_REVIEWS
+        result = await db.execute(sql, params)
         rows = result.fetchall()
         if not rows:
             return []
@@ -1211,7 +1226,7 @@ Examples:
             if not game or not game.metrics:
                 continue
             if not lifecycle_admit(game.review_count, game.release_date, include_new=include_new):
-                continue   # R-11. 후보 풀이 limit*2 라 신작 비중이 크면 결과가 줄 수 있다 — 아래 limit 보정 참고
+                continue   # SQL 에서 이미 걸렀지만 규칙 원본(lifecycle.admit)으로 한 번 더 — 두 곳이 어긋나면 여기서 드러난다
             if must_not and not self._check_must_not(game.metrics, must_not):
                 continue
 
