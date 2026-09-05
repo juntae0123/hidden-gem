@@ -22,6 +22,7 @@ from config import settings
 NEW = "new"
 ESTABLISHED = "established"
 FAMOUS = "famous"
+UPCOMING = "upcoming"   # 출시일이 미래 — 예약 페이지. 랭킹·기본 추천에서 제외
 
 
 def _as_date(d):
@@ -38,6 +39,8 @@ def days_since_release(release_date, today: Optional[date] = None) -> Optional[i
 
 def lifecycle(review_count: Optional[int], release_date, today: Optional[date] = None) -> str:
     age = days_since_release(release_date, today)
+    if age is not None and age < 0:
+        return UPCOMING
     if age is not None and age <= settings.LIFECYCLE_NEW_DAYS:
         return NEW
     if (review_count or 0) >= settings.LIFECYCLE_FAMOUS_REVIEWS:
@@ -46,8 +49,36 @@ def lifecycle(review_count: Optional[int], release_date, today: Optional[date] =
 
 
 def thin_new(review_count: Optional[int], release_date, today: Optional[date] = None) -> bool:
-    """근거가 얇은 신작 — 메인 추천에서 include_new=False 일 때 빠지는 대상."""
-    return (
-        lifecycle(review_count, release_date, today) == NEW
-        and (review_count or 0) < settings.LIFECYCLE_NEW_MIN_REVIEWS
-    )
+    """근거가 얇은 신작 — 메인 추천에서 include_new=False 일 때 빠지는 대상. 미출시(upcoming)도 포함."""
+    lc = lifecycle(review_count, release_date, today)
+    if lc == UPCOMING:
+        return True
+    return lc == NEW and (review_count or 0) < settings.LIFECYCLE_NEW_MIN_REVIEWS
+
+
+def is_famous(review_count: Optional[int]) -> bool:
+    """인지도 축 — 생애주기(나이 축)와 별개. 리뷰 8.7만짜리 신작은 new 이면서 famous 다."""
+    return (review_count or 0) >= settings.LIFECYCLE_FAMOUS_REVIEWS
+
+
+def gem_factor(review_count: Optional[int], release_date, today: Optional[date] = None) -> float:
+    """서빙 gem 보너스 계수. 발굴 질문은 established 에서만 성립한다 (R-11).
+    new: 시간이 없어서 무명 / famous: 이미 발견됨 / upcoming: 근거 없음 → 전부 0."""
+    return 1.0 if lifecycle(review_count, release_date, today) == ESTABLISHED else 0.0
+
+
+def admit(review_count: Optional[int], release_date, include_new: bool = False,
+          new_only: bool = False, today: Optional[date] = None) -> bool:
+    """추천 후보 입장 규칙 — 3경로와 절제 도구가 **같은 함수**를 쓴다 (서빙/실험 모집단 불일치 방지).
+    new_only  : 신작 리그. new 만. (upcoming 제외)
+    default   : 근거 얇은 신작(new & 리뷰<100)·upcoming 제외
+    include_new: 전부 입장 (upcoming 제외)
+    """
+    lc = lifecycle(review_count, release_date, today)
+    if lc == UPCOMING:
+        return False
+    if new_only:
+        return lc == NEW
+    if include_new:
+        return True
+    return not thin_new(review_count, release_date, today)

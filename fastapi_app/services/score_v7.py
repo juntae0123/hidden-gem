@@ -40,6 +40,9 @@ from services.score_v6 import (
 )
 
 SCORE_CORE_MAX = 93.0     # 99 − gem 6. X-Factor 예산은 Core 로 흡수
+
+# identity(정보용) 후보에서도 제외 — 홀드아웃 r 0.36~0.61. 값은 DB 에 보존 (decisions R-5)
+UNRELIABLE_IDENTITY_FIELDS = frozenset({"modding_support", "community_dependency", "monetization_fairness"})
 TAU = 3.5                 # 가우시안 폭. dist 1→0.92, 2→0.72, 3→0.48, 4→0.27, 6→0.05
                           # 초기값. 절제 도구 실측 후 조정 가능 (decisions R-1)
 
@@ -52,22 +55,29 @@ def preference_weight(pref_value: float) -> float:
 def weighted_rmse(
     game_metrics: Dict[str, float],
     preferences: Dict[str, float],
+    secondary: Optional[Dict[str, float]] = None,
+    secondary_weight: float = 0.5,
 ) -> tuple[float, int]:
     """
-    사용자가 말한 지표만으로 가중 RMSE. (dist, 사용된 지표 수) 반환.
+    사용자가 말한 지표만으로 가중 RMSE. (dist, 비교에 들어간 지표 수) 반환.
+    secondary: Vibe 정의가 말한 부수 목표값 (R-1'). primary 에 같은 키가 있으면 primary 가 이긴다. 가중치 ×secondary_weight.
     preferences 가 비었거나 유효 지표가 없으면 dist=10 (최대 거리) — 근거 없는 후보는 만점을 받지 않는다.
-    game_metrics 는 폴백이 끝난 완전한 dict 여야 한다 (resolve_null 통과).
+    game_metrics 는 폴백이 끝난 완전한 dict 여야 한다 (resolve_null 통과). 따라서 '비교 수'는 '관측 수'가 아니다 —
+    후보 값이 NULL 이었으면 정책 폴백값과 비교한 것이다.
     """
     num = 0.0
     den = 0.0
     used = 0
-    for f, pref in preferences.items():
+    items = [(f, v, 1.0) for f, v in preferences.items()]
+    if secondary:
+        items += [(f, v, secondary_weight) for f, v in secondary.items() if f not in preferences]
+    for f, pref, scale in items:
         if f not in NUMERIC_METRIC_FIELDS:
             continue
         g = game_metrics.get(f)
         if g is None:
             continue
-        w = preference_weight(pref)
+        w = preference_weight(pref) * scale
         d = float(pref) - float(g)
         num += w * d * d
         den += w
@@ -85,8 +95,10 @@ def match_from_distance(dist: float, tau: float = TAU) -> float:
 def compute_core_v7(
     game_metrics: Dict[str, float],
     preferences: Dict[str, float],
+    secondary: Optional[Dict[str, float]] = None,
+    secondary_weight: float = 0.5,
 ) -> tuple[float, dict]:
-    dist, used = weighted_rmse(game_metrics, preferences)
+    dist, used = weighted_rmse(game_metrics, preferences, secondary, secondary_weight)
     match = match_from_distance(dist)
     core = match * SCORE_CORE_MAX
     matched = [
@@ -107,7 +119,8 @@ def describe_strengths(game_metrics: Dict[str, float]) -> tuple[str, list]:
     """정보용 정체성 문구. 점수에 영향 없음. 8+ 지표 상위 3개."""
     top = sorted(
         ((f, v) for f, v in game_metrics.items()
-         if f in NUMERIC_METRIC_FIELDS and v is not None and v >= XFACTOR_THRESHOLD),
+         if f in NUMERIC_METRIC_FIELDS and f not in UNRELIABLE_IDENTITY_FIELDS
+         and v is not None and v >= XFACTOR_THRESHOLD),
         key=lambda x: -x[1],
     )[:3]
     strengths = [
@@ -132,23 +145,30 @@ def calculate_score_v7(
     review_count: Optional[int] = None,
     positive_ratio: Optional[float] = None,
     gem_percentile: Optional[float] = None,
+    gem_factor: float = 1.0,
+    secondary: Optional[Dict[str, float]] = None,
+    secondary_weight: float = 0.5,
 ) -> dict:
     """
-    v6 와 같은 반환 형태. breakdown 에 xfactor_score 는 항상 0.0 (필드 호환).
+    v6 와 같은 반환 형태 + raw_final_score / raw_core_score. breakdown 에 xfactor_score 는 항상 0.0 (필드 호환).
     genre 는 받기만 하고 점수에 쓰지 않는다 (호출부 시그니처 호환).
     """
-    core_score, core_detail = compute_core_v7(game_metrics, target_metrics)
+    core_score, core_detail = compute_core_v7(game_metrics, target_metrics, secondary, secondary_weight)
     gem_score, gem_detail = compute_gem_bonus(review_count, positive_ratio, gem_percentile)
+    gem_score *= gem_factor          # 생애주기 계수 (established 만 1.0). 호출자가 lifecycle.gem_factor 로 결정
     final = min(core_score + gem_score, SCORE_MAX)
     identity, strengths = describe_strengths(game_metrics)
     return {
-        "final_score": round(final, 1),
+        "final_score": round(final, 1),      # 표시용. 정렬은 raw_final_score 로 — 반올림 동점에 gem 이 두 번 개입하던 문제
+        "raw_final_score": final,
+        "raw_core_score": core_score,
         "breakdown": {
             "core_score": round(core_score, 1),
             "xfactor_score": 0.0,
             "gem_score": round(gem_score, 1),
             "distance": core_detail["distance"],
-            "fields_used": core_detail["fields_used"],
+            # 'fields_compared': 비교에 들어간 선호 지표 수. 후보 값이 NULL 이면 폴백값과 비교했으므로 '관측' 수는 아니다
+            "fields_compared": core_detail["fields_used"],
         },
         "identity": identity,
         "unique_strengths": strengths,

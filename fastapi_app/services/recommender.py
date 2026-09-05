@@ -51,7 +51,9 @@ from models.game import (
 from schemas.game import RecommendedGame
 from services.score_v6 import calculate_score_v6
 from services.score_v7 import calculate_score_v7
-from services.lifecycle import lifecycle as game_lifecycle, days_since_release, thin_new
+from services.lifecycle import (
+    lifecycle as game_lifecycle, days_since_release, is_famous, gem_factor, admit as lifecycle_admit,
+)
 
 
 
@@ -486,12 +488,11 @@ def _wilson_lower(positive_ratio: Optional[float], total: Optional[int], z: floa
 
 
 def _preference_sort_key(item: Dict) -> tuple:
-    """점수 → gem → Wilson 하한 → 리뷰 적은 순. reverse=True 로 쓰이므로 리뷰 수는 음수."""
+    """raw 점수(반올림 전) → Wilson 하한 → 리뷰 적은 순. reverse=True 로 쓰이므로 리뷰 수는 음수.
+    표시 점수(0.1 반올림)로 정렬하면 동점이 생기고, 거기서 gem 을 다시 쓰면 gem 이 두 번 개입한다 (검토 E-1). raw 로 정렬한다."""
     game = item["game"]
-    sb = item.get("score_breakdown") or {}
     return (
-        item["score"],
-        sb.get("gem_score", 0.0) or 0.0,
+        item.get("raw_score", item["score"]),
         _wilson_lower(game.steam_positive_ratio, game.review_count),
         -(game.review_count or 0),
     )
@@ -808,8 +809,8 @@ class GameRecommender:
         for game in candidates:
             if not game.metrics:
                 continue
-            if not include_new and thin_new(game.review_count, game.release_date):
-                continue   # R-11: 근거 얇은 신작(리뷰<100)은 기본 제외 — 발굴 판단 보류 구간
+            if not lifecycle_admit(game.review_count, game.release_date, include_new=include_new):
+                continue   # R-11: 근거 얇은 신작(리뷰<100)·미출시 기본 제외
 
             cand_vec = build_weighted_vector(game.metrics, weight_map)
             cand_emb = self._parse_embedding(game.metrics)
@@ -825,8 +826,8 @@ class GameRecommender:
                 emb_score = 0.0
                 raw_score = metric_score
 
-            # gem 보너스 / gem bonus
-            gem_bonus = self._calculate_gem_bonus(game, game.metrics)
+            # gem 보너스 — established 만 (R-11: 신작·유명작은 발굴 질문 자체를 안 한다)
+            gem_bonus = self._calculate_gem_bonus(game, game.metrics) * gem_factor(game.review_count, game.release_date)
 
             # 표시 점수 (0~99) / Display score
             display_score = to_display_score(raw_score, gem_bonus)
@@ -835,6 +836,7 @@ class GameRecommender:
                 "game": game,
                 "metric": game.metrics,
                 "score": display_score,
+                "raw_score": raw_score * 94.0 + gem_bonus * 5.0,
                 "score_breakdown": {
                     "metric_score": round(metric_score * 100, 1),
                     "embedding_score": round(emb_score * 100, 1),
@@ -845,7 +847,7 @@ class GameRecommender:
                 "weight_map": weight_map,
             })
 
-        scored.sort(key=lambda x: x["score"], reverse=True)
+        scored.sort(key=_preference_sort_key, reverse=True)
         return target_game, scored[:count]
 
     async def recommend_by_preference(
@@ -861,6 +863,7 @@ class GameRecommender:
         max_review_count: Optional[int] = None,
         include_new: bool = False,
         new_only: bool = False,
+        secondary_preferences: Optional[Dict[str, float]] = None,
     ) -> List[Dict]:
         """
         Preference-based recommendation with four-tier weighting (v5).
@@ -910,13 +913,9 @@ class GameRecommender:
         for game in candidates:
             if not game.metrics:
                 continue
-            if new_only:
-                # 신작 리그: 신작끼리만 취향 일치로 경쟁 (개발자 취지 — 신생 게임을 보호하는 그들만의 리그).
-                # 리뷰 수 하한은 노출 게이트(is_active)가 이미 담당한다.
-                if game_lifecycle(game.review_count, game.release_date) != "new":
-                    continue
-            elif not include_new and thin_new(game.review_count, game.release_date):
-                continue   # R-11: 근거 얇은 신작(리뷰<100)은 기본 제외 — 프런트 '신작 포함' 토글로만 들어온다
+            # R-11 입장 규칙 — 절제 도구와 같은 함수 (lifecycle.admit). new_only=신작 리그 / 기본=근거 얇은 신작 제외
+            if not lifecycle_admit(game.review_count, game.release_date, include_new=include_new, new_only=new_only):
+                continue
             if not self._check_tags(game.metrics, required_tags, excluded_tags):
                 continue
             if must_not and not self._check_must_not(game.metrics, must_not):
@@ -940,8 +939,8 @@ class GameRecommender:
                 if game.genres else ''
             )
 
-            score_fn = calculate_score_v7 if settings.SCORE_VERSION == "v7" else calculate_score_v6
-            v6_result = score_fn(
+            use_v7 = settings.SCORE_VERSION == "v7"
+            score_kwargs = dict(
                 game_metrics=game_metrics_dict,
                 target_metrics=preferences,
                 genre=genre,
@@ -951,13 +950,20 @@ class GameRecommender:
                     float(game.metrics.gem_percentile)
                     if game.metrics.gem_percentile is not None else None
                 ),
+                # R-11: 발굴 보너스는 established 만. 신작 리그·유명작은 0 — 화면 문구("발굴 점수는 아직 매기지 않아요")와 일치
+                gem_factor=gem_factor(game.review_count, game.release_date),
             )
+            if use_v7 and secondary_preferences:
+                score_kwargs["secondary"] = secondary_preferences          # Vibe secondary (R-1', 플래그 뒤)
+                score_kwargs["secondary_weight"] = settings.VIBE_SECONDARY_WEIGHT
+            v6_result = (calculate_score_v7 if use_v7 else calculate_score_v6)(**score_kwargs)
             display_score = v6_result['final_score']
 
             scored.append({
                 "game": game,
                 "metric": game.metrics,
                 "score": display_score,
+                "raw_score": v6_result.get('raw_final_score', display_score),
                 "score_breakdown": {
                     **v6_result['breakdown'],          # core/xfactor/gem (+ v7: distance, fields_used)
                     "final_score": display_score,
@@ -969,7 +975,7 @@ class GameRecommender:
 
 
 
-        # 동점 처리 (decisions R-1): 점수 → gem → Wilson 하한 → 리뷰 적은 순(무명 우선). 안정 정렬.
+        # 동점 처리 (decisions R-1, 검토 E-1 반영): raw 점수 → Wilson 하한 → 리뷰 적은 순(무명 우선). 안정 정렬.
         scored.sort(key=_preference_sort_key, reverse=True)
         return scored[:count]
 
@@ -1157,7 +1163,7 @@ Examples:
             game = games_map.get(row.game_id)
             if not game or not game.metrics:
                 continue
-            if not include_new and thin_new(game.review_count, game.release_date):
+            if not lifecycle_admit(game.review_count, game.release_date, include_new=include_new):
                 continue   # R-11. 후보 풀이 limit*2 라 신작 비중이 크면 결과가 줄 수 있다 — 아래 limit 보정 참고
             if must_not and not self._check_must_not(game.metrics, must_not):
                 continue
@@ -1185,13 +1191,14 @@ Examples:
                 hint_score = match / used if used else 0.0
 
             raw_score = emb_score * 0.85 + hint_score * 0.15
-            gem_bonus = self._calculate_gem_bonus(game, game.metrics)
+            gem_bonus = self._calculate_gem_bonus(game, game.metrics) * gem_factor(game.review_count, game.release_date)
             display_score = to_display_score(raw_score, gem_bonus)
 
             final_scored.append({
                 "game": game,
                 "metric": game.metrics,
                 "score": display_score,
+                "raw_score": raw_score * 94.0 + gem_bonus * 5.0,
                 "score_breakdown": {
                     "metric_score": round(hint_score * 100, 1),
                     "embedding_score": round(emb_score * 100, 1),
@@ -1201,7 +1208,7 @@ Examples:
                 "weight_map": weight_map,
             })
 
-        final_scored.sort(key=lambda x: x["score"], reverse=True)
+        final_scored.sort(key=_preference_sort_key, reverse=True)
         return final_scored[:limit]
 
     # ==================== 응답 포맷팅 / Response Formatting ====================
@@ -1235,6 +1242,7 @@ Examples:
                 similarity_score=r["score"],
                 gem_potential=_gem_display(metric),
                 lifecycle=game_lifecycle(game.review_count, game.release_date),
+                is_famous=is_famous(game.review_count),
                 days_since_release=days_since_release(game.release_date),
                 review_count=game.review_count,
                 # 경로 B 분해(metric_score / embedding_score / gem_bonus / final_score) — 감사 관측용
@@ -1271,6 +1279,7 @@ Examples:
                 similarity_score=r["score"],
                 gem_potential=_gem_display(metric),
                 lifecycle=game_lifecycle(game.review_count, game.release_date),
+                is_famous=is_famous(game.review_count),
                 days_since_release=days_since_release(game.release_date),
                 review_count=game.review_count,
                 # v6 분해 (UI 표시용)
@@ -1306,6 +1315,7 @@ Examples:
                 similarity_score=r["score"],
                 gem_potential=_gem_display(metric),
                 lifecycle=game_lifecycle(game.review_count, game.release_date),
+                is_famous=is_famous(game.review_count),
                 days_since_release=days_since_release(game.release_date),
                 review_count=game.review_count,
                 # 경로 C 분해(metric_score=힌트 / embedding_score / gem_bonus / final_score) — 감사 관측용

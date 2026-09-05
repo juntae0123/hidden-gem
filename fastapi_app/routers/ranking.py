@@ -12,10 +12,12 @@ new_quiet 조용한 신작   위 조건 + 리뷰 < 100                      → 
 신작은 정착 게임과 발굴 지수로 경쟁하지 않는다. 신작끼리 경쟁하고, 조용한 신작은 따로 보여준다.
 
 지금까지 /ranking 화면은 장르 프리셋 by-preference 결과였다 — 랭킹이 아니었다. 이것이 첫 랭킹이다.
-카나리아(개발자 지정): 신작 랭킹 1위는 MECCHA CHAMELEON(app 4704690, 리뷰 8.7만)이어야 한다.
-그렇지 않으면 정렬 정의가 틀린 것이다 — 정의를 고치지 카나리아를 빼지 않는다.
+카나리아(개발자 지정): MECCHA CHAMELEON(app 4704690, 리뷰 8.7만, 출시 ≤180일)은 **신작 후보에 들어가야** 한다
+(리뷰 수로 먼저 나누면 '유명'으로 빠져 사라진다). 오늘 기준 속도 1위이기도 하지만 "영구 1위"는 테스트 조건이 아니다 —
+다른 신작이 더 빨리 리뷰를 모으면 1위가 바뀌는 게 정상이다 (검토 C-5).
 """
 
+import logging
 from datetime import date
 from typing import List, Optional
 
@@ -29,8 +31,9 @@ from database import get_db
 from models.game import Game
 from services.cache import recommendation_cache, CACHE_VERSION
 from services.evidence import gem_evidence, velocity_per_day, wilson_lower
-from services.lifecycle import lifecycle, days_since_release, NEW, ESTABLISHED
+from services.lifecycle import lifecycle, days_since_release, is_famous, NEW, ESTABLISHED
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/games", tags=["Ranking"])
 
 CANARY_NEW_TOP = 4704690   # MECCHA CHAMELEON
@@ -47,6 +50,7 @@ class RankingItem(BaseModel):
     positive_ratio: Optional[float] = None
     wilson_lower: Optional[float] = None
     lifecycle: str
+    is_famous: bool = False
     days_since_release: Optional[int] = None
     gem_evidence: Optional[float] = None      # steady
     velocity_per_day: Optional[float] = None  # new
@@ -98,7 +102,7 @@ def _item(rank: int, g: Game, kind: str, **extra) -> RankingItem:
         header_image=g.header_image or "", one_line_summary=g.one_line_summary or "",
         review_count=g.review_count, positive_ratio=g.steam_positive_ratio,
         wilson_lower=round(wilson_lower(g.steam_positive_ratio, g.review_count), 3),
-        lifecycle=lc, days_since_release=days_since_release(g.release_date),
+        lifecycle=lc, is_famous=is_famous(g.review_count), days_since_release=days_since_release(g.release_date),
         badge=_badge(kind, extra.get("gem_evidence"), rc), **extra,
     )
 
@@ -148,7 +152,11 @@ async def rank_new(db, genre, limit, quiet: bool = False):
 
 
 async def rank_rising(db, genre, limit):
-    """review_history(app_id, refreshed_at, total_reviews) 에서 30일 Δ. 테이블이 없거나 이력이 1회분이면 collecting."""
+    """review_history(app_id, refreshed_at, total_reviews) 에서 30일 Δ. 테이블이 없거나 이력이 1회분이면 collecting.
+    테이블 부재만 'collecting' 으로 처리한다 — 그 외 SQL 오류를 삼키면 장애가 '데이터 쌓는 중'으로 위장된다 (검토 E-8)."""
+    exists = (await db.execute(text("SELECT to_regclass('review_history')"))).scalar()
+    if exists is None:
+        return [], "collecting", "리뷰 이력 테이블이 없다 — refresh_reviews 가 append-only 이력을 쌓기 시작한 뒤 생긴다"
     try:
         sql = text("""
             WITH latest AS (
@@ -167,9 +175,10 @@ async def rank_rising(db, genre, limit):
             WHERE l.total_reviews - p.past_total >= 20
         """)
         rows = (await db.execute(sql)).fetchall()
-    except Exception:
+    except Exception as e:
         await db.rollback()
-        return [], "collecting", "리뷰 이력 테이블이 없다 — refresh_reviews 가 append-only 이력을 쌓기 시작한 뒤 생긴다"
+        logger.exception("rank_rising SQL 실패")
+        raise HTTPException(status_code=500, detail=f"요즘 뜨는 랭킹 계산 실패: {type(e).__name__}")
     if not rows:
         return [], "collecting", "30일 전 이력이 아직 없다 — 주간 리뷰 갱신 4~5회 뒤부터 계산된다"
     deltas = {r.app_id: (int(r.delta), int(r.past_total)) for r in rows}
@@ -178,6 +187,8 @@ async def rank_rising(db, genre, limit):
     for g in pool:
         if g.app_id not in deltas:
             continue
+        if lifecycle(g.review_count, g.release_date) not in (NEW, ESTABLISHED):
+            continue                                   # famous(리뷰 2만+)·upcoming 제외 — 탭 정의 "유명작 독식 방지" (검토 C-4)
         w = wilson_lower(g.steam_positive_ratio, g.review_count)
         if w < 0.5:
             continue

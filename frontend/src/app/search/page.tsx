@@ -276,12 +276,17 @@ export default function SearchPage() {
         <input
           type="checkbox"
           checked={includeNew}
-          onChange={(e) => setIncludeNew(e.target.checked)}
+          onChange={(e) => {
+            const next = e.target.checked;
+            setIncludeNew(next);
+            // 토글은 즉시 반영 — 마지막 제출 취향으로 재요청 (검토: 다음 클릭까지 안 바뀌면 사용자가 헷갈린다)
+            if (leaguePrefs) mutation.mutate({ preferences: leaguePrefs, count: 12, includeNew: next });
+          }}
           className="accent-purple-600 w-3.5 h-3.5"
         />
         <span>
-          신작도 메인 결과에 섞어 보기
-          <span className="text-zinc-400 dark:text-zinc-500"> — 꺼져 있어도 아래 &lsquo;신작 리그&rsquo;에서 따로 볼 수 있어요</span>
+          리뷰가 아직 적은 신작도 메인 결과에 포함
+          <span className="text-zinc-400 dark:text-zinc-500"> — 리뷰 100건 이상 신작은 항상 포함돼요. 꺼져 있어도 아래 &lsquo;신작 리그&rsquo;에서 따로 볼 수 있어요</span>
         </span>
       </label>
 
@@ -318,7 +323,7 @@ export default function SearchPage() {
               <h2 className="text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
                 당신의 취향에 맞는 게임 {results.length}개
               </h2>
-              <DnaCard prefs={prefs} games={results} />
+              <DnaCard prefs={leaguePrefs ?? prefs} games={results} />
             </div>
             {!isLoggedIn && (
               <p className="mb-4 text-[12px] text-zinc-500">

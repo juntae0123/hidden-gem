@@ -10,6 +10,7 @@ import type { Lifecycle } from '@/types/game';
 
 interface LifecycleBadgeProps {
   lifecycle?: Lifecycle;
+  isFamous?: boolean;
   daysSinceRelease?: number | null;
   reviewCount?: number | null;
   size?: 'sm' | 'md';
@@ -23,6 +24,7 @@ const SIZE = {
 
 export function LifecycleBadge({
   lifecycle,
+  isFamous = false,
   daysSinceRelease,
   reviewCount,
   size = 'sm',
@@ -32,12 +34,17 @@ export function LifecycleBadge({
     const d = daysSinceRelease ?? null;
     const rc = reviewCount ?? 0;
     const thin = rc < 100;
+    const when = d !== null ? `D+${d}` : '얼마 안 됨';
+    // 두 축: 나이(신작)와 인지도(is_famous). 8.7만 리뷰 신작은 '신작 · 빠르게 검증됨'
+    const label = isFamous ? `신작 · 빠르게 검증됨` : `신작${d !== null ? ` · D+${d}` : ''}`;
     return (
       <span
         title={
-          thin
-            ? `신작 리그 · 출시 ${d !== null ? `D+${d}` : '얼마 안 됨'} · 첫 리뷰 ${rc}건 — 아직 조용한 게임이에요. 첫 리뷰를 남겨보세요`
-            : `신작 리그 · 출시 ${d !== null ? `D+${d}` : '얼마 안 됨'} · 리뷰 ${rc.toLocaleString()}건 — 빠르게 자리 잡는 중`
+          isFamous
+            ? `신작 리그 · 출시 ${when} · 리뷰 ${rc.toLocaleString()}건 — 신작인데 이미 검증됐어요`
+            : thin
+              ? `신작 리그 · 출시 ${when} · 첫 리뷰 ${rc}건 — 아직 조용한 게임이에요. 첫 리뷰를 남겨보세요`
+              : `신작 리그 · 출시 ${when} · 리뷰 ${rc.toLocaleString()}건 — 빠르게 자리 잡는 중`
         }
         className={cn(
           'inline-flex items-center rounded-md font-medium cursor-help',
@@ -45,7 +52,21 @@ export function LifecycleBadge({
           SIZE[size], className,
         )}
       >
-        신작{d !== null ? ` · D+${d}` : ''}
+        {label}
+      </span>
+    );
+  }
+  if (lifecycle === 'upcoming') {
+    return (
+      <span
+        title="아직 출시 전이에요"
+        className={cn(
+          'inline-flex items-center rounded-md font-medium cursor-help',
+          'bg-sky-500/10 text-sky-700 dark:text-sky-400 border border-sky-500/30',
+          SIZE[size], className,
+        )}
+      >
+        출시 예정
       </span>
     );
   }

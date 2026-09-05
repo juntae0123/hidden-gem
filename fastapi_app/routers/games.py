@@ -27,6 +27,7 @@ from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
+from config import settings
 from database import get_db
 from models.game import (
     Game, GameMetric,
@@ -38,7 +39,7 @@ from schemas.game import (
     RecommendationResponse, RecommendedGame,
 )
 from services.recommender import recommender, EXCLUSION_KEYWORDS
-from services.vibe_config import get_vibe_list, get_vibe_preferences  # ← 추가
+from services.vibe_config import get_vibe_list, get_vibe_preferences, get_vibe_secondary
 
 from services.cache import recommendation_cache
 from services.cost_guard import cost_guard
@@ -305,6 +306,15 @@ async def recommend_by_preference(
     v5: 4단계 가중치로 전체 49개 지표 비교. must_not 하드 필터.
     점수 0~99 (절대 점수).
     """
+    # 지표명 검증을 **먼저** — 중립 제거를 먼저 하면 잘못된 지표명이 5.0 이라는 이유로 조용히 사라진다 (검토 E-5)
+    valid_metrics = set(NUMERIC_METRIC_FIELDS)
+    invalid = [f for f in request.preferences.keys() if f not in valid_metrics]
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown metrics: {invalid}. See /games/metrics/list"
+        )
+
     # R-8: 중립(|v−5| < 0.5) 지표는 '취향'이 아니다. 프런트가 49개 전부 5.0 을 보내면
     # v6/v7 모두 '모든 축에서 평범한 게임'에 만점을 준다 (D-26 을 요청 쪽에서 재현). 여기서 걷어낸다.
     request.preferences = {f: v for f, v in request.preferences.items() if abs(float(v) - 5.0) >= 0.5}
@@ -331,14 +341,7 @@ async def recommend_by_preference(
     if cached:
         return RecommendationResponse(**cached)
 
-    # 2. 지표명 검증
-    valid_metrics = set(NUMERIC_METRIC_FIELDS)
-    invalid = [f for f in request.preferences.keys() if f not in valid_metrics]
-    if invalid:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown metrics: {invalid}. See /games/metrics/list"
-        )
+    # 2. (지표명 검증은 위에서 끝남)
 
     # 3. 태그명 검증
     valid_tags = set(BOOLEAN_TAG_FIELDS)
@@ -416,8 +419,10 @@ async def recommend_by_vibe(
     if not prefs:
         raise HTTPException(404, f"Unknown vibe: {vibe_key}")
 
+    secondary = get_vibe_secondary(vibe_key) if settings.VIBE_SECONDARY_ENABLED else None
     results = await recommender.recommend_by_preference(
         db=db, preferences=prefs, count=count, include_new=include_new, new_only=new_only,
+        secondary_preferences=secondary,
     )
     recommendations = recommender.format_recommendations_by_preference(
         results, prefs,

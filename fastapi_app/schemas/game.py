@@ -357,7 +357,8 @@ class RecommendedGame(BaseModel):
 
     similarity_score: float                # 0~99 (경로별 척도 — query_type 으로 구분)
     gem_potential: Optional[float] = None  # AI 평가 잠재력 (0~100 스케일)
-    lifecycle: str = ""                    # "new" | "established" | "famous" (R-11). 신작은 점수 옆에 뱃지로 표시
+    lifecycle: str = ""                    # 나이 축: "new" | "established" | "famous" | "upcoming" (R-11)
+    is_famous: bool = False                # 인지도 축 (리뷰 ≥ 2만) — 나이 축과 별개. 8.7만 리뷰 신작은 new + is_famous
     days_since_release: Optional[int] = None
     review_count: Optional[int] = None
 

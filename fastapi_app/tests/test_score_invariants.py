@@ -31,11 +31,15 @@ def test_gem_percentile_zero_is_not_fifty():
 
 
 def test_positive_ratio_zero_is_not_half():
+    """검토 지적(테스트 1): quality 만 보면 0 과 0.5 폴백을 구분 못 한다 — 실제 사용값을 직접 본다."""
     _, d0 = score_v6.compute_gem_bonus(500, 0.0, 60.0)
     _, dnull = score_v6.compute_gem_bonus(500, None, 60.0)
-    assert d0["quality"] == 0.0 and dnull["quality"] == 0.0
-    # 0.0 은 유효값: is_hidden_gem 판정에 들어간다 (0.5 로 바뀌면 안 됨)
-    assert d0["is_hidden_gem"] is False
+    assert d0["positive_used"] == 0.0            # 0.0 그대로 (예전 `or 0.5` 면 0.5 가 된다)
+    assert dnull["positive_used"] == 0.5         # NULL 만 폴백
+    _, dz = score_v6.compute_gem_bonus(500, 0.9, 0.0)
+    assert dz["gem_pct_used"] == 0.0
+    _, dr = score_v6.compute_gem_bonus(0, 0.9, 60.0)
+    assert dr["reviews_used"] == 0
 
 
 def test_quality_is_clamped():
@@ -121,11 +125,16 @@ def test_v7_zero_preference_is_a_target():
 
 
 def test_v7_weight_is_linear_not_squared():
-    """가중치는 제곱차에 곱한다 → 극단 선호 2배, 50배·2500배 같은 폭주 없음 (D-20)."""
+    """가중치는 제곱차에 곱한다 (D-20). 검토 지적(테스트 2): 단일 지표는 가중치가 상쇄되므로 두 지표로 검증."""
     assert score_v7.preference_weight(5) == 1.0
     assert score_v7.preference_weight(0) == 2.0 == score_v7.preference_weight(10)
-    d, used = score_v7.weighted_rmse(_metrics(cozy_factor=5), {"cozy_factor": 9})
-    assert d == pytest.approx(4.0) and used == 1     # 단일 지표면 거리 = |차이|
+    prefs = {"cozy_factor": 10, "time_pressure": 6}          # w = 2.0, 1.2
+    game = _metrics(cozy_factor=6, time_pressure=5)           # diff = 4, 1
+    d, used = score_v7.weighted_rmse(game, prefs)
+    assert used == 2
+    assert d == pytest.approx(math.sqrt((2.0 * 16 + 1.2 * 1) / 3.2), abs=1e-6)   # ≈ 3.221
+    # 가중치가 제곱됐다면 (4·16 + 1.44·1)/5.44 → 3.47 이 나와야 한다 — 그게 아님을 확인
+    assert d != pytest.approx(math.sqrt((4.0 * 16 + 1.44) / 5.44), abs=1e-3)
 
 
 def test_v7_empty_preferences_do_not_score_full():
@@ -135,11 +144,49 @@ def test_v7_empty_preferences_do_not_score_full():
     assert c < 1.0
 
 
+def test_v7_secondary_is_half_weight_and_primary_wins():
+    """R-1': Vibe secondary 는 ×0.5, primary 에 같은 키가 있으면 primary 가 이긴다."""
+    prefs = {"cozy_factor": 9}
+    sec = {"time_pressure": 1, "cozy_factor": 0}              # cozy 는 primary 와 충돌 → 무시
+    game = _metrics(cozy_factor=9, time_pressure=9)
+    d_no, u_no = score_v7.weighted_rmse(game, prefs)
+    d_sec, u_sec = score_v7.weighted_rmse(game, prefs, sec, 0.5)
+    assert (d_no, u_no) == (0.0, 1)
+    assert u_sec == 2 and d_sec > 0
+    # time_pressure: w = 1.8×0.5 = 0.9, diff 8 → sqrt(0.9·64 / (2.0 + 0.9))... primary cozy w=1.8, diff 0
+    assert d_sec == pytest.approx(math.sqrt((0.9 * 64) / (1.8 + 0.9)), abs=1e-6)
+
+
+def test_gem_factor_zeroes_gem_but_keeps_core():
+    """R-11: 신작·유명작은 gem 0. v6/v7 모두 gem_factor 가 적용되고 raw 점수가 함께 나온다."""
+    r7 = score_v7.calculate_score_v7(_metrics(cozy_factor=9), {"cozy_factor": 9}, "", 300, 0.95, 80.0, gem_factor=0.0)
+    assert r7["breakdown"]["gem_score"] == 0.0 and r7["raw_core_score"] == pytest.approx(93.0)
+    r7g = score_v7.calculate_score_v7(_metrics(cozy_factor=9), {"cozy_factor": 9}, "", 300, 0.95, 80.0, gem_factor=1.0)
+    assert r7g["breakdown"]["gem_score"] > 0
+    r6 = score_v6.calculate_score_v6(_metrics(cozy_factor=9), {"cozy_factor": 9}, "", 300, 0.95, 80.0, gem_factor=0.0)
+    assert r6["breakdown"]["gem_score"] == 0.0 and "raw_final_score" in r6
+
+
+def test_raw_score_is_not_rounded():
+    """검토 E-1: 정렬은 raw, 표시만 0.1 반올림."""
+    r = score_v7.calculate_score_v7(_metrics(cozy_factor=8), {"cozy_factor": 9}, "", 300, 0.95, 80.0)
+    assert r["final_score"] == round(r["raw_final_score"], 1)
+    assert isinstance(r["raw_final_score"], float)
+
+
+def test_identity_excludes_unreliable_metrics():
+    """R-5 / 검토 E-4: 신뢰 불가 3개는 정체성 문구에도 안 나온다."""
+    identity, strengths = score_v7.describe_strengths(_metrics(modding_support=9, monetization_fairness=9, cozy_factor=8))
+    names = {s["metric"] for s in strengths}
+    assert "modding_support" not in names and "monetization_fairness" not in names
+    assert "cozy_factor" in names
+
+
 def test_v7_result_shape_matches_v6():
     r = score_v7.calculate_score_v7(_metrics(cozy_factor=9), {"cozy_factor": 9}, "인디", 100, 0.9, 70.0)
     for k in ("final_score", "breakdown", "identity", "unique_strengths", "matched_strengths", "is_hidden_gem"):
         assert k in r
-    for k in ("core_score", "xfactor_score", "gem_score"):
+    for k in ("core_score", "xfactor_score", "gem_score", "fields_compared"):
         assert k in r["breakdown"]
     assert r["breakdown"]["xfactor_score"] == 0.0
     assert r["final_score"] <= 99.0
