@@ -51,6 +51,7 @@ from models.game import (
 from schemas.game import RecommendedGame
 from services.score_v6 import calculate_score_v6
 from services.score_v7 import calculate_score_v7
+from services.lifecycle import lifecycle as game_lifecycle, days_since_release, thin_new
 
 
 
@@ -747,6 +748,7 @@ class GameRecommender:
         count: int = 5,
         exclude_same_developer: bool = False,
         query_hint: Optional[str] = None,
+        include_new: bool = False,
     ) -> Tuple[Optional[Game], List[Dict]]:
         """
         Recommend similar games with anchor score system (v5).
@@ -806,6 +808,8 @@ class GameRecommender:
         for game in candidates:
             if not game.metrics:
                 continue
+            if not include_new and thin_new(game.review_count, game.release_date):
+                continue   # R-11: 근거 얇은 신작(리뷰<100)은 기본 제외 — 발굴 판단 보류 구간
 
             cand_vec = build_weighted_vector(game.metrics, weight_map)
             cand_emb = self._parse_embedding(game.metrics)
@@ -855,6 +859,7 @@ class GameRecommender:
         min_gem_potential: float = 0.0,
         use_masking: bool = True,
         max_review_count: Optional[int] = None,
+        include_new: bool = False,
     ) -> List[Dict]:
         """
         Preference-based recommendation with four-tier weighting (v5).
@@ -904,6 +909,8 @@ class GameRecommender:
         for game in candidates:
             if not game.metrics:
                 continue
+            if not include_new and thin_new(game.review_count, game.release_date):
+                continue   # R-11: 근거 얇은 신작(리뷰<100)은 기본 제외 — 프런트 '신작 포함' 토글로만 들어온다
             if not self._check_tags(game.metrics, required_tags, excluded_tags):
                 continue
             if must_not and not self._check_must_not(game.metrics, must_not):
@@ -1058,6 +1065,7 @@ Examples:
         query: str,
         limit: int = 12,
         min_gem_potential: float = 0.0,
+        include_new: bool = False,
     ) -> List[Dict]:
         """
         Natural language semantic search v2 with intent + must_not.
@@ -1088,7 +1096,7 @@ Examples:
             ref_game = await self._find_game_by_name(db, ref_name)
             if ref_game is not None:
                 _, ref_results = await self.recommend_by_game(
-                    db, ref_game.app_id, count=limit * 3, query_hint=query,
+                    db, ref_game.app_id, count=limit * 3, query_hint=query, include_new=include_new,
                 )
                 ref_results = self._exclude_franchise(ref_results, ref_game)[:limit]
                 for r in ref_results:
@@ -1119,7 +1127,8 @@ Examples:
         result = await db.execute(sql, {
             "query_vec": query_vec_str,
             "min_gem": min_gem_potential,
-            "limit": limit * 2,
+            # 신작을 기본 제외하므로(활성 풀의 약 1/4 이 신작) 후보를 더 뽑아 결과 부족을 막는다
+            "limit": limit * (2 if include_new else 3),
         })
         rows = result.fetchall()
         if not rows:
@@ -1142,6 +1151,8 @@ Examples:
             game = games_map.get(row.game_id)
             if not game or not game.metrics:
                 continue
+            if not include_new and thin_new(game.review_count, game.release_date):
+                continue   # R-11. 후보 풀이 limit*2 라 신작 비중이 크면 결과가 줄 수 있다 — 아래 limit 보정 참고
             if must_not and not self._check_must_not(game.metrics, must_not):
                 continue
 
@@ -1217,6 +1228,9 @@ Examples:
                 marketing_hook=game.marketing_hook or "",
                 similarity_score=r["score"],
                 gem_potential=_gem_display(metric),
+                lifecycle=game_lifecycle(game.review_count, game.release_date),
+                days_since_release=days_since_release(game.release_date),
+                review_count=game.review_count,
                 # 경로 B 분해(metric_score / embedding_score / gem_bonus / final_score) — 감사 관측용
                 score_breakdown=r.get("score_breakdown", {}),
                 match_reasons=reasons,
@@ -1250,6 +1264,9 @@ Examples:
                 marketing_hook=game.marketing_hook or "",
                 similarity_score=r["score"],
                 gem_potential=_gem_display(metric),
+                lifecycle=game_lifecycle(game.review_count, game.release_date),
+                days_since_release=days_since_release(game.release_date),
+                review_count=game.review_count,
                 # v6 분해 (UI 표시용)
                 score_breakdown=r.get("score_breakdown", {}),
                 v6_identity=r.get("v6_identity", ""),
@@ -1282,6 +1299,9 @@ Examples:
                 marketing_hook=game.marketing_hook or "",
                 similarity_score=r["score"],
                 gem_potential=_gem_display(metric),
+                lifecycle=game_lifecycle(game.review_count, game.release_date),
+                days_since_release=days_since_release(game.release_date),
+                review_count=game.review_count,
                 # 경로 C 분해(metric_score=힌트 / embedding_score / gem_bonus / final_score) — 감사 관측용
                 score_breakdown=r.get("score_breakdown", {}),
                 match_reasons=[],

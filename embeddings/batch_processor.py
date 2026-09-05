@@ -506,7 +506,8 @@ def main():
             return
 
     print(f"결과 파일: {result_path}")
-    print(f"DB: {DB_URL[:30]}...")
+    masked_db = re.sub(r"://([^:]+):[^@]+@", r"://\1:***@", DB_URL)   # 비밀번호는 로그에 남기지 않는다
+    print(f"DB: {masked_db}")
     print(f"제외 컬럼: {', '.join(sorted(FORBIDDEN_COLUMNS))}")
     print("=" * 60)
 

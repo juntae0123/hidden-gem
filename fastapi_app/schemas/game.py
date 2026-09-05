@@ -216,6 +216,10 @@ class RecommendByGameRequest(BaseModel):
         default=False,
         description="동일 개발사 게임 제외 여부",
     )
+    include_new: bool = Field(
+        default=False,
+        description="출시 180일 이내 신작 포함 여부. 신작은 리뷰가 적어 발굴 판단이 보류되므로 기본 제외 (R-11)",
+    )
 
 
 class RecommendByPreferenceRequest(BaseModel):
@@ -272,6 +276,10 @@ class RecommendByPreferenceRequest(BaseModel):
         ),
     )
     count: int = Field(default=5, ge=1, le=20, description="추천 게임 수 (1~20)")
+    include_new: bool = Field(
+        default=False,
+        description="출시 180일 이내 신작 포함 여부. 기본 제외 — 프런트 '신작 포함' 토글 (R-12)",
+    )
     min_gem_potential: float = Field(
         default=0,
         ge=0,
@@ -343,8 +351,11 @@ class RecommendedGame(BaseModel):
     one_line_summary: str = ""
     marketing_hook: str = ""
 
-    similarity_score: float                # 0~99 (v6 최종 점수)
+    similarity_score: float                # 0~99 (경로별 척도 — query_type 으로 구분)
     gem_potential: Optional[float] = None  # AI 평가 잠재력 (0~100 스케일)
+    lifecycle: str = ""                    # "new" | "established" | "famous" (R-11). 신작은 점수 옆에 뱃지로 표시
+    days_since_release: Optional[int] = None
+    review_count: Optional[int] = None
 
     # v6 점수 분해 (UI 표시용)
     score_breakdown: Dict[str, float] = {}  # {core_score, xfactor_score, gem_score, final_score}

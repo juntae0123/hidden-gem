@@ -55,9 +55,15 @@ class Settings(BaseSettings):
     # docs/decisions_0905.md R-1. 절제 도구 실측 후 기본값을 v7 로 올린다.
     SCORE_VERSION: str = "v6"
 
+    # ==================== 생애주기 (R-11) ====================
+    LIFECYCLE_NEW_DAYS: int = 180          # 출시 후 이 일수까지 '신작' — 발굴 판단 보류
+    LIFECYCLE_FAMOUS_REVIEWS: int = 20000  # 리뷰 이 수 이상 '유명' — 발굴 질문 안 함 (무명도 cap 과 일치)
+    LIFECYCLE_NEW_MIN_REVIEWS: int = 100   # 신작 중 리뷰 이 수 미만만 '근거 얇음' → 메인 추천 기본 제외
+
     CACHE_TTL_SEMANTIC: int = 3600
     CACHE_TTL_BY_GAME: int = 3600
     CACHE_TTL_BY_PREFERENCE: int = 1800
+    CACHE_TTL_RANKING: int = 21600         # 랭킹 6h — 리뷰 갱신 주기에 맞춤
 
     # ==================== Rate Limiting ====================
     RATE_LIMIT_SEARCH_ANON: str = "10/minute"

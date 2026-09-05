@@ -31,6 +31,7 @@ from slowapi.util import get_remote_address
 from config import settings
 from routers import games_router
 from routers.taste import router as taste_router
+from routers.ranking import router as ranking_router
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +179,8 @@ app.add_middleware(
 
 # ==================== 라우터 ====================
 
+# ranking 은 games 보다 먼저 — /games/{app_id} 가 'ranking' 을 app_id 로 잡아먹지 않게
+app.include_router(ranking_router, prefix=settings.API_V1_PREFIX)
 app.include_router(games_router, prefix=settings.API_V1_PREFIX)
 app.include_router(taste_router, prefix=settings.API_V1_PREFIX)  # Phase 1.5
 

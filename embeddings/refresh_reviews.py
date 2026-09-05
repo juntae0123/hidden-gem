@@ -12,7 +12,7 @@ Hidden Gem - Steam 리뷰 수 갱신 + 노출 게이트 적용
     --all-new          신작 전부 재조회
     --app-id N ...     특정 게임만
 
-조회 이력은 review_refresh_log(app_id, refreshed_at, total_reviews)에 남긴다.
+최신값은 review_refresh_log(app_id PK)에, 이력은 review_history(append-only)에 남긴다 — 후자가 '요즘 뜨는' 랭킹의 원천.
 games 스키마는 건드리지 않는다.
 
 사용법:
@@ -52,7 +52,8 @@ engine = create_engine(DB_URL)
 
 APPREVIEWS_URL = "https://store.steampowered.com/appreviews/{app_id}"
 REQUEST_DELAY_SEC = 1.0
-LOG_TABLE = "review_refresh_log"
+LOG_TABLE = "review_refresh_log"      # 최신 1행/게임 (재조회 주기 판단용)
+HISTORY_TABLE = "review_history"      # append-only 이력 — '요즘 뜨는'(30일 Δ) 계산에 필요 (R-12)
 
 
 # ============== 스키마 ==============
@@ -64,6 +65,22 @@ def ensure_log_table() -> None:
                 refreshed_at  TIMESTAMP NOT NULL,
                 total_reviews INTEGER NOT NULL
             )
+        """))
+        conn.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS {HISTORY_TABLE} (
+                app_id           BIGINT NOT NULL,
+                refreshed_at     TIMESTAMP NOT NULL,
+                total_reviews    INTEGER NOT NULL,
+                positive_reviews INTEGER,
+                PRIMARY KEY (app_id, refreshed_at)
+            )
+        """))
+        # 1회 이관: 기존 로그의 최신 값을 첫 스냅샷으로 (이미 있으면 건너뜀)
+        conn.execute(text(f"""
+            INSERT INTO {HISTORY_TABLE} (app_id, refreshed_at, total_reviews, positive_reviews)
+            SELECT l.app_id, l.refreshed_at, l.total_reviews, NULL
+            FROM {LOG_TABLE} l
+            WHERE NOT EXISTS (SELECT 1 FROM {HISTORY_TABLE} h WHERE h.app_id = l.app_id)
         """))
 
 
@@ -144,6 +161,12 @@ def update_game(conn, app_id: int, summary: Dict) -> None:
         ON CONFLICT (app_id) DO UPDATE
             SET refreshed_at = EXCLUDED.refreshed_at, total_reviews = EXCLUDED.total_reviews
     """), {"app_id": app_id, "now": datetime.now(), "rc": total})
+    # 이력은 덮어쓰지 않고 쌓는다 — 30일 Δ 는 여기서 나온다
+    conn.execute(text(f"""
+        INSERT INTO {HISTORY_TABLE} (app_id, refreshed_at, total_reviews, positive_reviews)
+        VALUES (:app_id, :now, :rc, :pos)
+        ON CONFLICT (app_id, refreshed_at) DO NOTHING
+    """), {"app_id": app_id, "now": datetime.now(), "rc": total, "pos": summary["positive"]})
 
 
 def run(targets: List[Dict], dry_run: bool) -> Dict[str, int]:
