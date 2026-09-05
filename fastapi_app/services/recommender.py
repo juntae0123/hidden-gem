@@ -1175,8 +1175,8 @@ Examples:
         if not include_new:
             lifecycle_sql += """
               AND NOT (g.release_date IS NOT NULL
-                       AND g.release_date >= CURRENT_DATE - :new_days
-                       AND COALESCE(g.review_count, 0) < :new_min_rc)              -- 근거 얇은 신작 제외
+                       AND g.release_date >= CURRENT_DATE - CAST(:new_days AS integer)   -- 캐스트 필수: 안 하면 $1 을 date 로 추론해 date-date=integer → 'date >= integer' 오류
+                       AND COALESCE(g.review_count, 0) < CAST(:new_min_rc AS integer))   -- 근거 얇은 신작 제외
             """
         sql = text(f"""
             SELECT
