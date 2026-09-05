@@ -103,7 +103,10 @@ async def search_games(
 
     results = []
     for game in games:
-        gem = game.metrics.gem_potential if game.metrics else None
+        gem = None
+        if game.metrics:
+            gem = (getattr(game.metrics, "gem_evidence_score", None) if settings.GEM_SOURCE == "evidence"
+                   else game.metrics.gem_potential)
         if min_gem is not None and (gem is None or gem < min_gem):
             continue
         results.append(GameSearchResult(
@@ -184,12 +187,14 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         select(func.count(Game.id)).where(Game.is_analyzed == True)  # noqa: E712
     )
     analyzed = analyzed_result.scalar()
-    avg_gem_result = await db.execute(select(func.avg(GameMetric.gem_potential)))
+    # 코호트가 다른 gem 값(교사 LLM vs 학생 LLM vs 실측)을 한 줄로 평균내지 않는다 (검토 지적) — 실측 지수 평균만 낸다
+    avg_gem_result = await db.execute(select(func.avg(GameMetric.gem_evidence_score)))
     avg_gem = avg_gem_result.scalar()
     return {
         "total_games": total,
         "analyzed_games": analyzed,
-        "average_gem_potential": round(float(avg_gem), 2) if avg_gem else None,
+        "average_gem_evidence": round(float(avg_gem), 2) if avg_gem else None,   # 리뷰 실측 발굴 지수 평균 (근거 있는 게임만)
+        "average_gem_potential": None,   # 폐기: 교사/학생 LLM 값은 스케일이 달라 한 평균이 의미 없다
         "dimension": len(NUMERIC_METRIC_FIELDS),
         "total_metrics": len(NUMERIC_METRIC_FIELDS) + len(BOOLEAN_TAG_FIELDS),
         "data_source": "GPT-5.4 Batch + Steam CSV",

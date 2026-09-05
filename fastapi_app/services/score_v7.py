@@ -29,6 +29,7 @@ v7 규칙:
 import math
 from typing import Dict, Optional
 
+from config import settings
 from models.game import NUMERIC_METRIC_FIELDS
 from services.score_v6 import (
     IDENTITY_PHRASES,
@@ -39,7 +40,15 @@ from services.score_v6 import (
     compute_gem_bonus,
 )
 
-SCORE_CORE_MAX = 93.0     # 99 − gem 6. X-Factor 예산은 Core 로 흡수
+SCORE_CORE_MAX = 93.0     # legacy gem(6) 모드. evidence 모드에선 99 − GEM_MAX_V7_EVIDENCE (= 87)
+
+
+def budgets() -> tuple[float, float]:
+    """(core_max, gem_max) — GEM_SOURCE 에 따라. evidence: 87 + 12 / legacy: 93 + 6."""
+    if settings.GEM_SOURCE == "evidence":
+        g = float(settings.GEM_MAX_V7_EVIDENCE)
+        return SCORE_MAX - g, g
+    return SCORE_CORE_MAX, SCORE_GEM_MAX
 
 # identity(정보용) 후보에서도 제외 — 홀드아웃 r 0.36~0.61. 값은 DB 에 보존 (decisions R-5)
 UNRELIABLE_IDENTITY_FIELDS = frozenset({"modding_support", "community_dependency", "monetization_fairness"})
@@ -100,7 +109,7 @@ def compute_core_v7(
 ) -> tuple[float, dict]:
     dist, used = weighted_rmse(game_metrics, preferences, secondary, secondary_weight)
     match = match_from_distance(dist)
-    core = match * SCORE_CORE_MAX
+    core = match * budgets()[0]
     matched = [
         {"metric": f, "value": game_metrics.get(f), "target": v}
         for f, v in preferences.items()
@@ -148,13 +157,20 @@ def calculate_score_v7(
     gem_factor: float = 1.0,
     secondary: Optional[Dict[str, float]] = None,
     secondary_weight: float = 0.5,
+    gem_evidence: Optional[float] = None,
 ) -> dict:
     """
     v6 와 같은 반환 형태 + raw_final_score / raw_core_score. breakdown 에 xfactor_score 는 항상 0.0 (필드 호환).
     genre 는 받기만 하고 점수에 쓰지 않는다 (호출부 시그니처 호환).
     """
     core_score, core_detail = compute_core_v7(game_metrics, target_metrics, secondary, secondary_weight)
-    gem_score, gem_detail = compute_gem_bonus(review_count, positive_ratio, gem_percentile)
+    if settings.GEM_SOURCE == "evidence":
+        # R-3: 리뷰 실측 지수만. NULL(근거 없음) 은 0 — 폴백 없음, review_bonus 없음, confidence 없음
+        gem_max = budgets()[1]
+        gem_score = (float(gem_evidence) / 100.0 * gem_max) if gem_evidence is not None else 0.0
+        gem_detail = {"is_hidden_gem": gem_evidence is not None and gem_evidence >= 60, "source": "evidence"}
+    else:
+        gem_score, gem_detail = compute_gem_bonus(review_count, positive_ratio, gem_percentile)
     gem_score *= gem_factor          # 생애주기 계수 (established 만 1.0). 호출자가 lifecycle.gem_factor 로 결정
     final = min(core_score + gem_score, SCORE_MAX)
     identity, strengths = describe_strengths(game_metrics)

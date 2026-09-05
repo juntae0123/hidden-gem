@@ -184,6 +184,17 @@ PRD §4-2 "변별력 25 vs 3.5" 의 25 = 5.0². 개발자가 알고 쓴 것. 경
 - 조치: `SET LOCAL hnsw.ef_search = 400` + limit 미만이면 필터 없이 400건 광역 조회 후 파이썬 admit. s4 에서 3개 질의 모두 10건.
 - **s4_hnsw 가 gem 전환(R-3) 전의 기준선 스냅샷이다** (v6 + Day1 + gem_factor + 타이브레이크 + HNSW 수정, 캐시 무효화 확인 16/16).
 
+## R-3 구현 (2026-09-05 밤) — 별도 컬럼 + GEM_SOURCE 플래그
+- 컬럼: `game_metrics.gem_evidence_score`(NULL=근거 없음) / `gem_evidence_status`(ok·too_new·famous·insufficient·no_reviews·upcoming) /
+  `gem_evidence_updated_at`. 마이그레이션 `deploy/migrations/20260905_gem_evidence_columns.sql` (멱등). `gem_percentile` 무접촉.
+- 채움: `gem_evidence --fill` (전 게임, 두 코호트 같은 공식). too_new 는 값을 저장하되 서빙 gem 0 (정보용). (구) `--apply` 는 `--legacy-percentile` 없이는 거부.
+- 서빙: `.env GEM_SOURCE=evidence` 일 때만 — v7 Core 87 + gem 12(=evidence/100×12, NULL→0, 폴백·review_bonus·confidence 없음),
+  B/C `_calculate_gem_bonus` = evidence/100, `min_gem_potential` 필터·semantic SQL·/search 가 evidence 컬럼을 본다,
+  `/stats/overview` 는 코호트 혼합 평균 폐기(실측 평균만). 기본 `legacy` 라 배포만으로는 동작 불변.
+- 응답: `gem_evidence` / `gem_evidence_status` 추가. 프런트 GemBadge 는 evidence 가 오면 히든젬 ≥60 / 주목 45~60, null 이면 뱃지 없음(0≠NULL).
+- 전환 순서: migrate → --fill --dry-run → --fill --yes → GEM_SOURCE=evidence → restart → `--save s5_gem_evidence` → `--diff s4_hnsw s5` → `ablation --pool default`.
+  합격: 교사비율·리뷰중앙이 s4 보다 내려가고(발굴 층이 일함) 장르 방향 유지. 되돌리기 = GEM_SOURCE=legacy (컬럼은 남는다).
+
 ## R-7. 검토 프로세스
 - 외부 검토 입력은 **소스 원문**(`score_v6.py`/`score_v7.py`, `recommender.py` 해당 구간). as-is 문서는 보조.
 - 두 모델의 일치는 근거로 세지 않는다. 근거는 코드·데이터·실측만.

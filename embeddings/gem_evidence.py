@@ -22,11 +22,20 @@ Hidden Gem - 근거 기반 히든젬 지수 (Steam 리뷰 실측 → gem_percent
 교사/학생 구분 없이 같은 공식을 쓰므로 두 코호트가 하나의 스케일에 올라간다.
 gem_potential(LLM 원본)은 건드리지 않는다 — 보존하고, 근거가 없는 게임의 폴백으로만 둔다.
 
-사용법:
+사용법 (R-3, 2026-09-05 이후 — 별도 컬럼에 쓴다):
+    docker compose exec batch python -m embeddings.migrate --file deploy/migrations/20260905_gem_evidence_columns.sql
     docker compose exec batch python -m embeddings.gem_evidence                # 미리보기(분포/샘플)
-    docker compose exec batch python -m embeddings.gem_evidence --obscurity-exp 0.5 --cap 20000
-    docker compose exec batch python -m embeddings.gem_evidence --apply --yes  # gem_percentile 갱신
-    # 되돌리기: python -m embeddings.recalc_percentile --yes  (LLM gem 기준 백분위로 복귀)
+    docker compose exec batch python -m embeddings.gem_evidence --fill --yes   # gem_evidence_score / _status 채움 (전 게임)
+    # 서빙 전환: .env GEM_SOURCE=evidence → fastapi 재시작. 되돌리기: GEM_SOURCE=legacy (컬럼은 그대로)
+
+    --fill 은 gem_potential / gem_percentile 을 건드리지 않는다. 상태 분류(생애주기 = fastapi services/lifecycle.py 와 같은 규칙):
+        no_reviews    리뷰 0 또는 긍정률 NULL      → score NULL
+        insufficient  리뷰 1~2                     → score NULL
+        too_new       출시 ≤ LIFECYCLE_NEW_DAYS     → score 계산해 저장하되 서빙은 gem 0 (정보용)
+        famous        리뷰 ≥ CAP (무명도 0)          → score 0
+        ok            그 외                          → score = 100 × Wilson × 무명도
+
+    (구) --apply 는 gem_percentile 을 덮어쓰는 이전 방식 — 더 이상 권하지 않는다. --legacy-percentile 을 함께 줘야 동작.
 """
 
 import argparse
@@ -78,12 +87,11 @@ def gem_score(positive: int, total: int, cap: int, exp: float, z: float, floor: 
 def fetch_rows() -> List[dict]:
     with engine.connect() as conn:
         rows = conn.execute(text("""
-            SELECT g.app_id, g.name, g.analysis_method, g.is_active,
+            SELECT g.app_id, g.name, g.analysis_method, g.is_active, g.release_date,
                    COALESCE(g.review_count, 0) AS reviews,
                    g.steam_positive_ratio AS ratio,
                    m.game_id, m.gem_potential, m.gem_percentile, m.confidence_score AS confidence
             FROM games g JOIN game_metrics m ON m.game_id = g.id
-            WHERE m.gem_potential IS NOT NULL
         """)).fetchall()
     return [dict(r._mapping) for r in rows]
 
@@ -221,6 +229,70 @@ def report(scored: List[dict], no_evidence: List[dict], cap: int, exp: float, z:
               f"{'← 리뷰 게이트가 정상 동작하면 0이어야 한다' if act else '(정상)'}")
 
 
+# 생애주기 경계 — fastapi/config.py 기본값과 같다. 바꾸면 양쪽을 같이 (.env 로 동일 키 사용)
+import os
+from datetime import date, datetime
+LIFECYCLE_NEW_DAYS = int(os.getenv("LIFECYCLE_NEW_DAYS", "180"))
+LIFECYCLE_FAMOUS_REVIEWS = int(os.getenv("LIFECYCLE_FAMOUS_REVIEWS", "20000"))
+
+
+def classify(r: dict, cap: int, exp: float, z: float, floor: int, today: date = None) -> Tuple[str, float]:
+    """(status, score|None). services/evidence.py·lifecycle.py 와 같은 규칙 — 서빙과 배치가 같은 상태를 봐야 한다."""
+    today = today or date.today()
+    n = int(r["reviews"] or 0)
+    ratio = r["ratio"]
+    rd = r.get("release_date")
+    if isinstance(rd, datetime):
+        rd = rd.date()
+    if n <= 0 or ratio is None:
+        return "no_reviews", None
+    if n < 3:
+        return "insufficient", None
+    if rd is not None and (today - rd).days < 0:
+        return "upcoming", None                     # 출시 전 — 근거로 치지 않는다
+    score = gem_score(int(round(ratio * n)), n, cap, exp, z, floor)
+    if rd is not None and (today - rd).days <= LIFECYCLE_NEW_DAYS:
+        return "too_new", round(score, 1)          # 값은 남기되 서빙은 gem 0 (lifecycle.gem_factor)
+    if n >= max(cap, LIFECYCLE_FAMOUS_REVIEWS):
+        return "famous", 0.0
+    return "ok", round(score, 1)
+
+
+def fill(rows: List[dict], cap: int, exp: float, z: float, floor: int, yes: bool, dry_run: bool) -> int:
+    """gem_evidence_score / gem_evidence_status 채움. gem_potential·gem_percentile 무접촉. 멱등."""
+    import statistics as st
+    classified = [(r, *classify(r, cap, exp, z, floor)) for r in rows]
+    by_status = {}
+    for _, st_, _ in classified:
+        by_status[st_] = by_status.get(st_, 0) + 1
+    print(f"\n[--fill] 대상 {len(classified):,}건  상태 분포: " + ", ".join(f"{k}={v:,}" for k, v in sorted(by_status.items())))
+    ok_scores = [sc for _, st_, sc in classified if st_ == "ok" and sc is not None]
+    if ok_scores:
+        qs = st.quantiles(ok_scores, n=10)
+        print(f"   ok 점수: n={len(ok_scores):,} μ={st.mean(ok_scores):.1f} 중앙={st.median(ok_scores):.1f} "
+              f"p90={qs[8]:.1f} 최대={max(ok_scores):.1f}  (뱃지 히든젬 ≥60: {sum(1 for x in ok_scores if x >= 60):,}건 / 주목 45~60: {sum(1 for x in ok_scores if 45 <= x < 60):,}건)")
+    for coh in (TEACHER, STUDENT):
+        sub = [sc for r, st_, sc in classified if r["analysis_method"] == coh and st_ == "ok" and sc is not None]
+        if sub:
+            print(f"   {coh:18} ok {len(sub):,}건 μ={st.mean(sub):.1f} ≥60: {sum(1 for x in sub if x >= 60):,}")
+    if dry_run:
+        print("dry-run: DB 미변경"); return 0
+    if not yes and input("\n채울까요? (y/n): ").strip().lower() != "y":
+        print("취소됨 — 아무것도 쓰지 않았습니다"); return 1
+    now = datetime.now()
+    with engine.begin() as conn:
+        for i in range(0, len(classified), 1000):
+            chunk = classified[i:i + 1000]
+            conn.execute(
+                text("""UPDATE game_metrics SET gem_evidence_score = :sc, gem_evidence_status = :st,
+                        gem_evidence_updated_at = :now WHERE game_id = :gid"""),
+                [{"sc": sc, "st": st_, "now": now, "gid": r["game_id"]} for r, st_, sc in chunk],
+            )
+    print(f"완료 {len(classified):,}건. gem_potential/gem_percentile/embedding 무접촉.")
+    print("다음: .env 에 GEM_SOURCE=evidence → docker compose restart fastapi → rec_snapshot --save s5_gem_evidence → --diff s4_hnsw s5_gem_evidence")
+    return 0
+
+
 def apply(scored: List[dict], yes: bool, write: str) -> int:
     """gem_percentile 컬럼에 기록. write=raw 면 근거 지수 원점수, percentile 이면 백분위.
 
@@ -259,7 +331,12 @@ def main():
     ap.add_argument("--obscurity-floor", type=int, default=50,
                     help="이 리뷰 수 미만은 무명도를 동일 취급 (기본 50). 0 이면 하한 없음 — "
                          "리뷰 2~3개짜리가 상위를 독식하므로 권장하지 않음")
-    ap.add_argument("--apply", action="store_true", help="gem_percentile 갱신 (기본은 미리보기)")
+    ap.add_argument("--fill", action="store_true",
+                    help="R-3: gem_evidence_score/_status 컬럼을 전 게임에 채운다 (권장). 마이그레이션 먼저")
+    ap.add_argument("--dry-run", action="store_true", help="--fill 의 분포만 출력, DB 미변경")
+    ap.add_argument("--legacy-percentile", action="store_true",
+                    help="(구) --apply 가 gem_percentile 을 덮어쓰게 허용. R-3 이후 권하지 않음")
+    ap.add_argument("--apply", action="store_true", help="(구) gem_percentile 갱신 — --legacy-percentile 필요")
     ap.add_argument("--write", choices=["raw", "percentile"], default="raw",
                     help="raw(기본): 근거 지수 원점수 0~100 — 절대 기준, 코퍼스 변동에 안 흔들림. "
                          "percentile: 근거 지수의 백분위")
@@ -277,6 +354,12 @@ def main():
     print("Hidden Gem - 근거 기반 히든젬 지수")
     print("=" * 62)
     rows = fetch_rows()
+    if a.fill:
+        return fill(rows, a.cap, a.obscurity_exp, z, a.obscurity_floor, a.yes, a.dry_run)
+    if a.apply and not a.legacy_percentile:
+        print("--apply 는 gem_percentile 을 덮어쓰는 구 방식입니다. R-3 이후엔 --fill 을 쓰세요. (강행: --legacy-percentile)")
+        return 2
+    rows = [r for r in rows if r.get("gem_potential") is not None]   # 구 경로는 LLM gem 보유 게임만 다뤘다
     scored, none_ = compute(rows, a.cap, a.obscurity_exp, z, a.obscurity_floor)
     report(scored, none_, a.cap, a.obscurity_exp, z, a.obscurity_floor)
 

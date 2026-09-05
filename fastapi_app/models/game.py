@@ -154,8 +154,13 @@ class GameMetric(Base):
     
     # ========== EVAL (2) ==========
     gem_potential = Column(Float, nullable=True)
-    gem_percentile = Column(Float, nullable=True)  # 백분위 기반 정규화 점수 / Percentile-normalized gem score
+    gem_percentile = Column(Float, nullable=True)  # 백분위 기반 정규화 점수 / Percentile-normalized gem score (LLM 원본 계보 — 보존)
     confidence_score = Column(Float, nullable=True)
+    # R-3 근거 기반 발굴 지수 — Steam 리뷰 실측 (Wilson 하한 × 로그 무명도), gem_potential/gem_percentile 과 별도 컬럼
+    # NULL = 근거 없음 (0 과 다르다). status: ok / too_new / famous / insufficient / no_reviews
+    gem_evidence_score = Column(Float, nullable=True)
+    gem_evidence_status = Column(String(20), nullable=True)
+    gem_evidence_updated_at = Column(DateTime, nullable=True)
     
     # ========== REASONING ==========
     analysis_summary = Column(Text, default='')
