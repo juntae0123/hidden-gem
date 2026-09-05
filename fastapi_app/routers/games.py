@@ -325,6 +325,7 @@ async def recommend_by_preference(
         excluded_tags=request.excluded_tags,
         min_gem_potential=request.min_gem_potential,
         include_new=request.include_new,
+        new_only=request.new_only,
     )
     cached = await recommendation_cache.get(cache_key)
     if cached:
@@ -377,6 +378,7 @@ async def recommend_by_preference(
         use_masking=request.use_masking,
         max_review_count=request.max_review_count,
         include_new=request.include_new,
+        new_only=request.new_only,
     )
 
     # 6. 포맷 + 캐시 저장
@@ -384,7 +386,7 @@ async def recommend_by_preference(
         results, preferences=request.preferences
     )
     response = RecommendationResponse(
-        query_type="by_preference",
+        query_type="by_preference_new_league" if request.new_only else "by_preference",
         reference_game=None,
         total_candidates=len(results),
         recommendations=recommendations,
@@ -401,6 +403,7 @@ async def recommend_by_vibe(
     vibe_key: str = Query(..., description="Vibe key (예: cozy_escape)"),
     count: int = Query(12, ge=1, le=50),
     include_new: bool = Query(False, description="출시 180일 이내 신작 포함 (기본 제외, R-11)"),
+    new_only: bool = Query(False, description="신작 리그 — 신작만"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -414,7 +417,7 @@ async def recommend_by_vibe(
         raise HTTPException(404, f"Unknown vibe: {vibe_key}")
 
     results = await recommender.recommend_by_preference(
-        db=db, preferences=prefs, count=count, include_new=include_new,
+        db=db, preferences=prefs, count=count, include_new=include_new, new_only=new_only,
     )
     recommendations = recommender.format_recommendations_by_preference(
         results, prefs,

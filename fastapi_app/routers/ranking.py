@@ -6,6 +6,10 @@
 steady  스테디 히든젬  established, 리뷰 ≥ 30, Wilson ≥ 0.5     → 발굴 지수(Wilson × 무명도) desc
 rising  요즘 뜨는      established+new, 30일 Δ ≥ 20, Wilson ≥ 0.5 → 30일 상대 증가율 desc  (review_history 필요)
 new     신작           출시 ≤ 180일, 리뷰 ≥ 3, Wilson ≥ 0.35      → 초기 속도(리뷰/일) desc, 동률 Wilson
+new_quiet 조용한 신작   위 조건 + 리뷰 < 100                      → Wilson desc, 동률 속도 — 아직 소리 없는 신생 게임의 쇼케이스
+
+개발자 취지(2026-09-05): "신작으로 신생 게임을 보호해서 그들만의 리그를 만들고 보여주자."
+신작은 정착 게임과 발굴 지수로 경쟁하지 않는다. 신작끼리 경쟁하고, 조용한 신작은 따로 보여준다.
 
 지금까지 /ranking 화면은 장르 프리셋 by-preference 결과였다 — 랭킹이 아니었다. 이것이 첫 랭킹이다.
 카나리아(개발자 지정): 신작 랭킹 1위는 MECCHA CHAMELEON(app 4704690, 리뷰 8.7만)이어야 한다.
@@ -118,14 +122,17 @@ async def rank_steady(db, genre, limit):
     return [_item(i + 1, g, "steady", gem_evidence=ev) for i, (ev, _, _, g) in enumerate(rows[:limit])]
 
 
-async def rank_new(db, genre, limit):
+async def rank_new(db, genre, limit, quiet: bool = False):
     pool = await _base_pool(db, genre)
     rows = []
     for g in pool:
         if lifecycle(g.review_count, g.release_date) != NEW:
             continue
-        if (g.review_count or 0) < 3:
+        rc = g.review_count or 0
+        if rc < 3:
             continue
+        if quiet and rc >= settings.LIFECYCLE_NEW_MIN_REVIEWS:
+            continue                                   # 조용한 신작: 리뷰 100 미만만
         w = wilson_lower(g.steam_positive_ratio, g.review_count)
         if w < 0.35:
             continue
@@ -133,7 +140,10 @@ async def rank_new(db, genre, limit):
         if v is None:
             continue
         rows.append((v, w, g))
-    rows.sort(key=lambda r: (r[0], r[1]), reverse=True)
+    if quiet:
+        rows.sort(key=lambda r: (r[1], r[0]), reverse=True)   # 평가 먼저, 속도는 동률용
+    else:
+        rows.sort(key=lambda r: (r[0], r[1]), reverse=True)
     return [_item(i + 1, g, "new", velocity_per_day=v) for i, (v, _, g) in enumerate(rows[:limit])]
 
 
@@ -182,7 +192,7 @@ async def rank_rising(db, genre, limit):
 
 @router.get("/ranking", response_model=RankingResponse)
 async def ranking(
-    type: str = Query("steady", pattern="^(steady|rising|new)$"),
+    type: str = Query("steady", pattern="^(steady|rising|new|new_quiet)$"),
     genre: Optional[str] = Query(None, description="장르 부분 일치 (예: 전략)"),
     limit: int = Query(30, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -197,6 +207,8 @@ async def ranking(
         items = await rank_steady(db, genre, limit)
     elif type == "new":
         items = await rank_new(db, genre, limit)
+    elif type == "new_quiet":
+        items = await rank_new(db, genre, limit, quiet=True)
     else:
         items, status, note = await rank_rising(db, genre, limit)
 

@@ -36,8 +36,8 @@ export function LifecycleBadge({
       <span
         title={
           thin
-            ? `출시 ${d !== null ? `D+${d}` : '얼마 안 됨'}, 리뷰 ${rc}건 — 데이터가 적어 발굴 판단은 보류 중이에요`
-            : `출시 ${d !== null ? `D+${d}` : '얼마 안 됨'}, 리뷰 ${rc.toLocaleString()}건 — 신작이지만 근거는 충분해요`
+            ? `신작 리그 · 출시 ${d !== null ? `D+${d}` : '얼마 안 됨'} · 첫 리뷰 ${rc}건 — 아직 조용한 게임이에요. 첫 리뷰를 남겨보세요`
+            : `신작 리그 · 출시 ${d !== null ? `D+${d}` : '얼마 안 됨'} · 리뷰 ${rc.toLocaleString()}건 — 빠르게 자리 잡는 중`
         }
         className={cn(
           'inline-flex items-center rounded-md font-medium cursor-help',

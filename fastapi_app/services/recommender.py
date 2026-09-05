@@ -860,6 +860,7 @@ class GameRecommender:
         use_masking: bool = True,
         max_review_count: Optional[int] = None,
         include_new: bool = False,
+        new_only: bool = False,
     ) -> List[Dict]:
         """
         Preference-based recommendation with four-tier weighting (v5).
@@ -909,7 +910,12 @@ class GameRecommender:
         for game in candidates:
             if not game.metrics:
                 continue
-            if not include_new and thin_new(game.review_count, game.release_date):
+            if new_only:
+                # 신작 리그: 신작끼리만 취향 일치로 경쟁 (개발자 취지 — 신생 게임을 보호하는 그들만의 리그).
+                # 리뷰 수 하한은 노출 게이트(is_active)가 이미 담당한다.
+                if game_lifecycle(game.review_count, game.release_date) != "new":
+                    continue
+            elif not include_new and thin_new(game.review_count, game.release_date):
                 continue   # R-11: 근거 얇은 신작(리뷰<100)은 기본 제외 — 프런트 '신작 포함' 토글로만 들어온다
             if not self._check_tags(game.metrics, required_tags, excluded_tags):
                 continue

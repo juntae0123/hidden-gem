@@ -12,7 +12,7 @@ import * as Slider from '@radix-ui/react-slider';
 import { GameGrid } from '@/components/game/GameGrid';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { GameGridSkeleton } from '@/components/ui/LoadingSkeleton';
-import { useRecommendByPreference } from '@/hooks/useRecommend';
+import { useRecommendByPreference, useNewLeague } from '@/hooks/useRecommend';
 import { METRIC_LABELS, cn } from '@/lib/utils';
 import { METRIC_DESCRIPTIONS, METRIC_CATEGORIES_KO } from '@/lib/constants';
 import { recordTasteAction } from '@/lib/api';
@@ -97,6 +97,9 @@ export default function SearchPage() {
   const [activeCategory, setActiveCategory] = useState<string>('vibe');
   // R-12: 리뷰 100 미만 신작은 기본 제외. 켜면 '신작 · D+n' 뱃지와 함께 들어온다.
   const [includeNew, setIncludeNew]         = useState<boolean>(false);
+  // 신작 리그: 마지막으로 제출한 취향으로 신작끼리만 다시 매칭 (개발자 취지 — 신생 게임을 보호하는 그들만의 리그)
+  const [leaguePrefs, setLeaguePrefs]       = useState<Record<string, number> | null>(null);
+  const league = useNewLeague(leaguePrefs, 6);
   const mutation        = useRecommendByPreference();
   const ensureSessionId = useUserStore(s => s.ensureSessionId);
   const isLoggedIn      = useUserStore(s => s.isLoggedIn);
@@ -124,6 +127,7 @@ export default function SearchPage() {
         // R-8: 중립(5.0) 그대로인 지표는 보내지 않는다 — 49개 전부 5.0 을 보내면 '모든 축에서 평범한 게임'이 만점을 받는다
         if (Object.keys(nonNeutral).length > 0) {
           mutation.mutate({ preferences: nonNeutral, count: 12, includeNew });
+          setLeaguePrefs(nonNeutral);
         }
       });
     } catch { /* 파싱 실패 시 기본 슬라이더로 */ }
@@ -147,6 +151,7 @@ export default function SearchPage() {
       context: { query: `preset:${preset.label}`, referrer: '/search' },
     });
     mutation.mutate({ preferences: preset.prefs, count: 12, includeNew });
+    setLeaguePrefs(preset.prefs);
   };
 
   const [emptyHint, setEmptyHint] = useState(false);
@@ -175,6 +180,7 @@ export default function SearchPage() {
     });
 
     mutation.mutate({ preferences: toSend, count: 12, includeNew });
+    setLeaguePrefs(toSend);
   };
 
   return (
@@ -274,8 +280,8 @@ export default function SearchPage() {
           className="accent-purple-600 w-3.5 h-3.5"
         />
         <span>
-          신작 포함
-          <span className="text-zinc-400 dark:text-zinc-500"> — 출시 6개월 미만은 리뷰가 적어 정확도가 낮아요</span>
+          신작도 메인 결과에 섞어 보기
+          <span className="text-zinc-400 dark:text-zinc-500"> — 꺼져 있어도 아래 '신작 리그'에서 따로 볼 수 있어요</span>
         </span>
       </label>
 
@@ -325,6 +331,27 @@ export default function SearchPage() {
           </>
         )}
       </section>
+
+      {/* 신작 리그 — 신작끼리만 같은 취향으로 경쟁. 정착 게임과 발굴 지수로 비교하지 않는다. */}
+      {leaguePrefs && (
+        <section className="rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.04] p-5">
+          <div className="flex items-baseline justify-between gap-3 mb-1">
+            <h2 className="text-[14px] font-semibold text-emerald-800 dark:text-emerald-300">신작 리그</h2>
+            <Link href="/ranking" className="text-[12px] text-emerald-700 dark:text-emerald-400 hover:underline">신작 랭킹 보기 →</Link>
+          </div>
+          <p className="text-[12px] text-zinc-500 mb-4">
+            출시 6개월 이내 게임끼리만 같은 취향으로 매칭했어요. 리뷰가 적어 발굴 점수는 아직 매기지 않아요 —
+            마음에 드는 게임에 첫 리뷰를 남기는 사람이 다음 히든젬을 만듭니다.
+          </p>
+          {league.isLoading && <GameGridSkeleton count={6} />}
+          {league.data && league.data.recommendations.length === 0 && (
+            <p className="text-[12px] text-zinc-500">이 취향에 맞는 신작이 아직 없어요.</p>
+          )}
+          {league.data && league.data.recommendations.length > 0 && (
+            <GameGrid games={league.data.recommendations} />
+          )}
+        </section>
+      )}
     </div>
   );
 }

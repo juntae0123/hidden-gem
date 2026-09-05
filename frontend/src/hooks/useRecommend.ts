@@ -178,6 +178,20 @@ export function useRecommendByPreference() {
   });
 }
 
+/**
+ * 신작 리그 — 같은 취향으로 신작끼리만 경쟁시킨 결과 (개발자 취지: 신생 게임 보호).
+ * Korean: 메인 결과 아래 별도 섹션. prefs 가 없으면 호출하지 않는다.
+ */
+export function useNewLeague(prefs: Record<string, number> | null, count: number = 6) {
+  return useQuery({
+    queryKey: ['recommend', 'new-league', prefs, count],
+    queryFn:  () => recommendByPreference(prefs!, count, { newOnly: true }),
+    enabled:  !!prefs && Object.keys(prefs).length > 0,
+    staleTime: 1000 * 60 * 30,
+    retry: 1,
+  });
+}
+
 // ==================== Ranking (R-12) ====================
 
 /**

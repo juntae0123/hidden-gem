@@ -179,7 +179,7 @@ export interface RankingItem {
   badge: string;
 }
 
-export type RankingType = 'steady' | 'rising' | 'new';
+export type RankingType = 'steady' | 'rising' | 'new' | 'new_quiet';
 
 export interface RankingResponse {
   type: RankingType;
