@@ -488,14 +488,30 @@ def _wilson_lower(positive_ratio: Optional[float], total: Optional[int], z: floa
 
 
 def _preference_sort_key(item: Dict) -> tuple:
-    """raw 점수(반올림 전) → Wilson 하한 → 리뷰 적은 순. reverse=True 로 쓰이므로 리뷰 수는 음수.
-    표시 점수(0.1 반올림)로 정렬하면 동점이 생기고, 거기서 gem 을 다시 쓰면 gem 이 두 번 개입한다 (검토 E-1). raw 로 정렬한다."""
+    """raw 점수 → 선호 문장 임베딩 코사인(정확 동점만 가른다, R-14) → Wilson 하한 → 리뷰 적은 순.
+    표시 점수(0.1 반올림)로 정렬하면 동점이 생기고, 거기서 gem 을 다시 쓰면 gem 이 두 번 개입한다 (검토 E-1). raw 로 정렬한다.
+    raw 는 소수 6자리로 반올림 — 정수 지표 + 같은 거리 = 진짜 동점인데 float 잡음이 그걸 깨뜨리지 않게."""
     game = item["game"]
     return (
-        item.get("raw_score", item["score"]),
+        round(item.get("raw_score", item["score"]), 6),
+        item.get("tiebreak_embedding", 0.0),
         _wilson_lower(game.steam_positive_ratio, game.review_count),
         -(game.review_count or 0),
     )
+
+
+def _preference_text(preferences: Dict[str, float]) -> str:
+    """선호 dict → 게임 임베딩(영문 Title/Genres/Description)과 같은 공간에서 비교할 짧은 영문 문장.
+    예: {"cozy_factor": 9, "time_pressure": 1} → "a game with very high cozy factor, very low time pressure"""
+    parts = []
+    for f, v in preferences.items():
+        if f not in NUMERIC_METRIC_FIELDS:
+            continue
+        v = float(v)
+        level = ("very high" if v >= 8.5 else "high" if v >= 6.5 else "moderate" if v > 3.5
+                 else "low" if v > 1.5 else "very low")
+        parts.append(f"{level} {f.replace('_', ' ')}")
+    return "a game with " + ", ".join(parts) if parts else ""
 
 
 def _gem_display(metric) -> Optional[float]:
@@ -894,6 +910,15 @@ class GameRecommender:
         target_vec = build_preference_vector(preferences, weight_map)
         n_active = sum(1 for w in weight_map.values() if w >= W_NEUTRAL)
 
+        # R-14 동점 타이브레이커: 선호 문장 임베딩 (요청당 1회, 실패하면 없이 간다 — 점수엔 영향 없음)
+        pref_emb: Optional[np.ndarray] = None
+        if settings.PREF_EMBED_TIEBREAK:
+            try:
+                pref_emb = await self._get_pref_embedding(preferences)
+            except Exception as e:                       # 임베딩 장애가 추천을 막으면 안 된다
+                logger.warning(f"[tiebreak] 선호 임베딩 실패, 동점은 Wilson 으로만: {e}")
+                pref_emb = None
+
         # 후보 조회 / Fetch candidates
         stmt = (
             select(Game)
@@ -959,14 +984,22 @@ class GameRecommender:
             v6_result = (calculate_score_v7 if use_v7 else calculate_score_v6)(**score_kwargs)
             display_score = v6_result['final_score']
 
+            tie = 0.0
+            if pref_emb is not None:
+                cand_emb = self._parse_embedding(game.metrics)
+                if cand_emb is not None:
+                    tie = cosine_similarity(pref_emb, cand_emb)
+
             scored.append({
                 "game": game,
                 "metric": game.metrics,
                 "score": display_score,
                 "raw_score": v6_result.get('raw_final_score', display_score),
+                "tiebreak_embedding": tie,
                 "score_breakdown": {
-                    **v6_result['breakdown'],          # core/xfactor/gem (+ v7: distance, fields_used)
+                    **v6_result['breakdown'],          # core/xfactor/gem (+ v7: distance, fields_compared)
                     "final_score": display_score,
+                    "tiebreak_embedding": round(tie, 4),   # 관측용 — 점수 아님, 정확 동점에서만 순서를 가른다
                 },
                 "v6_identity": v6_result['identity'],
                 "v6_strengths": v6_result['unique_strengths'],
@@ -1070,6 +1103,20 @@ Examples:
             input=query,
         )
         return np.array(response.data[0].embedding, dtype=np.float32)
+
+    async def _get_pref_embedding(self, preferences: Dict[str, float]) -> Optional[np.ndarray]:
+        """선호 문장 임베딩 — Redis 7일 캐시 (같은 프리셋·Vibe 는 한 번만 호출). 비용: text-embedding-3-small 수십 토큰."""
+        from services.cache import recommendation_cache, CACHE_VERSION
+        text_ = _preference_text(preferences)
+        if not text_:
+            return None
+        key = f"prefemb:{CACHE_VERSION}:{recommendation_cache._hash(text_)}"
+        cached = await recommendation_cache.get(key)
+        if cached:
+            return np.array(cached, dtype=np.float32)
+        vec = await self.embed_query(text_)
+        await recommendation_cache.set(key, vec.tolist(), ttl=7 * 24 * 3600)
+        return vec
 
     async def semantic_search(
         self,
