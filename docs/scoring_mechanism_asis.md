@@ -105,7 +105,7 @@ flowchart TD
     A1["genre = games.genres.split(',')[0]<br/>첫 장르만"] --> A2
     A2["core_fields = GENRE_CORE_METRICS[genre]<br/>없으면 DEFAULT_CORE_METRICS"] --> A4
     A3["intent_fields = 사용자 선호값 v >= 7 인 지표"] --> A4
-    A4["all_core_fields = core + intent<br/>가중치: intent 2.0, core 1.0"]
+    A4["all_core_fields = core + intent<br/>가중치: intent 2.0, core 1.0<br/>목표값: intent = 사용자값 / core = 상수 5.0 [D-26]"]
     A4 --> A5["diff = (target - game) x weight<br/>dist = norm(diff)"]
     A5 --> A6["eucl = improved_sigmoid(dist, n)<br/>= 1/(1+exp(dist/sqrt(n)/2.5 - 1.5))"]
     A4 --> A7["cos = cosine(target x w, game x w)"]
@@ -115,6 +115,10 @@ flowchart TD
 ```
 
 핵심: **49개 전부를 비교하지 않는다.** 장르 핵심 2~5개 + 사용자가 7 이상으로 지정한 지표만 본다.
+`[D-26]` **장르 핵심 지표의 목표값은 사용자 입력이 아니라 상수 5.0 이다** (`target_metrics.get(f, 5.0)`,
+`recommender.py:894` 가 sparse `preferences` 를 넘김). 그래서 Core 의 65% 는 "장르 핵심에서 평범한가"를
+잰다. 힐링(cozy 9) 프리셋에서 장르핵심 전부 9 인 게임은 Core 50.0, 전부 5 는 66.1. 상세: `final_verdict_0905.md` §2.
+`[D-8 일반화]` `v >= 7` 은 0 만 버리는 게 아니라 **7 미만 전부**를 버린다 — 힐링 프리셋 4개 중 3개가 점수에 안 들어간다.
 `[D-8]` 부정 선호(예: `horror_factor: 0`)는 `v >= 7` 조건에 안 걸려 **가중치 0** — 반영되지 않는다.
 `[D-7]` `improved_sigmoid` 는 거리 0에서 `1/(1+e^-1.5) = 0.8176`. 독스트링의 "0.92"는 틀렸고,
 그 결과 Core 실제 상한은 `(0.8176×0.65 + 1.0×0.35)×75 = 66.1`점 → **v6 최대 점수는 99가 아니라 90.1**.
@@ -450,6 +454,7 @@ Gem 입력 교체와 같은 변경 창**에서 해야 한다. 나누면 중간 �
 | D-23 | 경로 C가 임베딩으로 `limit * 2` 만 가져온 뒤 파이썬에서 `must_not` 필터 | `recommender.py:1081, 1104` | 필터 탈락이 많으면 결과가 부족해지고, 힌트가 잘 맞는 게임도 초기 후보 밖이면 진입 불가 (중간) |
 | D-24 | `positive_ratio = game.steam_positive_ratio or 0.5` — 긍정률 0.0도 유효값인데 0.5로 바뀐다 | `recommender.py:897`, `score_v6.py:293` | D-10과 같은 부류 (중간) |
 | D-25 | Gem을 리뷰 실측 기반으로 바꾸면 `× confidence`(**LLM 분석 신뢰도**)로 깎는 것이 논리적으로 맞지 않는다 | `recommender.py:569` | Steam 리뷰 근거가 충분한 게임이 LLM confidence 0.5 때문에 gem 반감. 전환 시 함께 제거 (높음) |
+| **D-26** | **장르 핵심 지표의 목표값이 상수 5.0** — `target_metrics.get(f, 5.0)` 인데 `target_metrics=preferences`(sparse) 라 장르 핵심은 항상 5.0. Core 는 "사용자가 원한 것에 가깝나"가 아니라 "자기 장르 핵심에서 얼마나 평범한가"를 65% 비중으로 잰다. 공식 계산: 힐링(cozy 9)에서 장르핵심 전부 9 → Core **50.0**, 전부 5 → **66.1**, cozy 6·전부 5 → **56.3**(뛰어난 cozy 9 를 이김). 인디 핵심이 `art_style_uniqueness` 라 **독창적 아트가 페널티**. X-Factor 가 장르 핵심을 제외해 이중 페널티 | `score_v6.py:184-188`, `recommender.py:894` | **치명 — 최대 결함**. 설계 의도 1 정면 위반. `v>=7` 임계(D-8 일반화: 7 미만 전부 버림)와 결합. 2026-09-05 발견, 세 외부 검토 모두 놓침(as-is §3 이 target 출처를 안 그렸다) → `docs/final_verdict_0905.md` |
 
 ### 검토자에게 부탁할 질문
 0. **전제**: 점수가 취향/검색 문장에 따라 달라지는 것은 의도된 설계다(개발자 확답). 이를 부정하는
