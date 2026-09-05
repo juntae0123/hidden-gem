@@ -53,6 +53,15 @@ PRESETS: Dict[str, Dict[str, float]] = {
 }
 SEMANTIC = ["스토리 좋은 힐링게임", "짧게 즐기는 로그라이크", "위쳐 같은 게임"]
 BY_GAME_APPIDS: List[int] = [413150, 620, 391540]   # Stardew, Portal 2, Undertale (있으면 사용)
+RANKING_TYPES = ("steady", "new", "rising")          # new_quiet 는 리뷰<30 신작이라 회차마다 흔들려 제외
+
+
+def _get(path: str, params: dict) -> dict:
+    try:
+        r = requests.get(f"{API}{path}", params=params, timeout=60)
+        return r.json() if r.status_code == 200 else {"_error": f"HTTP {r.status_code}: {r.text[:200]}"}
+    except requests.RequestException as e:
+        return {"_error": str(e)[:200]}
 
 
 def _post(path: str, payload: dict) -> dict:
@@ -141,6 +150,9 @@ def collect() -> dict:
     for app_id in BY_GAME_APPIDS:
         out["scenarios"][f"bygame:{app_id}"] = _post("/games/recommend/by-game",
                                                      {"app_id": app_id, "count": TOP_N})
+    # R-11 랭킹 3종 — 카나리아: 신작 랭킹 1위는 메챠 카멜레온이어야 한다 (사용자 명시). 회차마다 기록해 diff 로 본다.
+    for kind in RANKING_TYPES:
+        out["scenarios"][f"ranking:{kind}"] = _get("/games/ranking", {"type": kind, "limit": TOP_N})
     return out
 
 
@@ -179,7 +191,7 @@ def _gem_contrib(sb: dict) -> Optional[float]:
 def _rows(res: dict, enrich: bool = False) -> List[dict]:
     if not isinstance(res, dict) or "_error" in res:
         return []
-    items = res.get("recommendations") or res.get("results") or res.get("games") or []
+    items = res.get("recommendations") or res.get("results") or res.get("games") or res.get("items") or []
     rows = []
     for it in items:
         if not isinstance(it, dict):
@@ -188,7 +200,8 @@ def _rows(res: dict, enrich: bool = False) -> List[dict]:
         row = {
             "app_id": it.get("app_id"),
             "name": (it.get("name") or "")[:40],
-            "score": it.get("similarity_score", it.get("match_score", it.get("score"))),
+            # 랭킹 응답은 점수 대신 rank/gem_evidence/velocity_per_day 를 가진다 → 순위를 점수 자리에 (변동 비교용)
+            "score": it.get("similarity_score", it.get("match_score", it.get("score", it.get("rank")))),
             "gem_bonus": _gem_contrib(sb),             # 표시 점수에 더해진 gem 기여분 (경로별 키 흡수)
             "gem_potential": it.get("gem_potential"),  # 응답이 노출하는 gem 값
             "reviews": it.get("review_count"),
@@ -249,6 +262,12 @@ def save(label: str, overwrite: bool = False, skip_cache_clear: bool = False) ->
         print(f"   {k:28} {len(r)}건  1위 {r[0]['name'][:24] if r else '-':26} "
               f"리뷰중앙 {sorted(rev)[len(rev)//2] if rev else '-':>7}  2만초과 {over}건"
               f"{'  리뷰데이터 없음' if not rev else ''}")
+    # R-11 카나리아: 신작 랭킹 1위 = 메챠 카멜레온 (사용자: "메챠카멜레온이 신작랭킹 1위가 아니면 말이 안 된다")
+    new_rows = enriched.get("ranking:new") or []
+    if new_rows:
+        top = (new_rows[0].get("name") or "")
+        hit = ("카멜레온" in top) or ("CHAMELEON" in top.upper())
+        print(f"   카나리아 신작 1위: {top[:30]} → {'통과' if hit else '실패 — 신작 랭킹 로직을 먼저 본다'}")
     # 유명작 필터가 실제로 작동하는지 즉시 판정
     for name in [k for k in enriched if k.endswith(":히든젬")]:
         base = name.replace(":히든젬", ":전체")
