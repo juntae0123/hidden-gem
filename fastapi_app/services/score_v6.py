@@ -20,6 +20,7 @@ import numpy as np
 
 # recommender와 동일한 필드 (models.game 출처, 49개, 순환 없음)
 from models.game import NUMERIC_METRIC_FIELDS
+from config import settings
 
 
 # ==================== 점수 구간 (합 99) ====================
@@ -335,6 +336,7 @@ def calculate_score_v6(
     positive_ratio=None,
     gem_percentile=None,
     gem_factor: float = 1.0,
+    gem_evidence=None,
 ) -> dict:
     """
     Unified score v6: Core + X-Factor + Gem.
@@ -350,7 +352,8 @@ def calculate_score_v6(
         genre: 게임 첫 장르
         review_count: Steam 리뷰 수
         positive_ratio: Steam 긍정 비율 (0~1)
-        gem_percentile: gem 백분위 (0~100)
+        gem_percentile: gem 백분위 (0~100) — GEM_SOURCE=legacy 에서만 사용
+        gem_evidence: game_metrics.gem_evidence_score (0~100, NULL=근거 없음) — GEM_SOURCE=evidence 에서만 사용
 
     Returns:
         final_score, breakdown, identity, unique_strengths 등
@@ -359,9 +362,15 @@ def calculate_score_v6(
         game_metrics, target_metrics, genre
     )
     xfactor_score, xfactor_detail = compute_xfactor_score(game_metrics, genre)
-    gem_score, gem_detail = compute_gem_bonus(
-        review_count, positive_ratio, gem_percentile
-    )
+    if settings.GEM_SOURCE == "evidence":
+        # R-3: v6 도 같은 플래그를 따른다 (gem = evidence/100 × 6, NULL→0, 폴백·review_bonus·confidence 없음).
+        # v7 만 바꾸면 SCORE_VERSION=v6 상태에서 경로 A 만 legacy 로 남아 B/C 와 발굴 기준이 갈린다 (2026-09-05 발견).
+        gem_score = (float(gem_evidence) / 100.0 * SCORE_GEM_MAX) if gem_evidence is not None else 0.0
+        gem_detail = {"is_hidden_gem": gem_evidence is not None and gem_evidence >= 60, "source": "evidence"}
+    else:
+        gem_score, gem_detail = compute_gem_bonus(
+            review_count, positive_ratio, gem_percentile
+        )
     gem_score *= gem_factor   # 생애주기 계수 — established 만 1.0 (lifecycle.gem_factor)
 
     final = min(core_score + xfactor_score + gem_score, SCORE_MAX)

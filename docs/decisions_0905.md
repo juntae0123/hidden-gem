@@ -53,6 +53,14 @@ final = core + gem(≤6)  → 0 ~ 99
   (지수 실측 최대 ≈ 77. 70/80/90 은 도달 불가 — D-13.)
 - `/stats/overview` 의 gem 평균은 **코호트별로 분리**해 보고한다. 한 줄 평균은 삭제.
 - 선행 조건: 교사 코호트 리뷰 백필 완료. 그 전 `--apply` 는 계속 거부(이미 하드 가드).
+- 2026-09-05 실행 기록: 마이그레이션 `embeddings/migrations/20260905_gem_evidence_columns.sql` 적용 → `--fill --yes`
+  12,843건 (ok 3,219 전부 교사 / too_new 5,246 = 학생 전부 / insufficient 1,701 / no_reviews 1,707 / famous 970).
+  ok 분포 μ36.2 중앙 36.9 p90 53.5 max 71.1 → 히든젬(≥60) 87건, 주목(45~60) 795건. 뱃지 기준 60/45 유지.
+- 플래그 범위 수정: **v6 도 GEM_SOURCE 를 따른다** (gem = evidence/100 × 6, NULL→0). 처음엔 v7 과 경로 B/C 만
+  바꿔서 `SCORE_VERSION=v6` 상태에선 경로 A 만 legacy 로 남는 불일치가 있었다. `scripts.ablation` 도 같은 분기를
+  쓰고(v6 예산 6 / v7 예산 12) 헤더에 적용 플래그를 찍는다. 캐시 키에 `SCORE_VERSION`·`GEM_SOURCE` 포함.
+- 전환 절차(로컬): `.env GEM_SOURCE=evidence` → **`docker compose up -d fastapi`** (restart 아님, C-11) →
+  `rec_snapshot --save s5_gem_evidence` → `--diff s4_hnsw s5_gem_evidence` → `scripts.ablation --pool default`.
 
 ## R-4. 노출 임계값 — 2단, 지금 확정
 - 노출: `review_count ≥ 3 AND wilson_lower(z=1.96) ≥ 0.35` (n=3 이면 3/3, n=6 이면 5/6 이상).
