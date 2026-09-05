@@ -305,7 +305,16 @@ async def recommend_by_preference(
     v5: 4단계 가중치로 전체 49개 지표 비교. must_not 하드 필터.
     점수 0~99 (절대 점수).
     """
-    # 1. 캐시 확인
+    # R-8: 중립(|v−5| < 0.5) 지표는 '취향'이 아니다. 프런트가 49개 전부 5.0 을 보내면
+    # v6/v7 모두 '모든 축에서 평범한 게임'에 만점을 준다 (D-26 을 요청 쪽에서 재현). 여기서 걷어낸다.
+    request.preferences = {f: v for f, v in request.preferences.items() if abs(float(v) - 5.0) >= 0.5}
+    if not request.preferences:
+        raise HTTPException(
+            status_code=400,
+            detail="취향 지표가 없습니다. 지표를 하나 이상 5.0 에서 움직여주세요. 취향 없이 보려면 /games/ranking 을 쓰세요.",
+        )
+
+    # 1. 캐시 확인 (중립 제거 후의 preferences 로 키를 만든다)
     cache_key = recommendation_cache.by_preference_key(
         request.preferences,
         request.count,

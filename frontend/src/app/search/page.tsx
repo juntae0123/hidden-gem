@@ -95,6 +95,8 @@ function MetricSlider({
 export default function SearchPage() {
   const [prefs, setPrefs]               = useState<Record<string, number>>(buildInitialPrefs);
   const [activeCategory, setActiveCategory] = useState<string>('vibe');
+  // R-12: 리뷰 100 미만 신작은 기본 제외. 켜면 '신작 · D+n' 뱃지와 함께 들어온다.
+  const [includeNew, setIncludeNew]         = useState<boolean>(false);
   const mutation        = useRecommendByPreference();
   const ensureSessionId = useUserStore(s => s.ensureSessionId);
   const isLoggedIn      = useUserStore(s => s.isLoggedIn);
@@ -119,7 +121,10 @@ export default function SearchPage() {
       // effect 내 동기 setState 회피 (react-hooks/set-state-in-effect)
       queueMicrotask(() => {
         setPrefs(merged);
-        mutation.mutate({ preferences: Object.keys(nonNeutral).length ? nonNeutral : merged, count: 12 });
+        // R-8: 중립(5.0) 그대로인 지표는 보내지 않는다 — 49개 전부 5.0 을 보내면 '모든 축에서 평범한 게임'이 만점을 받는다
+        if (Object.keys(nonNeutral).length > 0) {
+          mutation.mutate({ preferences: nonNeutral, count: 12, includeNew });
+        }
       });
     } catch { /* 파싱 실패 시 기본 슬라이더로 */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -141,14 +146,23 @@ export default function SearchPage() {
       action_type: 'search',
       context: { query: `preset:${preset.label}`, referrer: '/search' },
     });
-    mutation.mutate({ preferences: preset.prefs, count: 12 });
+    mutation.mutate({ preferences: preset.prefs, count: 12, includeNew });
   };
+
+  const [emptyHint, setEmptyHint] = useState(false);
 
   const handleSubmit = () => {
     const nonNeutral = Object.fromEntries(
       Object.entries(prefs).filter(([, v]) => Math.abs(v - 5.0) >= 0.5)
     );
-    const toSend = Object.keys(nonNeutral).length > 0 ? nonNeutral : prefs;
+    if (Object.keys(nonNeutral).length === 0) {
+      // R-8: 취향 없음은 추천이 아니다 — 랭킹으로 안내
+      setEmptyHint(true);
+      return;
+    }
+    setEmptyHint(false);
+    // R-8: 아무것도 안 움직였으면 빈 preferences 를 보낸다 (백엔드가 발견 모드로 처리). 49개 5.0 폴백은 D-26 을 프런트에서 재현했다.
+    const toSend = nonNeutral;
 
     recordTasteAction({
       session_id:  ensureSessionId(),
@@ -160,7 +174,7 @@ export default function SearchPage() {
       },
     });
 
-    mutation.mutate({ preferences: toSend, count: 12 });
+    mutation.mutate({ preferences: toSend, count: 12, includeNew });
   };
 
   return (
@@ -243,6 +257,27 @@ export default function SearchPage() {
             ))}
         </div>
       )}
+
+      {emptyHint && (
+        <p className="text-center text-[12px] text-orange-700 dark:text-orange-400">
+          지표를 하나 이상 움직여주세요. 취향 없이 좋은 게임을 보고 싶다면{' '}
+          <Link href="/ranking" className="underline">랭킹</Link>으로 가세요.
+        </p>
+      )}
+
+      {/* R-12: 신작 포함 토글 — 기본 꺼짐 */}
+      <label className="flex items-center justify-center gap-2 text-[12px] text-zinc-600 dark:text-zinc-400 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={includeNew}
+          onChange={(e) => setIncludeNew(e.target.checked)}
+          className="accent-purple-600 w-3.5 h-3.5"
+        />
+        <span>
+          신작 포함
+          <span className="text-zinc-400 dark:text-zinc-500"> — 출시 6개월 미만은 리뷰가 적어 정확도가 낮아요</span>
+        </span>
+      </label>
 
       <div className="flex justify-center">
         <button

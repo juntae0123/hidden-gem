@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { Sparkles } from 'lucide-react';
 import { cn, METRIC_LABELS } from '@/lib/utils';
 import { GemBadge } from './GemBadge';
+import { LifecycleBadge } from './LifecycleBadge';
 import { MatchBar } from './MatchBar';
 import { GameImage } from './GameImage';
 import { GEM_TIERS } from '@/lib/score';
@@ -82,9 +83,11 @@ export function GameCard({
           size="card"
           zoomOnHover
         />
-        {gemScore >= GEM_TIERS.RARE && (
+        {(game.lifecycle === 'new' || gemScore >= GEM_TIERS.RARE) && (
           <div className="absolute top-2 right-2">
-            <GemBadge score={gemScore} size="sm" />
+            {game.lifecycle === 'new'
+              ? <LifecycleBadge lifecycle="new" daysSinceRelease={game.days_since_release} reviewCount={game.review_count} size="sm" />
+              : <GemBadge score={gemScore} size="sm" />}
           </div>
         )}
       </div>
