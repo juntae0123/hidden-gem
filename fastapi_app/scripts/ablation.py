@@ -234,7 +234,8 @@ async def main():
     print("    (어느 쪽이든 제거 결론은 같다 — 질의 정보가 없다. 이 수치는 '얼마나 바뀔지'의 예측이다)")
     print("  · 'v7' 의 교사비율·리뷰중앙이 v6 보다 낮아지면 '유명작 상위 금지' 의도 방향이다.")
     print("  · X-F<15.6 비율이 전체 풀에서 몇 % 인지가 '선택 게이트 가설'의 직접 판정이다.")
-    print("  · '상위N폭' 이 v7 에서 10~25 면 τ 적정. 5 미만이면 τ 를 올리고, 30 넘으면 내린다 (decisions R-1').")
+    print("  · '상위N폭'(상위 N 점수 범위): 가우시안은 거리 0 근처가 평평해 좁게 나온다(v7 1.7~2.8 실측).")
+    print("    폭을 넓히려면 τ 를 *내리거나* 커널을 바꿔야 하고, 그러면 어긋남 페널티가 커진다. 참고치일 뿐 판정 기준 아님.")
     if args.json:
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(out, f, ensure_ascii=False, indent=1, default=str)
