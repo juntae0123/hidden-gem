@@ -25,6 +25,13 @@ from typing import Any, List, Optional
 # (2026-09-04 스냅샷 캐시 오염 사고: 키에 로직 버전이 없어 변경 전 결과가 그대로 돌아왔다)
 CACHE_VERSION = "v7a"
 
+
+def _key_version() -> str:
+    """캐시 키에 들어가는 버전 조각: CACHE_VERSION + 결과를 바꾸는 운영 플래그 전부.
+    SCORE_VERSION(v6/v7)·GEM_SOURCE(legacy/evidence) 만 바꾸고 캐시를 안 비워도 옛 결과가 살아남지 않게 (E-6 확장, 2026-09-05).
+    세 경로(semantic / by_game / by_preference) 모두 이 조각을 쓴다."""
+    return f"{CACHE_VERSION}-{settings.SCORE_VERSION}-{settings.GEM_SOURCE}"
+
 import redis.asyncio as aioredis
 
 from config import settings
@@ -98,7 +105,7 @@ class RecommendationCache:
         """
         norm = self._normalize_query(query)
         payload = json.dumps({"q": norm, "min_gem": min_gem_potential, "new": include_new}, sort_keys=True)
-        return f"semantic:{CACHE_VERSION}:{self._hash(payload)}:{limit}"
+        return f"semantic:{_key_version()}:{self._hash(payload)}:{limit}"
 
     def by_game_key(self, app_id: int, count: int, exclude_same_developer: bool = False,
                     include_new: bool = False) -> str:
@@ -107,7 +114,7 @@ class RecommendationCache:
         Korean: 게임 기반 추천 결과 캐시 키 생성.
         """
         flag = ("x" if exclude_same_developer else "a") + ("n" if include_new else "")   # 결과를 바꾸는 조건은 전부 키에
-        return f"rec:game:{CACHE_VERSION}:{app_id}:{count}:{flag}"
+        return f"rec:game:{_key_version()}:{app_id}:{count}:{flag}"
 
     def by_preference_key(
         self,
@@ -147,11 +154,12 @@ class RecommendationCache:
             "min_gem": min_gem_potential,
             "new": include_new,
             "new_only": new_only,
-            # 채점기 버전 — 운영자가 SCORE_VERSION 만 바꾸고 CACHE_VERSION 을 안 올려도 옛 결과가 살아남지 않게 (검토 E-6)
+            # 채점기 버전은 _key_version() 접두에도 들어가지만 payload 에도 남긴다 (검토 E-6, 이중 안전)
             "score_version": settings.SCORE_VERSION,
+            "gem_source": settings.GEM_SOURCE,
         }
         pref_str = json.dumps(payload, sort_keys=True)
-        return f"rec:pref:{CACHE_VERSION}:{self._hash(pref_str)}:{count}"
+        return f"rec:pref:{_key_version()}:{self._hash(pref_str)}:{count}"
 
     # ==================== GET / SET ====================
 

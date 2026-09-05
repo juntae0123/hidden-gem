@@ -102,6 +102,8 @@ semantic:{query_hash}:{limit}   rec:game:{app_id}:{count}   rec:pref:{pref_hash}
 반환값만으로 성공을 판정할 수 없다 — `GET /ops/cache` 의 `total_keys` 로 확인해야 한다.
 → 조치: `rec_snapshot --save` 가 매 회차 무효화 + 확인을 강제하고, 실패 시 스냅샷을
   쓰지 않고 죽는다. 근본 해결은 캐시 키에 `CACHE_VERSION` prefix + 누락 조건 추가.
+→ 2026-09-05 현재: 세 키 모두 `_key_version()` = `{CACHE_VERSION}-{SCORE_VERSION}-{GEM_SOURCE}` 접두 + 누락 조건 포함.
+  플래그만 바꿔도 옛 결과가 살아남지 않는다. 단, 스냅샷 비교는 여전히 무효화+확인을 강제한다(이중 안전).
 
 ### C-10. `score_v6.calculate_score_v6` 는 `target_metrics` 가 **꽉 찬 dict** 라고 가정한다
 `compute_core_score` 는 `target_metrics.get(f, 5.0)` 으로 장르 핵심 지표의 목표값을 읽는다.
@@ -110,6 +112,17 @@ semantic:{query_hash}:{limit}   rec:game:{app_id}:{count}   rec:pref:{pref_hash}
 를 재게 됐다(D-26, `final_verdict_0905.md` §2). 세 외부 검토가 전부 놓쳤다 — 문서에 target 출처가 없었다.
 → 함수의 기본값 인자(`.get(k, default)`, `or x`)는 **호출자가 그 키를 실제로 채우는지** 확인해야 한다.
   기본값이 "안전한 중립"으로 보여도 호출 맥락에서는 채점 규칙이 된다.
+
+### C-11. 운영 플래그는 `.env` 를 고쳐도 fastapi 컨테이너에 **닿지 않는다** (2026-09-05 R-3 전환에서 발견)
+`config.Settings.Config.env_file = ".env"` 는 컨테이너 작업 디렉터리 `/app`(= `fastapi_app/`) 기준이고,
+`docker-compose.yml` 의 fastapi 서비스는 `env_file` 없이 `environment:` 로 변수를 하나씩 넘긴다.
+따라서 루트 `.env` 에 `GEM_SOURCE=evidence` 를 적고 `restart` 해도 서빙은 계속 `legacy` — **아무 오류 없이**.
+반면 batch 컨테이너는 `env_file: .env` 라서 같은 값을 읽는다 → 배치와 서빙이 다른 플래그로 돌 수 있다.
+→ 조치: 결과를 바꾸는 플래그(`SCORE_VERSION`, `GEM_SOURCE`, `VIBE_SECONDARY_ENABLED`, `PREF_EMBED_TIEBREAK`)를
+  compose `environment:` 에 `${X:-기본값}` 으로 명시. 값을 바꾼 뒤엔 `docker compose up -d fastapi`
+  (`restart` 는 env 를 다시 읽지 않는다). 전환 뒤엔 반드시 응답의 `score_breakdown.gem_source` /
+  `ablation` 헤더의 `플래그:` 줄로 실제 적용값을 확인한다. 같은 이유로 캐시 키에도 두 플래그가 들어간다(C-9 후속).
+  Railway 는 대시보드 변수로 넘기므로 별도 확인.
 
 ### C-7. Steam API 를 두 스크립트가 동시에 두드릴 수 있다
 크롤러(store 검색 1.6s + appdetails 1.5s)와 `refresh_reviews`(appreviews 1.0s)는 같은 IP를 쓴다.
@@ -170,6 +183,8 @@ C 문장 검색  semantic_search               (임베딩85% + 힌트15%) × 94 
 - [ ] **숫자의 출처를 말할 수 있나** — 이 수치가 계산인가 실측인가? 1차 출처가 무엇인가? (B 분류)
 - [ ] **동시 실행 충돌이 없나** — Steam API, 배치 산출물 파일명, DB 락 (C-6·C-7)
 - [ ] **되돌릴 수 있나** — 한 줄로 되돌리는 방법이 있나? 없으면 왜 없나?
+- [ ] **플래그가 실제로 서빙에 닿았나** — `.env` 만 고친 게 아닌가? compose `environment:` 에 있나?
+      `up -d` 로 재생성했나? 응답/ablation 헤더에서 적용값을 봤나? (C-11)
 
 ---
 

@@ -222,6 +222,24 @@ def test_gem_evidence_mode_budgets_and_null(monkeypatch):
     assert r_llm["breakdown"]["gem_score"] == 0.0
 
 
+def test_v6_follows_gem_source_flag(monkeypatch):
+    """v6 도 GEM_SOURCE=evidence 를 따른다: gem = evidence/100 × 6, NULL→0, LLM gem_percentile 무시.
+    (v7 만 바꾸면 SCORE_VERSION=v6 상태에서 경로 A 만 legacy 로 남아 B/C 와 발굴 기준이 갈렸다 — 2026-09-05)"""
+    from config import settings
+    m = _metrics(cozy_factor=9); prefs = {"cozy_factor": 9}
+    legacy = score_v6.calculate_score_v6(m, prefs, "", 300, 0.95, 99.0, gem_evidence=None)
+    assert legacy["breakdown"]["gem_score"] > 0.0                      # legacy: gem_percentile 99 → 보너스 있음
+    monkeypatch.setattr(settings, "GEM_SOURCE", "evidence")
+    r_null = score_v6.calculate_score_v6(m, prefs, "", 300, 0.95, 99.0, gem_evidence=None)
+    assert r_null["breakdown"]["gem_score"] == 0.0                      # 같은 입력, 근거 NULL → 0 (폴백 없음)
+    r60 = score_v6.calculate_score_v6(m, prefs, "", 300, 0.95, 99.0, gem_evidence=60.0)
+    assert r60["breakdown"]["gem_score"] == pytest.approx(3.6) and r60["is_hidden_gem"] is True
+    r45 = score_v6.calculate_score_v6(m, prefs, "", 300, 0.95, 99.0, gem_evidence=45.0)
+    assert r45["is_hidden_gem"] is False
+    r_new = score_v6.calculate_score_v6(m, prefs, "", 300, 0.95, 99.0, gem_evidence=60.0, gem_factor=0.0)
+    assert r_new["breakdown"]["gem_score"] == 0.0                       # 신작·유명작은 계수 0
+
+
 def test_legacy_mode_unchanged_by_default():
     from config import settings
     assert settings.GEM_SOURCE == "legacy"

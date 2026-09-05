@@ -43,10 +43,11 @@ from sqlalchemy.orm import selectinload                # noqa: E402
 from database import AsyncSessionLocal                 # noqa: E402
 from models.game import Game, NUMERIC_METRIC_FIELDS    # noqa: E402
 from services.recommender import resolve_null          # noqa: E402
+from config import settings                             # noqa: E402
 from services.score_v6 import (                        # noqa: E402
-    compute_core_score, compute_xfactor_score, compute_gem_bonus, SCORE_MAX,
+    compute_core_score, compute_xfactor_score, compute_gem_bonus, SCORE_MAX, SCORE_GEM_MAX,
 )
-from services.score_v7 import compute_core_v7          # noqa: E402
+from services.score_v7 import compute_core_v7, budgets  # noqa: E402
 from services.lifecycle import admit, gem_factor, lifecycle as game_lifecycle   # noqa: E402
 
 try:
@@ -160,6 +161,7 @@ async def load_pool(pool_mode: str = "default"):
             "review_count": g.review_count,
             "positive": g.steam_positive_ratio,
             "gem_pct": g.metrics.gem_percentile,
+            "gem_evidence": getattr(g.metrics, "gem_evidence_score", None),   # R-3 (GEM_SOURCE=evidence 일 때 사용)
             "gem_factor": gem_factor(g.review_count, g.release_date),   # 서빙과 동일: established 만 gem
             "lifecycle": game_lifecycle(g.review_count, g.release_date),
             "metrics": {f: resolve_null(f, getattr(g.metrics, f, None)) for f in NUMERIC_METRIC_FIELDS},
@@ -169,15 +171,24 @@ async def load_pool(pool_mode: str = "default"):
 
 def score_components(pool, prefs):
     n = len(pool)
-    core6 = np.zeros(n); xf = np.zeros(n); gem = np.zeros(n); core7 = np.zeros(n)
+    core6 = np.zeros(n); xf = np.zeros(n); gem = np.zeros(n); core7 = np.zeros(n); gem7 = np.zeros(n)
+    evidence_mode = settings.GEM_SOURCE == "evidence"
+    v7_gem_max = budgets()[1]                                    # legacy 6 / evidence 12 (score_v7.budgets)
     for i, g in enumerate(pool):
         c, _ = compute_core_score(g["metrics"], prefs, g["genre"])
         x, _ = compute_xfactor_score(g["metrics"], g["genre"])
-        gm, _ = compute_gem_bonus(g["review_count"], g["positive"], g["gem_pct"])
-        gm *= g["gem_factor"]                                   # 서빙과 동일 (R-11)
-        c7, _ = compute_core_v7(g["metrics"], prefs)
-        core6[i], xf[i], gem[i], core7[i] = c, x, gm, c7
-    return core6, xf, gem, core7
+        if evidence_mode:
+            # 서빙과 동일 (R-3): evidence/100 × 예산, NULL→0. v6 예산 6, v7 예산 12
+            ev = g["gem_evidence"]
+            unit = (float(ev) / 100.0) if ev is not None else 0.0
+            gm, gm7 = unit * SCORE_GEM_MAX, unit * v7_gem_max
+        else:
+            gm, _ = compute_gem_bonus(g["review_count"], g["positive"], g["gem_pct"])
+            gm7 = gm
+        gm *= g["gem_factor"]; gm7 *= g["gem_factor"]           # 서빙과 동일 (R-11)
+        c7, _ = compute_core_v7(g["metrics"], prefs)             # 예산은 budgets() — evidence 면 Core 87
+        core6[i], xf[i], gem[i], core7[i], gem7[i] = c, x, gm, c7, gm7
+    return core6, xf, gem, core7, gem7
 
 
 def summarize(name, base, variant, pool, ids, top_n):
@@ -226,11 +237,15 @@ async def main():
         lc_counts[g["lifecycle"]] = lc_counts.get(g["lifecycle"], 0) + 1
     print(f"후보 풀 [{args.pool}] {n:,}건 (교사 {teacher_n:,} / 학생 {n - teacher_n:,})  생애주기 {lc_counts}  "
           f"scipy={'있음' if HAVE_SCIPY else '없음(kendall 생략)'}")
-    print(f"교사 비율 기준선 {teacher_n / max(n, 1):.2f} — 상위 N 의 '교사비율'은 이 값과 비교해 읽는다\n")
+    print(f"교사 비율 기준선 {teacher_n / max(n, 1):.2f} — 상위 N 의 '교사비율'은 이 값과 비교해 읽는다")
+    ev_n = sum(1 for g in pool if g["gem_evidence"] is not None)
+    print(f"플래그: SCORE_VERSION={settings.SCORE_VERSION}  GEM_SOURCE={settings.GEM_SOURCE}  "
+          f"(v7 예산 Core {budgets()[0]:.0f} + Gem {budgets()[1]:.0f})  gem_evidence 있음 {ev_n:,}/{n:,}\n")
+    out["flags"] = {"score_version": settings.SCORE_VERSION, "gem_source": settings.GEM_SOURCE, "evidence_rows": ev_n}
 
     out = {"pool_mode": args.pool, "pool": n, "teacher": teacher_n, "lifecycle": lc_counts, "top_n": args.top, "scenarios": {}}
     for sc, prefs in scenarios.items():
-        core6, xf, gem, core7 = score_components(pool, prefs)
+        core6, xf, gem, core7, gem7 = score_components(pool, prefs)
         v6 = np.minimum(core6 + xf + gem, SCORE_MAX)
         variants = {
             "v6 (기준)":            v6,
@@ -238,7 +253,7 @@ async def main():
             "v6 − Gem":             np.minimum(core6 + xf, SCORE_MAX),
             "v6 Core 만":           core6,
             "v6 X-Factor 만":       xf,
-            "v7 (Core93 + Gem)":    np.minimum(core7 + gem, SCORE_MAX),
+            "v7 (Core + Gem)":      np.minimum(core7 + gem7, SCORE_MAX),   # legacy: 93+6 / evidence: 87+12
             "v7 Core 만":           core7,
         }
         rows = [summarize(k, v6, v, pool, ids, args.top) for k, v in variants.items()]

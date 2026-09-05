@@ -104,6 +104,13 @@ services:
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
       - ADMIN_USERNAME=${ADMIN_USERNAME}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      # 채점 운영 플래그 — fastapi 컨테이너는 루트 .env 를 읽지 않으므로(config.env_file=".env" 는 /app 기준)
+      # 여기서 넘겨야 한다. .env 만 고치고 restart 하면 무시된다는 걸 2026-09-05 R-3 전환에서 발견.
+      # 값 바꾼 뒤엔 `docker compose up -d fastapi` (restart 는 env 를 다시 읽지 않는다).
+      - SCORE_VERSION=${SCORE_VERSION:-v6}
+      - GEM_SOURCE=${GEM_SOURCE:-legacy}
+      - VIBE_SECONDARY_ENABLED=${VIBE_SECONDARY_ENABLED:-False}
+      - PREF_EMBED_TIEBREAK=${PREF_EMBED_TIEBREAK:-True}
     ports:
       - "8000:8000"
     depends_on:
