@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     LIFECYCLE_FAMOUS_REVIEWS: int = 20000  # 리뷰 이 수 이상 '유명' — 발굴 질문 안 함 (무명도 cap 과 일치)
     LIFECYCLE_NEW_MIN_REVIEWS: int = 100   # 신작 중 리뷰 이 수 미만만 '근거 얇음' → 메인 추천 기본 제외
 
+    # Vibe secondary 목표값(초안, vibe_config.VIBE_SECONDARY_DRAFT)을 v7 거리에 ×0.5 로 넣을지. 검증 전 False (R-1')
+    VIBE_SECONDARY_ENABLED: bool = False
+    VIBE_SECONDARY_WEIGHT: float = 0.5
+
     CACHE_TTL_SEMANTIC: int = 3600
     CACHE_TTL_BY_GAME: int = 3600
     CACHE_TTL_BY_PREFERENCE: int = 1800

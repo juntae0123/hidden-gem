@@ -86,7 +86,7 @@ export function GameCard({
         {(game.lifecycle === 'new' || gemScore >= GEM_TIERS.RARE) && (
           <div className="absolute top-2 right-2">
             {game.lifecycle === 'new'
-              ? <LifecycleBadge lifecycle="new" daysSinceRelease={game.days_since_release} reviewCount={game.review_count} size="sm" />
+              ? <LifecycleBadge lifecycle="new" isFamous={game.is_famous} daysSinceRelease={game.days_since_release} reviewCount={game.review_count} size="sm" />
               : <GemBadge score={gemScore} size="sm" />}
           </div>
         )}

@@ -318,6 +318,10 @@ def compute_gem_bonus(
         'quality': round(quality, 2),
         'gem_signal': round(gem_signal, 2),
         'is_hidden_gem': reviews < 10000 and positive >= 0.85,
+        # 테스트 관측용: 실제로 어떤 값이 계산에 쓰였나 (0 과 NULL 폴백을 구분해 검증할 수 있게)
+        'positive_used': positive,
+        'gem_pct_used': gem_pct,
+        'reviews_used': reviews,
     }
 
 
@@ -330,6 +334,7 @@ def calculate_score_v6(
     review_count=None,
     positive_ratio=None,
     gem_percentile=None,
+    gem_factor: float = 1.0,
 ) -> dict:
     """
     Unified score v6: Core + X-Factor + Gem.
@@ -357,11 +362,14 @@ def calculate_score_v6(
     gem_score, gem_detail = compute_gem_bonus(
         review_count, positive_ratio, gem_percentile
     )
+    gem_score *= gem_factor   # 생애주기 계수 — established 만 1.0 (lifecycle.gem_factor)
 
     final = min(core_score + xfactor_score + gem_score, SCORE_MAX)
 
     return {
         'final_score': round(final, 1),
+        'raw_final_score': final,        # 정렬용. 표시 점수 반올림으로 생기는 동점에 gem 이 다시 개입하지 않게
+        'raw_core_score': core_score,
         'breakdown': {
             'core_score': round(core_score, 1),
             'xfactor_score': round(xfactor_score, 1),

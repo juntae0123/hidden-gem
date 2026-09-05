@@ -147,6 +147,8 @@ class RecommendationCache:
             "min_gem": min_gem_potential,
             "new": include_new,
             "new_only": new_only,
+            # 채점기 버전 — 운영자가 SCORE_VERSION 만 바꾸고 CACHE_VERSION 을 안 올려도 옛 결과가 살아남지 않게 (검토 E-6)
+            "score_version": settings.SCORE_VERSION,
         }
         pref_str = json.dumps(payload, sort_keys=True)
         return f"rec:pref:{CACHE_VERSION}:{self._hash(pref_str)}:{count}"
@@ -196,7 +198,7 @@ class RecommendationCache:
         """
         try:
             r = await self._get_redis()
-            patterns = ["semantic:*", "rec:game:*", "rec:pref:*"]
+            patterns = ["semantic:*", "rec:game:*", "rec:pref:*", "rank:*"]   # rank 누락 시 리뷰 갱신 후에도 옛 순위 (검토 E-7)
             total_deleted = 0
 
             for pattern in patterns:
@@ -241,15 +243,17 @@ class RecommendationCache:
             semantic_keys = len(await r.keys("semantic:*"))
             game_keys = len(await r.keys("rec:game:*"))
             pref_keys = len(await r.keys("rec:pref:*"))
+            rank_keys = len(await r.keys("rank:*"))
 
             hits = info.get("keyspace_hits", 0)
             misses = info.get("keyspace_misses", 0)
 
             return {
-                "total_keys": semantic_keys + game_keys + pref_keys,
+                "total_keys": semantic_keys + game_keys + pref_keys + rank_keys,
                 "semantic_keys": semantic_keys,
                 "game_keys": game_keys,
                 "preference_keys": pref_keys,
+                "ranking_keys": rank_keys,
                 "hit_rate_pct": round(hits / max(hits + misses, 1) * 100, 2),
                 "total_hits": hits,
                 "total_misses": misses,

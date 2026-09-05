@@ -153,11 +153,13 @@ export interface RecommendedGame {
   score_breakdown?: ScoreBreakdown | null;
   /** R-11 생애주기: 신작(출시 ≤180일) / 정착 / 유명(리뷰 2만+). 신작은 발굴 판단 보류 */
   lifecycle?: Lifecycle;
+  /** 인지도 축 — 나이 축과 별개. 8.7만 리뷰 신작은 new + is_famous */
+  is_famous?: boolean;
   days_since_release?: number | null;
   review_count?: number | null;
 }
 
-export type Lifecycle = 'new' | 'established' | 'famous' | '';
+export type Lifecycle = 'new' | 'established' | 'famous' | 'upcoming' | '';
 
 /** GET /games/ranking 응답 한 줄 (R-12) */
 export interface RankingItem {
@@ -171,6 +173,7 @@ export interface RankingItem {
   positive_ratio: number | null;
   wilson_lower: number | null;
   lifecycle: Lifecycle;
+  is_famous: boolean;
   days_since_release: number | null;
   gem_evidence: number | null;       // steady
   velocity_per_day: number | null;   // new

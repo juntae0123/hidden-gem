@@ -13,9 +13,16 @@
     리뷰중앙    상위 20 리뷰 수 중앙값
     σ(항)      전체 풀에서 그 항의 표준편차 (상위 N 의 σ 와 비교하라)
 
+후보 풀 (--pool) — **실제 서빙과 같은 입장 규칙(lifecycle.admit)을 쓴다.** 필터를 여기 복제하지 않는다 (검토 E-2).
+    default     기본 by-preference 와 동일: 근거 얇은 신작(new & 리뷰<100)·미출시 제외   ← v7 전환 판단은 이걸로
+    include-new 신작 포함 토글 ON
+    new-only    신작 리그
+    hidden-gem  default + max_review_count 20000 (히든젬 화면)
+    all         활성·분석 전체 (이전 회차 30/31 과 비교용)
+
 실행 (fastapi 컨테이너 — 의존성·DB 접속이 여기 있다):
-    docker compose exec fastapi python -m scripts.ablation
-    docker compose exec fastapi python -m scripts.ablation --top 20 --json /app/data_ablation.json
+    docker compose exec fastapi python -m scripts.ablation --pool default
+    docker compose exec fastapi python -m scripts.ablation --pool new-only --top 20 --json /app/data/audit/ablation/x.json
 """
 
 import argparse
@@ -40,6 +47,7 @@ from services.score_v6 import (                        # noqa: E402
     compute_core_score, compute_xfactor_score, compute_gem_bonus, SCORE_MAX,
 )
 from services.score_v7 import compute_core_v7          # noqa: E402
+from services.lifecycle import admit, gem_factor, lifecycle as game_lifecycle   # noqa: E402
 
 try:
     from scipy.stats import kendalltau, spearmanr      # type: ignore
@@ -114,7 +122,22 @@ def top_ids(scores: np.ndarray, ids: List[int], n: int) -> List[int]:
 
 # ---------- 채점 ----------
 
-async def load_pool():
+POOLS = ("default", "include-new", "new-only", "hidden-gem", "all")
+
+
+def _admit(g: Game, pool: str) -> bool:
+    if pool == "all":
+        return True
+    if pool == "hidden-gem" and (g.review_count or 0) > 20000:
+        return False
+    return admit(
+        g.review_count, g.release_date,
+        include_new=(pool == "include-new"),
+        new_only=(pool == "new-only"),
+    )
+
+
+async def load_pool(pool_mode: str = "default"):
     async with AsyncSessionLocal() as db:
         stmt = (
             select(Game)
@@ -127,6 +150,8 @@ async def load_pool():
     for g in games:
         if not g.metrics:
             continue
+        if not _admit(g, pool_mode):
+            continue
         pool.append({
             "app_id": g.app_id,
             "name": g.name or "",
@@ -135,6 +160,8 @@ async def load_pool():
             "review_count": g.review_count,
             "positive": g.steam_positive_ratio,
             "gem_pct": g.metrics.gem_percentile,
+            "gem_factor": gem_factor(g.review_count, g.release_date),   # 서빙과 동일: established 만 gem
+            "lifecycle": game_lifecycle(g.review_count, g.release_date),
             "metrics": {f: resolve_null(f, getattr(g.metrics, f, None)) for f in NUMERIC_METRIC_FIELDS},
         })
     return pool
@@ -147,6 +174,7 @@ def score_components(pool, prefs):
         c, _ = compute_core_score(g["metrics"], prefs, g["genre"])
         x, _ = compute_xfactor_score(g["metrics"], g["genre"])
         gm, _ = compute_gem_bonus(g["review_count"], g["positive"], g["gem_pct"])
+        gm *= g["gem_factor"]                                   # 서빙과 동일 (R-11)
         c7, _ = compute_core_v7(g["metrics"], prefs)
         core6[i], xf[i], gem[i], core7[i] = c, x, gm, c7
     return core6, xf, gem, core7
@@ -181,20 +209,26 @@ async def main():
     ap.add_argument("--top", type=int, default=20)
     ap.add_argument("--json", metavar="PATH", help="결과 JSON 저장 경로")
     ap.add_argument("--prefs", metavar="JSON", help='추가 시나리오 {"이름": {지표: 값}}')
+    ap.add_argument("--pool", choices=POOLS, default="default",
+                    help="후보 풀 — 서빙 입장 규칙과 동일 (default 가 실제 기본 API). all 은 이전 회차 비교용")
     args = ap.parse_args()
 
     scenarios = dict(PRESETS)
     if args.prefs:
         scenarios.update(json.loads(args.prefs))
 
-    pool = await load_pool()
+    pool = await load_pool(args.pool)
     ids = [g["app_id"] for g in pool]
     n = len(pool)
     teacher_n = sum(1 for g in pool if g["cohort"] == TEACHER)
-    print(f"활성 풀 {n:,}건 (교사 {teacher_n:,} / 학생 {n - teacher_n:,})  scipy={'있음' if HAVE_SCIPY else '없음(kendall 생략)'}")
+    lc_counts = {}
+    for g in pool:
+        lc_counts[g["lifecycle"]] = lc_counts.get(g["lifecycle"], 0) + 1
+    print(f"후보 풀 [{args.pool}] {n:,}건 (교사 {teacher_n:,} / 학생 {n - teacher_n:,})  생애주기 {lc_counts}  "
+          f"scipy={'있음' if HAVE_SCIPY else '없음(kendall 생략)'}")
     print(f"교사 비율 기준선 {teacher_n / max(n, 1):.2f} — 상위 N 의 '교사비율'은 이 값과 비교해 읽는다\n")
 
-    out = {"pool": n, "teacher": teacher_n, "top_n": args.top, "scenarios": {}}
+    out = {"pool_mode": args.pool, "pool": n, "teacher": teacher_n, "lifecycle": lc_counts, "top_n": args.top, "scenarios": {}}
     for sc, prefs in scenarios.items():
         core6, xf, gem, core7 = score_components(pool, prefs)
         v6 = np.minimum(core6 + xf + gem, SCORE_MAX)
