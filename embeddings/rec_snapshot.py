@@ -30,6 +30,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -75,11 +76,21 @@ def clear_cache() -> dict:
     Returns: {"ok": bool, "deleted": int, "before": dict|None, "after": dict|None, "why": str}
     """
     out = {"ok": False, "deleted": None, "before": None, "after": None, "why": ""}
-    try:
-        b = requests.get(f"{API_ROOT}/ops/cache", timeout=20)
-        out["before"] = b.json() if b.status_code == 200 else {"error": f"HTTP {b.status_code}"}
-    except requests.RequestException as e:
-        out["why"] = f"캐시 통계 조회 불가: {str(e)[:120]}"
+    # fastapi 재시작 직후 호출되는 경우가 잦다(restart 0.9s 뒤 uvicorn 부팅 수 초). 최대 45초 기다린다.
+    last_err = None
+    for attempt in range(15):
+        try:
+            b = requests.get(f"{API_ROOT}/ops/cache", timeout=20)
+            out["before"] = b.json() if b.status_code == 200 else {"error": f"HTTP {b.status_code}"}
+            last_err = None
+            break
+        except requests.RequestException as e:
+            last_err = e
+            if attempt == 0:
+                print("fastapi 응답 없음 — 부팅 대기 중 (최대 45초)…")
+            time.sleep(3)
+    if last_err is not None:
+        out["why"] = f"캐시 통계 조회 불가(45초 대기 후): {str(last_err)[:120]}"
         return out
 
     if not isinstance(out["before"], dict) or "error" in out["before"]:
