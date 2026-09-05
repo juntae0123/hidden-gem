@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     VIBE_SECONDARY_ENABLED: bool = False
     VIBE_SECONDARY_WEIGHT: float = 0.5
 
+    # R-14: 정확 동점 타이브레이커 — 선호를 문장으로 풀어 임베딩한 뒤 게임 임베딩과 코사인. 점수는 안 바꾸고 동점만 가른다.
+    # 실측(신작 리그 --pool new-only): 3~4개 정수 지표로 3,181건을 매칭하면 상위 20 전원이 93.0 동점(상위N폭 0.0)이었다.
+    PREF_EMBED_TIEBREAK: bool = True
+
     CACHE_TTL_SEMANTIC: int = 3600
     CACHE_TTL_BY_GAME: int = 3600
     CACHE_TTL_BY_PREFERENCE: int = 1800

@@ -199,6 +199,7 @@ class RecommendationCache:
         try:
             r = await self._get_redis()
             patterns = ["semantic:*", "rec:game:*", "rec:pref:*", "rank:*"]   # rank 누락 시 리뷰 갱신 후에도 옛 순위 (검토 E-7)
+            # prefemb:* 는 의도적으로 제외 — 선호 문장 임베딩은 로직과 무관한 순수 텍스트 임베딩, 무효화할 이유가 없다
             total_deleted = 0
 
             for pattern in patterns:
