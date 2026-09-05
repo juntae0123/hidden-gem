@@ -14,6 +14,22 @@ from unittest.mock import MagicMock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from services.recommender import NUMERIC_METRIC_FIELDS
+from config import settings
+
+
+# 채점 플래그를 코드 기본값으로 고정 — 테스트는 실행 위치(.env 유무)에 따라 결과가 달라지면 안 된다.
+# 2026-09-05: 루트 .env 에 GEM_SOURCE=evidence 를 넣자 프로젝트 루트에서 돌린 pytest 만 3건 실패했다
+# (pydantic Settings 가 cwd 의 .env 를 읽음). evidence 모드 테스트는 각자 monkeypatch 로 켠다.
+_FLAG_DEFAULTS = {name: settings.model_fields[name].default
+                  for name in ("SCORE_VERSION", "GEM_SOURCE", "GEM_MAX_V7_EVIDENCE",
+                               "VIBE_SECONDARY_ENABLED", "VIBE_SECONDARY_WEIGHT", "PREF_EMBED_TIEBREAK")}
+
+
+@pytest.fixture(autouse=True)
+def _pin_scoring_flags(monkeypatch):
+    for name, default in _FLAG_DEFAULTS.items():
+        monkeypatch.setattr(settings, name, default)
+    yield
 
 
 # ==================== 공통 픽스처 ====================
