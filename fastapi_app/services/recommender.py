@@ -1206,8 +1206,19 @@ Examples:
         if not include_new:
             params["new_days"] = settings.LIFECYCLE_NEW_DAYS
             params["new_min_rc"] = settings.LIFECYCLE_NEW_MIN_REVIEWS
+        # pgvector HNSW 는 hnsw.ef_search(기본 40)개의 최근접 후보를 먼저 뽑고 그 안에서 WHERE 를 적용한다.
+        # 필터가 후보의 대부분을 걸러내면(활성 풀 43% 가 신작) LIMIT 20 을 못 채우고 1~5건만 돌아온다 —
+        # s2/s3 실측에서 파이썬 후필터든 SQL 필터든 결과가 정확히 같았던 이유. 후보 폭을 넓힌다.
+        await db.execute(text("SET LOCAL hnsw.ef_search = 400"))
         result = await db.execute(sql, params)
         rows = result.fetchall()
+        if len(rows) < limit:
+            # 그래도 부족하면 필터 없이 넓게 뽑아 파이썬에서 거른다 (정확도 우선, 지연 몇 ms)
+            logger.info(f"[semantic] '{query}' HNSW 필터 후 {len(rows)}건 < limit {limit} → 광역 재조회")
+            wide_sql = text(sql.text.replace("LIMIT :limit", "LIMIT :wide_limit").replace(lifecycle_sql, ""))
+            wide_params = {k: v for k, v in params.items() if k not in ("limit", "new_days", "new_min_rc")}
+            wide_params["wide_limit"] = 400
+            rows = (await db.execute(wide_sql, wide_params)).fetchall()
         if not rows:
             logger.info(f"[semantic] '{query}' pgvector 후보 0건 (limit {limit * 2}, include_new={include_new})")
             return []
