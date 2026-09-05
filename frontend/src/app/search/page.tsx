@@ -281,7 +281,7 @@ export default function SearchPage() {
         />
         <span>
           신작도 메인 결과에 섞어 보기
-          <span className="text-zinc-400 dark:text-zinc-500"> — 꺼져 있어도 아래 '신작 리그'에서 따로 볼 수 있어요</span>
+          <span className="text-zinc-400 dark:text-zinc-500"> — 꺼져 있어도 아래 &lsquo;신작 리그&rsquo;에서 따로 볼 수 있어요</span>
         </span>
       </label>
 
