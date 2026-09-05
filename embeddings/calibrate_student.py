@@ -51,6 +51,7 @@ MIN_BIAS = 0.5        # 0~10 지표: 이 아래 편향은 보정 안 함
 MIN_BIAS_GEM = 5.0    # gem_potential(0~100)
 MIN_SLOPE = 0.7       # 이 아래면 '범위 압축'(평균 회귀) — 변별력을 죽이므로 거부
 MAX_MAE_RATIO = 0.85  # 보정 후 MAE가 (교사 평균만 찍는) 상수 예측 MAE의 이 비율을 넘으면 퇴화로 판정
+ZERO_MASS_FOR_ORIGIN = 0.10  # 홀드아웃 쌍에서 0 이 이 비율 이상이면 절편 없는 원점 고정 보정(y=bx). 0 은 0 으로 남는다
 
 
 def fit():
@@ -78,9 +79,19 @@ def fit():
             report.append((metric, n, r, bias, None, "r 낮음 → 보정 불가(그대로)")); continue
         if abs(bias) < min_bias:
             report.append((metric, n, r, bias, None, "편향 작음 → 불필요")); continue
-        # 최소제곱 y = a + b x
-        b_raw, a_raw = np.polyfit(x, y, 1)
-        b = float(np.clip(b_raw, 0.5, 2.0)); a = float(y.mean() - b * x.mean())
+        # 0 이 의미 있는 지표(공포 0 = 공포 없음, 아늑함 0 = 아늑하지 않음)는 원점을 고정한다.
+        # 2026-09-05 절제 실측: 절편 있는 보정(y=+0.77+0.97x)이 학생 cozy 0 을 0.77 로 밀어
+        # 공포 프리셋(cozy 목표 0)에서 학생 게임을 전부 밀어냈다(교사 비율 0.85 → 1.00).
+        # 평균 편향은 중간 구간에서 나오는데 절편은 0 에도 같은 이동을 강제한다 — 형태가 틀렸다.
+        zero_frac = float(((x == 0) | (y == 0)).mean())
+        origin_fixed = zero_frac >= ZERO_MASS_FOR_ORIGIN
+        if origin_fixed:
+            b_raw = float((x * y).sum() / (x * x).sum()) if (x * x).sum() > 0 else 1.0
+            b = float(np.clip(b_raw, 0.5, 2.0)); a = 0.0
+        else:
+            # 최소제곱 y = a + b x
+            b_raw, a_raw = np.polyfit(x, y, 1)
+            b = float(np.clip(b_raw, 0.5, 2.0)); a = float(y.mean() - b * x.mean())
         resid = float(np.abs(y - np.clip(a + b * x, 0, hi)).mean())
         # 상수 예측(교사 평균) 대비 개선폭. 홀드아웃 교사 범위가 좁으면(범위 제한)
         # 최소제곱은 모든 값을 교사 평균 쪽으로 밀어 넣어 "MAE는 좋아 보이지만 변별력이 죽는"
@@ -101,11 +112,13 @@ def fit():
                            f"거부: 상수 예측 대비 개선 {(1-ratio)*100:.0f}%뿐 — 퇴화 매핑"))
             continue
         params[metric] = {"a": round(a, 4), "b": round(b, 4), "n": n, "r": round(r, 3),
+                          "form": "origin" if origin_fixed else "affine", "zero_frac": round(zero_frac, 3),
                           "bias_before": round(bias, 3), "mae_after": round(resid, 3),
                           "mae_before": round(mae_before, 3), "mae_const": round(mad_const, 3), "hi": hi,
                           "holdout_student_range": [float(x.min()), float(x.max())],
                           "holdout_teacher_range": [float(y.min()), float(y.max())]}
-        report.append((metric, n, r, bias, resid, f"보정 y={a:+.2f}+{b:.2f}x"))
+        report.append((metric, n, r, bias, resid,
+                       f"보정 y={b:.2f}x (원점 고정, 0비율 {zero_frac:.0%})" if origin_fixed else f"보정 y={a:+.2f}+{b:.2f}x"))
 
     print(f"{'지표':26} {'n':>4} {'r':>6} {'편향(교사-학생)':>14} {'보정후MAE':>9}  처리")
     for m, n, r, bias, resid, note in report:
