@@ -29,6 +29,7 @@ v4 → v5 핵심 변경사항:
 """
 
 import json
+import logging
 import re
 import math
 from enum import Enum
@@ -41,6 +42,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from config import settings
+
+logger = logging.getLogger(__name__)
 from models.game import (
     BOOLEAN_TAG_FIELDS,
     NUMERIC_METRIC_FIELDS,
@@ -1206,6 +1209,7 @@ Examples:
         result = await db.execute(sql, params)
         rows = result.fetchall()
         if not rows:
+            logger.info(f"[semantic] '{query}' pgvector 후보 0건 (limit {limit * 2}, include_new={include_new})")
             return []
 
         # 게임 정보 조회
@@ -1271,6 +1275,11 @@ Examples:
             })
 
         final_scored.sort(key=_preference_sort_key, reverse=True)
+        # 진단: 후보가 어디서 사라지는지 (s2/s3 실측에서 '짧게 즐기는 로그라이크' 가 1건만 돌아왔다)
+        logger.info(
+            f"[semantic] '{query}' pgvector {len(rows)}건 → Game 조회 {len(games)}건 → 필터 후 {len(final_scored)}건 "
+            f"(must_not={must_not or {}}, include_new={include_new}, group={group_name})"
+        )
         return final_scored[:limit]
 
     # ==================== 응답 포맷팅 / Response Formatting ====================
