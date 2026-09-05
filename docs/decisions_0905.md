@@ -61,6 +61,9 @@ final = core + gem(≤6)  → 0 ~ 99
   쓰고(v6 예산 6 / v7 예산 12) 헤더에 적용 플래그를 찍는다. 캐시 키에 `SCORE_VERSION`·`GEM_SOURCE` 포함.
 - 전환 절차(로컬): `.env GEM_SOURCE=evidence` → **`docker compose up -d fastapi`** (restart 아님, C-11) →
   `rec_snapshot --save s5_gem_evidence` → `--diff s4_hnsw s5_gem_evidence` → `scripts.ablation --pool default`.
+- **s5 결과 (ablation_result §6)**: 예측 실패 — v6 + evidence(예산 6)에서는 정착작 gem 이 4~5 → 2~3 으로 줄어 유명작(Sims 4·Celeste·BG3)이
+  취향 상위 10 에 올라왔다. legacy gem 의 크기가 유명작 억제를 하고 있었다. v7(예산 12)에서는 절제상 유명작이 빠진다(리뷰 중앙 1/3~1/10).
+  → **v6 + evidence 조합은 배포 금지.** GEM_SOURCE=evidence 는 SCORE_VERSION=v7 과 함께만 켠다. compose 기본값은 둘 다 legacy/v6 유지.
 
 ## R-4. 노출 임계값 — 2단, 지금 확정
 - 노출: `review_count ≥ 3 AND wilson_lower(z=1.96) ≥ 0.35` (n=3 이면 3/3, n=6 이면 5/6 이상).
@@ -80,8 +83,9 @@ final = core + gem(≤6)  → 0 ~ 99
 2. `rec_snapshot --save s1_after_gate`
 3. Day 1 폴백 수정 커밋 → `--save s2_day1` → `--diff s1 s2`
 4. 절제 도구로 v6 vs v7 전체 풀 비교 (Kendall τ / RBO / 상위 20 교체율 / 코호트 비율)
-5. `SCORE_VERSION=v7` 전환 → `--save s3_v7` → `--diff s2 s3` (순위 대폭 변화가 정상)
-6. gem 전환 (교사 리뷰 완료 후) → `--save s4_gem`
+5. ~~`SCORE_VERSION=v7` 전환 → `--save s3_v7`~~ → 실제 순서는 6 이 먼저 됐다 (s5_gem_evidence). v7 전환은 s6.
+6. gem 전환 (교사 리뷰 완료 후) → `--save s5_gem_evidence` (완료, §R-3 기록) → `SCORE_VERSION=v7` → `--save s6_v7` → `--diff s5 s6`
+   (예측 5개는 ablation_result §6 끝에). v6+evidence 는 배포하지 않는다.
 7. 노출 규칙 적용 → 게이트 재실행
 8. 백필 재개 — **재개한다.** 약 $27. 시점은 7 이후(새 게임이 최종 게이트로 들어오게). 리뷰 백필과 동시 실행 금지.
 9. push
@@ -191,6 +195,13 @@ PRD §4-2 "변별력 25 vs 3.5" 의 25 = 5.0². 개발자가 알고 쓴 것. 경
   필터 위치는 원인이 아니었다 — 후보 생성기의 특성이었다. **교훈: 수정 전후 결과가 정확히 같으면 수정한 층이 원인이 아니다.**
 - 조치: `SET LOCAL hnsw.ef_search = 400` + limit 미만이면 필터 없이 400건 광역 조회 후 파이썬 admit. s4 에서 3개 질의 모두 10건.
 - **s4_hnsw 가 gem 전환(R-3) 전의 기준선 스냅샷이다** (v6 + Day1 + gem_factor + 타이브레이크 + HNSW 수정, 캐시 무효화 확인 16/16).
+
+## R-16. (미결) v7 에서 신작은 메인 상위에 들 수 없다 — 토글의 의미를 다시 정한다
+- 사실: v7 상위는 Core 가 잡음 범위 안에서 비슷한 후보들이라 gem 이 순서를 정한다. 신작·유명작은 gem_factor 0 → default 풀에서 상위 20 진입 불가
+  (절제 3회차 교사 비율 1.00 이 그 증거). 검색 페이지 토글 "리뷰가 아직 적은 신작도 메인 결과에 포함"은 켜도 결과가 거의 안 바뀐다.
+- 취지 원문: "추천때도 신작은 데이터가 부족해서 정확하진않지만 추천받을래? 물어볼수있게 체크하는게 있다던가 **따로 뺀다던가**" — 둘 중 '따로 뺀다'(신작 리그 섹션)가 v7 과 맞는 쪽.
+- 내 판단(s6 확인 후 확정): 토글을 **신작 리그 섹션의 범위**로 옮긴다 — "리뷰 100개 미만 신작도 신작 리그에 포함". 메인 결과는 정착작 발굴, 신작은 리그.
+  신작에 중립 gem(예: 정착 중앙값 36)을 주는 대안은 R-3 의 "근거 없음 = 0, 폴백 없음"을 깨므로 채택하지 않는다.
 
 ## R-3 구현 (2026-09-05 밤) — 별도 컬럼 + GEM_SOURCE 플래그
 - 컬럼: `game_metrics.gem_evidence_score`(NULL=근거 없음) / `gem_evidence_status`(ok·too_new·famous·insufficient·no_reviews·upcoming) /
