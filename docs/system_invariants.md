@@ -103,6 +103,14 @@ semantic:{query_hash}:{limit}   rec:game:{app_id}:{count}   rec:pref:{pref_hash}
 → 조치: `rec_snapshot --save` 가 매 회차 무효화 + 확인을 강제하고, 실패 시 스냅샷을
   쓰지 않고 죽는다. 근본 해결은 캐시 키에 `CACHE_VERSION` prefix + 누락 조건 추가.
 
+### C-10. `score_v6.calculate_score_v6` 는 `target_metrics` 가 **꽉 찬 dict** 라고 가정한다
+`compute_core_score` 는 `target_metrics.get(f, 5.0)` 으로 장르 핵심 지표의 목표값을 읽는다.
+`recommend_by_preference` 는 `target_metrics=preferences` — 사용자가 입력한 3~5개 키만 있는 sparse dict —
+를 넘긴다. 어긋난 계약을 `.get(f, 5.0)` 이 조용히 메워서 **Core 의 65% 가 "장르 핵심에서 평범한가"**
+를 재게 됐다(D-26, `final_verdict_0905.md` §2). 세 외부 검토가 전부 놓쳤다 — 문서에 target 출처가 없었다.
+→ 함수의 기본값 인자(`.get(k, default)`, `or x`)는 **호출자가 그 키를 실제로 채우는지** 확인해야 한다.
+  기본값이 "안전한 중립"으로 보여도 호출 맥락에서는 채점 규칙이 된다.
+
 ### C-7. Steam API 를 두 스크립트가 동시에 두드릴 수 있다
 크롤러(store 검색 1.6s + appdetails 1.5s)와 `refresh_reviews`(appreviews 1.0s)는 같은 IP를 쓴다.
 합치면 Steam 비공식 한도(약 200req/5min)를 넘어 **둘 다 429** 를 맞는다. → 동시 실행 금지.
@@ -147,6 +155,8 @@ C 문장 검색  semantic_search               (임베딩85% + 힌트15%) × 94 
 
 - [ ] **끝까지 따라갔나** — 이 값을 읽는 곳을 `grep` 으로 전부 찾았나? 폴백(`or`, `COALESCE`,
       `getattr` 기본값)이 걸려 있나? 0과 NULL을 구분하나?
+- [ ] **기본값이 채점 규칙이 되지 않나** — `.get(k, default)` 의 default 가 실제로 얼마나 자주 쓰이나?
+      호출자가 그 키를 채우는가? (C-10)
 - [ ] **세 경로를 봤나** — 경로 A(`score_v6`) / B(`recommend_by_game`) / C(`semantic_search`)
       전부 확인했나? 응답 키 이름(`gem_score` vs `gem_bonus`)까지 봤나? (C-8)
 - [ ] **캐시를 비웠나** — 캐시 키에 로직 버전이 없다. 점수를 고친 뒤 측정하려면 먼저
@@ -164,6 +174,7 @@ C 문장 검색  semantic_search               (임베딩85% + 힌트15%) × 94 
 
 ## 6. 관련 문서
 - `docs/external_review_log_0904.md` — 외부 검토 3건 기록과 판정(출처·근거 포함)
+- `docs/final_verdict_0905.md` — 최종 판단(D-26, 작업 순서 변경, Core 재설계 권고)
 - `docs/scoring_mechanism_asis.md` — 점수·지표 메커니즘 현황도(D-1~D-14)
 - `docs/code_review_0904.md` — 코드 리뷰 전문
 - `docs/gem_transition_plan.md` — gem 전환 계획과 안전 절차
