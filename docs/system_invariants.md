@@ -124,6 +124,14 @@ semantic:{query_hash}:{limit}   rec:game:{app_id}:{count}   rec:pref:{pref_hash}
   `ablation` 헤더의 `플래그:` 줄로 실제 적용값을 확인한다. 같은 이유로 캐시 키에도 두 플래그가 들어간다(C-9 후속).
   Railway 는 대시보드 변수로 넘기므로 별도 확인.
 
+### C-12. 모델에 컬럼을 추가하면 **push 가 곧 운영 장애**다 (자동 배포 + 마이그레이션 수동)
+`models/game.py` 의 `GameMetric` 에 `gem_evidence_*` 컬럼이 있으므로 SQLAlchemy 는 모든 `GameMetric` SELECT 에 그 컬럼을 넣는다.
+운영 DB 에 컬럼이 없으면 추천·검색·상세 전부 `UndefinedColumn` 500. Railway 는 push 즉시 배포되므로 **마이그레이션은 push 전에** 운영 DB 에 먼저.
+순서: ① 운영 DB 에 `embeddings/migrations/*.sql` 적용 (`docker compose exec -e DATABASE_URL=<운영> batch python -m embeddings.migrate --file …`)
+② 운영 DB 에 `gem_evidence --fill --yes` (읽는 건 review_count·positive_ratio 만 — 운영 DB 의 리뷰 백필 상태를 먼저 본다: `--fill --dry-run` 의 no_reviews 비율)
+③ Railway 변수 `SCORE_VERSION=v7`, `GEM_SOURCE=evidence` ④ push. ①~③ 없이 push 하면 롤백은 Railway Redeploy(직전) 뿐이다.
+`ADD COLUMN IF NOT EXISTS` 라 ① 은 재실행 안전. 컬럼 추가 없이 코드만 배포하는 경우에도 GEM_SOURCE 기본값(legacy)이면 새 컬럼을 읽기만 하므로 ① 만 있으면 된다.
+
 ### C-7. Steam API 를 두 스크립트가 동시에 두드릴 수 있다
 크롤러(store 검색 1.6s + appdetails 1.5s)와 `refresh_reviews`(appreviews 1.0s)는 같은 IP를 쓴다.
 합치면 Steam 비공식 한도(약 200req/5min)를 넘어 **둘 다 429** 를 맞는다. → 동시 실행 금지.
@@ -185,6 +193,7 @@ C 문장 검색  semantic_search               (임베딩85% + 힌트15%) × 94 
 - [ ] **되돌릴 수 있나** — 한 줄로 되돌리는 방법이 있나? 없으면 왜 없나?
 - [ ] **플래그가 실제로 서빙에 닿았나** — `.env` 만 고친 게 아닌가? compose `environment:` 에 있나?
       `up -d` 로 재생성했나? 응답/ablation 헤더에서 적용값을 봤나? (C-11)
+- [ ] **push 전에 운영 DB 스키마가 코드와 맞나** — 모델에 컬럼을 추가했나? 그러면 운영 마이그레이션 → 채움 → Railway 변수 → push 순서 (C-12)
 
 ---
 

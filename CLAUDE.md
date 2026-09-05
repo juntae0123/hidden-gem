@@ -33,6 +33,11 @@
 - 플래그를 적용한 뒤에는 **적용됐다는 증거**를 본다: `python -c "from config import settings; print(settings.X)"`
   (컨테이너 안), 응답 `score_breakdown.gem_source`, ablation 헤더 `플래그:` 줄.
 
+## 2'. 배포 — push 는 곧 운영 배포다 (Vercel/Railway 자동)
+- 모델(`models/game.py`)에 컬럼을 추가했으면 **push 전에** 운영 DB 마이그레이션 → 채움 → Railway 변수 → push (C-12). 순서를 바꾸면 500.
+- push 를 권하기 전에 `git log origin/master..master --oneline` 으로 미푸시 커밋을 세고, 그 안에 스키마·플래그 변경이 있는지 본다.
+- 사용자가 자는 시간엔 배포하지 않는다. push 는 사용자가 한다.
+
 ## 3. 점수 로직 수정 — 세 경로 + 절제 도구 + 캐시 키
 - 경로 A(`score_v6`/`score_v7`, 취향·Vibe) / B(`recommend_by_game`) / C(`semantic_search`) **전부** 같은 규칙을 따르는지 grep 으로 확인.
   실수 기록: `GEM_SOURCE=evidence` 를 v7 과 B/C 에만 넣어 `SCORE_VERSION=v6` 상태에선 A 만 legacy 로 남을 판이었다 (2026-09-05).
