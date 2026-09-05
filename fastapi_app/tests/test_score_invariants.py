@@ -240,7 +240,9 @@ def test_v6_follows_gem_source_flag(monkeypatch):
     assert r_new["breakdown"]["gem_score"] == 0.0                       # 신작·유명작은 계수 0
 
 
-def test_legacy_mode_unchanged_by_default():
-    from config import settings
-    assert settings.GEM_SOURCE == "legacy"
-    assert score_v7.budgets() == (93.0, 6.0)
+def test_legacy_mode_is_code_default():
+    """코드 기본값(.env 무관)이 legacy 인지 — 운영 플래그의 현재 값이 아니라 Settings 필드 기본값을 본다."""
+    from config import Settings
+    assert Settings.model_fields["GEM_SOURCE"].default == "legacy"
+    assert Settings.model_fields["SCORE_VERSION"].default == "v6"
+    assert score_v7.budgets() == (93.0, 6.0)          # conftest 가 legacy 로 고정한 상태
