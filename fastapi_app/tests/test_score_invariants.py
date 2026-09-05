@@ -85,7 +85,7 @@ def test_v7_ignores_genre_core_and_unmentioned_metrics():
                          art_style_uniqueness=9, audio_design=9, exploration_reward=9)
     c1, _ = score_v7.compute_core_v7(plain, prefs)
     c2, _ = score_v7.compute_core_v7(excellent, prefs)
-    assert c1 == c2 == pytest.approx(score_v7.SCORE_CORE_MAX)
+    assert c1 == c2 == pytest.approx(score_v7.budgets()[0])
     # 같은 입력에서 v6 는 뛰어난 쪽을 깎았다 (회귀 방지용 기록)
     v6_plain, _ = score_v6.compute_core_score(plain, prefs, "캐주얼")
     v6_exc, _ = score_v6.compute_core_score(excellent, prefs, "캐주얼")
@@ -110,7 +110,7 @@ def test_v7_perfect_match_is_full_core():
     prefs = {"horror_factor": 9, "melancholy": 6, "cozy_factor": 0}
     game = _metrics(horror_factor=9, melancholy=6, cozy_factor=0)
     c, d = score_v7.compute_core_v7(game, prefs)
-    assert c == pytest.approx(score_v7.SCORE_CORE_MAX)
+    assert c == pytest.approx(score_v7.budgets()[0])
     assert d["distance"] == 0.0 and d["fields_used"] == 3
 
 
@@ -160,7 +160,7 @@ def test_v7_secondary_is_half_weight_and_primary_wins():
 def test_gem_factor_zeroes_gem_but_keeps_core():
     """R-11: 신작·유명작은 gem 0. v6/v7 모두 gem_factor 가 적용되고 raw 점수가 함께 나온다."""
     r7 = score_v7.calculate_score_v7(_metrics(cozy_factor=9), {"cozy_factor": 9}, "", 300, 0.95, 80.0, gem_factor=0.0)
-    assert r7["breakdown"]["gem_score"] == 0.0 and r7["raw_core_score"] == pytest.approx(93.0)
+    assert r7["breakdown"]["gem_score"] == 0.0 and r7["raw_core_score"] == pytest.approx(score_v7.budgets()[0])
     r7g = score_v7.calculate_score_v7(_metrics(cozy_factor=9), {"cozy_factor": 9}, "", 300, 0.95, 80.0, gem_factor=1.0)
     assert r7g["breakdown"]["gem_score"] > 0
     r6 = score_v6.calculate_score_v6(_metrics(cozy_factor=9), {"cozy_factor": 9}, "", 300, 0.95, 80.0, gem_factor=0.0)
@@ -199,3 +199,30 @@ def test_wilson_lower_bound():
     assert _wilson_lower(1.0, 0) == 0.0
     assert 0.6 < _wilson_lower(1.0, 10) < 0.75      # 10/10 → 약 0.72
     assert _wilson_lower(0.9, 1000) > _wilson_lower(0.9, 10)
+
+
+# ---------- R-3 evidence 모드 ----------
+
+def test_gem_evidence_mode_budgets_and_null(monkeypatch):
+    """GEM_SOURCE=evidence: Core 87 + gem 12, 근거 NULL 은 0(폴백 없음), 60 이면 7.2, established 만."""
+    from config import settings
+    monkeypatch.setattr(settings, "GEM_SOURCE", "evidence")
+    monkeypatch.setattr(settings, "GEM_MAX_V7_EVIDENCE", 12.0)
+    core_max, gem_max = score_v7.budgets()
+    assert (core_max, gem_max) == (87.0, 12.0)
+    r_null = score_v7.calculate_score_v7(_metrics(cozy_factor=9), {"cozy_factor": 9}, "", 300, 0.95, 80.0, gem_evidence=None)
+    assert r_null["breakdown"]["gem_score"] == 0.0 and r_null["raw_core_score"] == pytest.approx(87.0)
+    r60 = score_v7.calculate_score_v7(_metrics(cozy_factor=9), {"cozy_factor": 9}, "", 300, 0.95, 80.0, gem_evidence=60.0)
+    assert r60["breakdown"]["gem_score"] == pytest.approx(7.2)
+    assert r60["final_score"] == pytest.approx(94.2, abs=0.05)
+    r_new = score_v7.calculate_score_v7(_metrics(cozy_factor=9), {"cozy_factor": 9}, "", 300, 0.95, 80.0, gem_evidence=60.0, gem_factor=0.0)
+    assert r_new["breakdown"]["gem_score"] == 0.0
+    # LLM 계보 값(gem_percentile 80)은 evidence 모드에서 아무 영향이 없어야 한다
+    r_llm = score_v7.calculate_score_v7(_metrics(cozy_factor=9), {"cozy_factor": 9}, "", 300, 0.95, 99.0, gem_evidence=None)
+    assert r_llm["breakdown"]["gem_score"] == 0.0
+
+
+def test_legacy_mode_unchanged_by_default():
+    from config import settings
+    assert settings.GEM_SOURCE == "legacy"
+    assert score_v7.budgets() == (93.0, 6.0)

@@ -151,6 +151,9 @@ export interface RecommendedGame {
   key_metrics: Record<string, number>;
   /** v5 신규 — 점수 분해 (선택적) */
   score_breakdown?: ScoreBreakdown | null;
+  /** R-3 리뷰 실측 발굴 지수 0~100. null = 근거 없음(0 과 다르다). undefined = 서버가 legacy 모드 */
+  gem_evidence?: number | null;
+  gem_evidence_status?: 'ok' | 'too_new' | 'famous' | 'insufficient' | 'no_reviews' | 'upcoming' | null;
   /** R-11 생애주기: 신작(출시 ≤180일) / 정착 / 유명(리뷰 2만+). 신작은 발굴 판단 보류 */
   lifecycle?: Lifecycle;
   /** 인지도 축 — 나이 축과 별개. 8.7만 리뷰 신작은 new + is_famous */

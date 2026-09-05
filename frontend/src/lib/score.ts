@@ -12,10 +12,28 @@
 
 /** Gem Tier — gem_potential 기준 등급 */
 export const GEM_TIERS = {
-  LEGENDARY: 90,  // 전설급 명작
-  EPIC:      80,  // 숨겨진 보석
-  RARE:      70,  // 주목할 만함
+  LEGENDARY: 90,  // (legacy, LLM gem_potential 스케일) 전설급 명작
+  EPIC:      80,  // (legacy) 숨겨진 보석
+  RARE:      70,  // (legacy) 주목할 만함
 } as const;
+
+/**
+ * R-3 리뷰 실측 발굴 지수(gem_evidence, 0~100) 등급. 실측 최대가 ≈77 이라 70/80/90 은 도달 불가 (D-13).
+ * 히든젬 ≥ 60 / 주목 45~60. 리뷰 30건 이상은 서버 랭킹 조건이고, 카드 뱃지는 값만 본다.
+ */
+export const GEM_EVIDENCE_TIERS = {
+  HIDDEN_GEM: 60,
+  NOTABLE:    45,
+} as const;
+
+export type GemEvidenceTier = 'hidden_gem' | 'notable' | 'none';
+
+export function getGemEvidenceTier(score: number | null | undefined): GemEvidenceTier {
+  if (score === null || score === undefined) return 'none';
+  if (score >= GEM_EVIDENCE_TIERS.HIDDEN_GEM) return 'hidden_gem';
+  if (score >= GEM_EVIDENCE_TIERS.NOTABLE)    return 'notable';
+  return 'none';
+}
 
 /** Match Score Tier — similarity_score 기준 등급 */
 export const MATCH_TIERS = {

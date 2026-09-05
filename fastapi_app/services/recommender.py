@@ -517,6 +517,14 @@ def _preference_text(preferences: Dict[str, float]) -> str:
     return "a game with " + ", ".join(parts) if parts else ""
 
 
+def _gem_evidence_fields(metric) -> Dict:
+    """응답용 R-3 필드. 컬럼이 없으면(마이그레이션 전) None."""
+    return {
+        "gem_evidence": getattr(metric, "gem_evidence_score", None),
+        "gem_evidence_status": getattr(metric, "gem_evidence_status", None),
+    }
+
+
 def _gem_display(metric) -> Optional[float]:
     """응답에 노출할 gem 값. NULL 일 때만 폴백한다 — `or` 는 percentile 0 을 숨겼다 (D-2 계열)."""
     if metric is None:
@@ -615,6 +623,11 @@ class GameRecommender:
 
         리뷰 1,000개 미만 게임 우대.
         """
+        if settings.GEM_SOURCE == "evidence":
+            # R-3: 리뷰 실측 지수 0~100 → 0~1. NULL 은 0 (근거 없음 = 보너스 없음). 폴백·review_bonus·confidence 없음
+            ev = getattr(metric, "gem_evidence_score", None)
+            return (float(ev) / 100.0) if ev is not None else 0.0
+        # legacy (v6 시절): gem_percentile → gem_potential → 50 폴백 + review_bonus + × confidence
         gem = (
             metric.gem_percentile
             if metric.gem_percentile is not None
@@ -949,7 +962,9 @@ class GameRecommender:
             if must_not and not self._check_must_not(game.metrics, must_not):
                 continue
             if min_gem_potential > 0:
-                gp = game.metrics.gem_potential
+                # R-3: evidence 모드에선 실측 지수로 거른다 (D-17: 사용 불가 판정된 LLM 값으로 거르던 모순 해소)
+                gp = (getattr(game.metrics, "gem_evidence_score", None) if settings.GEM_SOURCE == "evidence"
+                      else game.metrics.gem_potential)
                 if gp is None or gp < min_gem_potential:
                     continue
 
@@ -981,6 +996,8 @@ class GameRecommender:
                 # R-11: 발굴 보너스는 established 만. 신작 리그·유명작은 0 — 화면 문구("발굴 점수는 아직 매기지 않아요")와 일치
                 gem_factor=gem_factor(game.review_count, game.release_date),
             )
+            if use_v7:
+                score_kwargs["gem_evidence"] = getattr(game.metrics, "gem_evidence_score", None)   # R-3 (evidence 모드에서만 사용)
             if use_v7 and secondary_preferences:
                 score_kwargs["secondary"] = secondary_preferences          # Vibe secondary (R-1', 플래그 뒤)
                 score_kwargs["secondary_weight"] = settings.VIBE_SECONDARY_WEIGHT
@@ -1181,6 +1198,7 @@ Examples:
                        AND g.release_date >= CURRENT_DATE - CAST(:new_days AS integer)   -- 캐스트 필수: 안 하면 $1 을 date 로 추론해 date-date=integer → 'date >= integer' 오류
                        AND COALESCE(g.review_count, 0) < CAST(:new_min_rc AS integer))   -- 근거 얇은 신작 제외
             """
+        gem_col = "gm.gem_evidence_score" if settings.GEM_SOURCE == "evidence" else "gm.gem_potential"
         sql = text(f"""
             SELECT
                 g.id AS game_id,
@@ -1192,7 +1210,7 @@ Examples:
             WHERE g.is_active = true
               AND g.is_analyzed = true
               AND gm.embedding IS NOT NULL
-              AND (:min_gem = 0 OR gm.gem_potential >= :min_gem)
+              AND (:min_gem = 0 OR {gem_col} >= :min_gem)
               {lifecycle_sql}
             ORDER BY gm.embedding <=> :query_vec ::vector
             LIMIT :limit
@@ -1323,6 +1341,7 @@ Examples:
                 marketing_hook=game.marketing_hook or "",
                 similarity_score=r["score"],
                 gem_potential=_gem_display(metric),
+                **_gem_evidence_fields(metric),
                 lifecycle=game_lifecycle(game.review_count, game.release_date),
                 is_famous=is_famous(game.review_count),
                 days_since_release=days_since_release(game.release_date),
@@ -1360,6 +1379,7 @@ Examples:
                 marketing_hook=game.marketing_hook or "",
                 similarity_score=r["score"],
                 gem_potential=_gem_display(metric),
+                **_gem_evidence_fields(metric),
                 lifecycle=game_lifecycle(game.review_count, game.release_date),
                 is_famous=is_famous(game.review_count),
                 days_since_release=days_since_release(game.release_date),
@@ -1396,6 +1416,7 @@ Examples:
                 marketing_hook=game.marketing_hook or "",
                 similarity_score=r["score"],
                 gem_potential=_gem_display(metric),
+                **_gem_evidence_fields(metric),
                 lifecycle=game_lifecycle(game.review_count, game.release_date),
                 is_famous=is_famous(game.review_count),
                 days_since_release=days_since_release(game.release_date),

@@ -36,6 +36,11 @@ export function GameCard({
   const ensureSessionId = useUserStore((s) => s.ensureSessionId);
   const matchValue = game.similarity_score ?? 0;
   const gemScore   = game.gem_potential ?? 0;
+  // R-3: 서버가 gem_evidence 를 주면(evidence 모드) 그걸로 뱃지. 아직 legacy 면 undefined → 옛 로직
+  const gemEvidence = game.gem_evidence;
+  const showGem = gemEvidence !== undefined && gemEvidence !== null
+    ? gemEvidence >= 45
+    : gemScore >= GEM_TIERS.RARE;
   const reasonText = game.match_reasons?.[0] ?? '';
   // 카드에서 '왜 맞는지'를 보여주는 핵심 지표 2개 (값 높은 순)
   const topMetrics = Object.entries(game.key_metrics ?? {})
@@ -83,11 +88,11 @@ export function GameCard({
           size="card"
           zoomOnHover
         />
-        {(game.lifecycle === 'new' || gemScore >= GEM_TIERS.RARE) && (
+        {(game.lifecycle === 'new' || showGem) && (
           <div className="absolute top-2 right-2">
             {game.lifecycle === 'new'
               ? <LifecycleBadge lifecycle="new" isFamous={game.is_famous} daysSinceRelease={game.days_since_release} reviewCount={game.review_count} size="sm" />
-              : <GemBadge score={gemScore} size="sm" />}
+              : <GemBadge score={gemScore} evidence={gemEvidence} size="sm" />}
           </div>
         )}
       </div>

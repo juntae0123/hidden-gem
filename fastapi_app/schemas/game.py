@@ -122,6 +122,8 @@ class GameMetricResponse(BaseModel):
     gem_potential: Optional[float] = None
     gem_percentile: Optional[float] = None
     confidence_score: Optional[float] = None
+    gem_evidence_score: Optional[float] = None    # R-3 리뷰 실측 발굴 지수 (NULL = 근거 없음)
+    gem_evidence_status: Optional[str] = None
 
 
 # ==================== 게임 응답 / Game Response ====================
@@ -356,7 +358,9 @@ class RecommendedGame(BaseModel):
     marketing_hook: str = ""
 
     similarity_score: float                # 0~99 (경로별 척도 — query_type 으로 구분)
-    gem_potential: Optional[float] = None  # AI 평가 잠재력 (0~100 스케일)
+    gem_potential: Optional[float] = None  # (legacy) LLM 계보 — gem_percentile 또는 gem_potential
+    gem_evidence: Optional[float] = None   # R-3 리뷰 실측 발굴 지수 0~100. NULL = 근거 없음. 뱃지는 이 값으로 (히든젬 ≥60 / 주목 45~60)
+    gem_evidence_status: Optional[str] = None  # ok / too_new / famous / insufficient / no_reviews / upcoming
     lifecycle: str = ""                    # 나이 축: "new" | "established" | "famous" | "upcoming" (R-11)
     is_famous: bool = False                # 인지도 축 (리뷰 ≥ 2만) — 나이 축과 별개. 8.7만 리뷰 신작은 new + is_famous
     days_since_release: Optional[int] = None
