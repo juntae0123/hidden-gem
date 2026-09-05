@@ -93,6 +93,13 @@ final = core + gem(≤6)  → 0 ~ 99
 ## R-9. 경로 B 의 가중치 제곱(D-20)은 의도된 동작 — 기각
 PRD §4-2 "변별력 25 vs 3.5" 의 25 = 5.0². 개발자가 알고 쓴 것. 경로 B 의 거리 공식은 건드리지 않는다.
 
+## R-10. 학생 지표 스케일 보정 적용 (절제 실측 후, docs/ablation_result_0905.md)
+- `calibrate_student --fit` 통과 9개 지표만 (cozy, humor, learning_curve, narrative_linearity, puzzle, soundtrack,
+  world_reactivity, narrative_depth, endgame). 원본 `student_raw_metrics` 보존, `--revert` 가능.
+- 이유: v7 의 정확 일치 채점에서 교사−학생 0.7~0.9 의 같은 게임 편향이 순서를 뒤집는다 (힐링 교사비율 0.35→0.70).
+- 검증 예측: 재절제에서 힐링·서사 교사비율 하락, 액션(편향 없음)은 0.9 유지. 액션까지 내려가면 분석이 틀린 것.
+- Core 로 유명작을 깎지 않는다. 그건 gem(R-3)·히든젬 필터의 일이다.
+
 ## R-7. 검토 프로세스
 - 외부 검토 입력은 **소스 원문**(`score_v6.py`/`score_v7.py`, `recommender.py` 해당 구간). as-is 문서는 보조.
 - 두 모델의 일치는 근거로 세지 않는다. 근거는 코드·데이터·실측만.

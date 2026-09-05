@@ -103,7 +103,8 @@ def rbo(list_a: List[int], list_b: List[int], p: float = 0.9) -> float:
     for d in range(1, depth + 1):
         sa.add(list_a[d - 1]); sb.add(list_b[d - 1])
         total += (p ** (d - 1)) * len(sa & sb) / d
-    return (1 - p) * total
+    # 유한 깊이 정규화: 동일 리스트가 정확히 1.0 이 되게 (미정규화 최대는 1 − p^depth = 0.878@20)
+    return (1 - p) * total / (1 - p ** depth)
 
 
 def top_ids(scores: np.ndarray, ids: List[int], n: int) -> List[int]:
@@ -160,8 +161,10 @@ def summarize(name, base, variant, pool, ids, top_n):
     revs = sorted(r["review_count"] or 0 for r in tb_rows)
     med = revs[len(revs) // 2] if revs else 0
     k = kendall(base, variant)
+    top_vals = sorted((float(variant[idx[a]]) for a in tb), reverse=True)
     return {
         "variant": name,
+        "top_range": round(top_vals[0] - top_vals[-1], 1) if top_vals else 0.0,   # 상위 N 안의 점수 폭
         "spearman": round(spearman(base, variant), 3),
         "kendall": None if k is None else round(k, 3),
         "rbo20": round(rbo(ta, tb), 3),
@@ -188,7 +191,8 @@ async def main():
     ids = [g["app_id"] for g in pool]
     n = len(pool)
     teacher_n = sum(1 for g in pool if g["cohort"] == TEACHER)
-    print(f"활성 풀 {n:,}건 (교사 {teacher_n:,} / 학생 {n - teacher_n:,})  scipy={'있음' if HAVE_SCIPY else '없음(kendall 생략)'}\n")
+    print(f"활성 풀 {n:,}건 (교사 {teacher_n:,} / 학생 {n - teacher_n:,})  scipy={'있음' if HAVE_SCIPY else '없음(kendall 생략)'}")
+    print(f"교사 비율 기준선 {teacher_n / max(n, 1):.2f} — 상위 N 의 '교사비율'은 이 값과 비교해 읽는다\n")
 
     out = {"pool": n, "teacher": teacher_n, "top_n": args.top, "scenarios": {}}
     for sc, prefs in scenarios.items():
@@ -217,11 +221,11 @@ async def main():
         print(f"    전체 풀 σ: Core6 {s['sigma_full_pool']['core6']} / X-F {s['sigma_full_pool']['xfactor']} / "
               f"Gem {s['sigma_full_pool']['gem']} / Core7 {s['sigma_full_pool']['core7']}   "
               f"X-F<15.6: {s['xfactor_below_15_6_pct']}%  X-F=18: {s['xfactor_saturated_pct']}%")
-        print(f"    {'변형':22} {'spearman':>9} {'kendall':>8} {'rbo@20':>7} {'유지':>5} {'교사비율':>7} {'리뷰중앙':>8} {'σ':>6}")
+        print(f"    {'변형':22} {'spearman':>9} {'kendall':>8} {'rbo@N':>7} {'유지':>5} {'교사비율':>7} {'리뷰중앙':>8} {'σ':>6} {'상위N폭':>7}")
         for r in rows:
             k = "-" if r["kendall"] is None else f"{r['kendall']:.3f}"
             print(f"    {r['variant']:22} {r['spearman']:>9.3f} {k:>8} {r['rbo20']:>7.3f} {r['top_keep']:>3}/{args.top:<2} "
-                  f"{r['teacher_share']:>7.2f} {r['review_median']:>8} {r['sigma']:>6.2f}")
+                  f"{r['teacher_share']:>7.2f} {r['review_median']:>8} {r['sigma']:>6.2f} {r['top_range']:>7.1f}")
         print(f"    v7 상위 5: {out['scenarios'][sc]['rows'][5]['top']}")
         print()
 
@@ -230,6 +234,7 @@ async def main():
     print("    (어느 쪽이든 제거 결론은 같다 — 질의 정보가 없다. 이 수치는 '얼마나 바뀔지'의 예측이다)")
     print("  · 'v7' 의 교사비율·리뷰중앙이 v6 보다 낮아지면 '유명작 상위 금지' 의도 방향이다.")
     print("  · X-F<15.6 비율이 전체 풀에서 몇 % 인지가 '선택 게이트 가설'의 직접 판정이다.")
+    print("  · '상위N폭' 이 v7 에서 10~25 면 τ 적정. 5 미만이면 τ 를 올리고, 30 넘으면 내린다 (decisions R-1').")
     if args.json:
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(out, f, ensure_ascii=False, indent=1, default=str)
