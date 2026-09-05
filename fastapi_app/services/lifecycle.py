@@ -70,15 +70,17 @@ def gem_factor(review_count: Optional[int], release_date, today: Optional[date] 
 def admit(review_count: Optional[int], release_date, include_new: bool = False,
           new_only: bool = False, today: Optional[date] = None) -> bool:
     """추천 후보 입장 규칙 — 3경로와 절제 도구가 **같은 함수**를 쓴다 (서빙/실험 모집단 불일치 방지).
-    new_only  : 신작 리그. new 만. (upcoming 제외)
+    new_only  : 신작 리그. new 만 (upcoming 제외). 기본은 리뷰 ≥100 신작, include_new=True 면 조용한 신작(리뷰<100)도 (R-16)
     default   : 근거 얇은 신작(new & 리뷰<100)·upcoming 제외
     include_new: 전부 입장 (upcoming 제외)
+    R-16(2026-09-05): v7 에서는 신작(gem 0)이 메인 상위에 들 수 없어 메인의 include_new 토글이 무의미해졌다.
+    '조용한 신작 포함' 선택은 신작 리그 안으로 옮겼다 — 여기서 new_only 와 include_new 를 함께 읽는 이유.
     """
     lc = lifecycle(review_count, release_date, today)
     if lc == UPCOMING:
         return False
     if new_only:
-        return lc == NEW
+        return lc == NEW and (include_new or not thin_new(review_count, release_date, today))
     if include_new:
         return True
     return not thin_new(review_count, release_date, today)

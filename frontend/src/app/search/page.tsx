@@ -95,11 +95,12 @@ function MetricSlider({
 export default function SearchPage() {
   const [prefs, setPrefs]               = useState<Record<string, number>>(buildInitialPrefs);
   const [activeCategory, setActiveCategory] = useState<string>('vibe');
-  // R-12: 리뷰 100 미만 신작은 기본 제외. 켜면 '신작 · D+n' 뱃지와 함께 들어온다.
-  const [includeNew, setIncludeNew]         = useState<boolean>(false);
+  // R-16: 메인 결과의 '신작 포함' 토글은 뺐다 — v7 에서 신작(발굴 점수 0)은 메인 상위에 들 수 없어 켜도 결과가 안 바뀌었다.
+  // 신작은 아래 '신작 리그'에서만 보여준다. 리그 기본은 리뷰 100건 이상 신작, 토글로 조용한 신작(100건 미만)까지.
+  const [includeQuiet, setIncludeQuiet]     = useState<boolean>(false);
   // 신작 리그: 마지막으로 제출한 취향으로 신작끼리만 다시 매칭 (개발자 취지 — 신생 게임을 보호하는 그들만의 리그)
   const [leaguePrefs, setLeaguePrefs]       = useState<Record<string, number> | null>(null);
-  const league = useNewLeague(leaguePrefs, 6);
+  const league = useNewLeague(leaguePrefs, 6, includeQuiet);
   const mutation        = useRecommendByPreference();
   const ensureSessionId = useUserStore(s => s.ensureSessionId);
   const isLoggedIn      = useUserStore(s => s.isLoggedIn);
@@ -126,7 +127,7 @@ export default function SearchPage() {
         setPrefs(merged);
         // R-8: 중립(5.0) 그대로인 지표는 보내지 않는다 — 49개 전부 5.0 을 보내면 '모든 축에서 평범한 게임'이 만점을 받는다
         if (Object.keys(nonNeutral).length > 0) {
-          mutation.mutate({ preferences: nonNeutral, count: 12, includeNew });
+          mutation.mutate({ preferences: nonNeutral, count: 12 });
           setLeaguePrefs(nonNeutral);
         }
       });
@@ -150,7 +151,7 @@ export default function SearchPage() {
       action_type: 'search',
       context: { query: `preset:${preset.label}`, referrer: '/search' },
     });
-    mutation.mutate({ preferences: preset.prefs, count: 12, includeNew });
+    mutation.mutate({ preferences: preset.prefs, count: 12 });
     setLeaguePrefs(preset.prefs);
   };
 
@@ -179,7 +180,7 @@ export default function SearchPage() {
       },
     });
 
-    mutation.mutate({ preferences: toSend, count: 12, includeNew });
+    mutation.mutate({ preferences: toSend, count: 12 });
     setLeaguePrefs(toSend);
   };
 
@@ -271,25 +272,6 @@ export default function SearchPage() {
         </p>
       )}
 
-      {/* R-12: 신작 포함 토글 — 기본 꺼짐 */}
-      <label className="flex items-center justify-center gap-2 text-[12px] text-zinc-600 dark:text-zinc-400 cursor-pointer select-none">
-        <input
-          type="checkbox"
-          checked={includeNew}
-          onChange={(e) => {
-            const next = e.target.checked;
-            setIncludeNew(next);
-            // 토글은 즉시 반영 — 마지막 제출 취향으로 재요청 (검토: 다음 클릭까지 안 바뀌면 사용자가 헷갈린다)
-            if (leaguePrefs) mutation.mutate({ preferences: leaguePrefs, count: 12, includeNew: next });
-          }}
-          className="accent-purple-600 w-3.5 h-3.5"
-        />
-        <span>
-          리뷰가 아직 적은 신작도 메인 결과에 포함
-          <span className="text-zinc-400 dark:text-zinc-500"> — 리뷰 100건 이상 신작은 항상 포함돼요. 꺼져 있어도 아래 &lsquo;신작 리그&rsquo;에서 따로 볼 수 있어요</span>
-        </span>
-      </label>
-
       <div className="flex justify-center">
         <button
           type="button"
@@ -344,10 +326,23 @@ export default function SearchPage() {
             <h2 className="text-[14px] font-semibold text-emerald-800 dark:text-emerald-300">신작 리그</h2>
             <Link href="/ranking" className="text-[12px] text-emerald-700 dark:text-emerald-400 hover:underline">신작 랭킹 보기 →</Link>
           </div>
-          <p className="text-[12px] text-zinc-500 mb-4">
-            출시 6개월 이내 게임끼리만 같은 취향으로 매칭했어요. 리뷰가 적어 발굴 점수는 아직 매기지 않아요 —
+          <p className="text-[12px] text-zinc-500 mb-3">
+            출시 6개월 이내 게임끼리만 같은 취향으로 매칭했어요. 신작은 발굴 점수를 아직 매기지 않아 메인 결과에는 나오지 않고 여기서만 보여요 —
             마음에 드는 게임에 첫 리뷰를 남기는 사람이 다음 히든젬을 만듭니다.
           </p>
+          {/* R-16: 조용한 신작 포함 토글 — 리그 기본은 리뷰 100건 이상. useQuery 키에 들어가 있어 즉시 재요청된다 */}
+          <label className="flex items-center gap-2 text-[12px] text-zinc-600 dark:text-zinc-400 cursor-pointer select-none mb-4">
+            <input
+              type="checkbox"
+              checked={includeQuiet}
+              onChange={(e) => setIncludeQuiet(e.target.checked)}
+              className="accent-emerald-600 w-3.5 h-3.5"
+            />
+            <span>
+              리뷰 100건 미만의 조용한 신작도 포함
+              <span className="text-zinc-400 dark:text-zinc-500"> — 학생 모델 분석이라 취향 매칭이 덜 정확할 수 있어요</span>
+            </span>
+          </label>
           {league.isLoading && <GameGridSkeleton count={6} />}
           {league.data && league.data.recommendations.length === 0 && (
             <p className="text-[12px] text-zinc-500">이 취향에 맞는 신작이 아직 없어요.</p>

@@ -280,11 +280,11 @@ class RecommendByPreferenceRequest(BaseModel):
     count: int = Field(default=5, ge=1, le=20, description="추천 게임 수 (1~20)")
     include_new: bool = Field(
         default=False,
-        description="출시 180일 이내 신작 포함 여부. 기본 제외 — 프런트 '신작 포함' 토글 (R-12)",
+        description="리뷰 100건 미만의 조용한 신작까지 포함. 메인 결과에서는 v7 이후 효과가 거의 없고(신작 gem 0), 신작 리그(new_only)의 범위 토글로 쓴다 (R-16)",
     )
     new_only: bool = Field(
         default=False,
-        description="신작만 — '신작 리그'. 신작끼리 취향 일치로 경쟁시킨다 (개발자 취지: 신생 게임 보호). true 면 include_new 는 무시",
+        description="신작만 — '신작 리그'. 신작끼리 취향 일치로 경쟁시킨다 (개발자 취지: 신생 게임 보호). 기본 리뷰 ≥100 신작, include_new=true 면 조용한 신작도 (R-16)",
     )
     min_gem_potential: float = Field(
         default=0,
