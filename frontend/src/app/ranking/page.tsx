@@ -25,9 +25,9 @@ const TABS: { key: RankingType; label: string; desc: string }[] = [
   { key: 'new',    label: '신작 리그',     desc: '출시 6개월 이내 게임끼리만의 리그 — 정착 게임과 비교하지 않아요' },
 ];
 
-// 신작 리그 안의 두 시선: 지금 달리는 신작(속도) / 아직 조용한 신작(리뷰 100 미만, 평가 순)
+// 신작 리그 안의 두 시선: 지금 달리는 신작(180일 안에 모은 리뷰 수, 평가 70%+) / 아직 조용한 신작(리뷰 100 미만, 평가 순)  — R-17
 const NEW_VIEWS: { key: RankingType; label: string; desc: string }[] = [
-  { key: 'new',       label: '지금 달리는', desc: '하루 평균 리뷰 수 순' },
+  { key: 'new',       label: '지금 달리는', desc: '출시 180일 안에 모은 리뷰 수 순 — 평가 70% 이상만' },
   { key: 'new_quiet', label: '아직 조용한', desc: '리뷰 100건 미만 중 평가가 좋은 순 — 첫 리뷰가 필요한 게임들' },
 ];
 

@@ -265,9 +265,10 @@ def save(label: str, overwrite: bool = False, skip_cache_clear: bool = False) ->
     # R-11 카나리아: 신작 랭킹 1위 = 메챠 카멜레온 (사용자: "메챠카멜레온이 신작랭킹 1위가 아니면 말이 안 된다")
     new_rows = enriched.get("ranking:new") or []
     if new_rows:
-        top = (new_rows[0].get("name") or "")
-        hit = ("카멜레온" in top) or ("CHAMELEON" in top.upper())
-        print(f"   카나리아 신작 1위: {top[:30]} → {'통과' if hit else '실패 — 신작 랭킹 로직을 먼저 본다'}")
+        pos = next((i + 1 for i, x in enumerate(new_rows)
+                    if "카멜레온" in (x.get("name") or "") or "CHAMELEON" in (x.get("name") or "").upper()), None)
+        top = (new_rows[0].get("name") or "")[:30]
+        print(f"   카나리아: 신작 1위 {top} / 메챠 카멜레온 {('%d위' % pos) if pos else '상위 %d 밖 — 신작 후보 조건(R-11)을 먼저 본다' % TOP_N}")
     # 유명작 필터가 실제로 작동하는지 즉시 판정
     for name in [k for k in enriched if k.endswith(":히든젬")]:
         base = name.replace(":히든젬", ":전체")

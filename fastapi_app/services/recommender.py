@@ -1078,6 +1078,14 @@ class GameRecommender:
         Analyze natural language query via GPT.
         Korean: GPT-4.1-mini로 자연어 쿼리 분석 — 영어 번역 + 지표 힌트.
         """
+        # 질의 분석 결과를 7일 캐시 (qa:*) — LLM 이 temperature 0.1 이라도 호출마다 metric_hints 가 달라져
+        # 같은 검색어의 점수가 ±0.7 흔들리고 10위 경계가 뒤집힌다 (s5→s6 대조군 '스토리 좋은 힐링게임' 9/10, 다른 두 질의 10/10).
+        # 결과 캐시(semantic:*)는 로직 변경 때 비우지만 질의 분석은 로직과 무관하므로 invalidate_all 에서 제외 (prefemb:* 와 같은 이유).
+        from services.cache import recommendation_cache, CACHE_VERSION
+        qa_key = f"qa:{CACHE_VERSION}:{recommendation_cache._hash(recommendation_cache._normalize_query(query))}"
+        cached = await recommendation_cache.get(qa_key)
+        if isinstance(cached, dict) and cached.get("english_query"):
+            return cached
         client = self._get_openai()
         valid_metrics = NUMERIC_METRIC_FIELDS[:20]
         prompt = f"""You are a game recommendation assistant. Analyze this Korean game search query and return JSON.
@@ -1108,9 +1116,12 @@ Examples:
             response_format={"type": "json_object"},
         )
         try:
-            return json.loads(response.choices[0].message.content)
+            result = json.loads(response.choices[0].message.content)
         except Exception:
-            return {"english_query": query, "metric_hints": {}}
+            return {"english_query": query, "metric_hints": {}}      # 폴백은 캐시하지 않는다 — 다음 호출이 다시 시도
+        if isinstance(result, dict) and result.get("english_query"):
+            await recommendation_cache.set(qa_key, result, ttl=7 * 24 * 3600)
+        return result
 
     async def embed_query(self, query: str) -> np.ndarray:
         """
