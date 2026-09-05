@@ -93,7 +93,8 @@ async def search_games(
         )
     if genre:
         stmt = stmt.where(Game.genres.ilike(f"%{genre}%"))
-    stmt = stmt.order_by(Game.review_count.desc()).offset(offset).limit(limit)
+    # nullslast: 리뷰 수 NULL(교사 코호트)이 DESC 에서 맨 앞에 오던 문제
+    stmt = stmt.order_by(Game.review_count.desc().nullslast()).offset(offset).limit(limit)
 
     result = await db.execute(stmt)
     games = result.scalars().all()
@@ -126,7 +127,9 @@ async def semantic_search(
     캐시 → 비용가드 → GPT + pgvector → must_not 필터 → 앵커 점수.
     """
     # 1. 캐시 확인
-    cache_key = recommendation_cache.semantic_key(request.query, request.limit)
+    cache_key = recommendation_cache.semantic_key(
+        request.query, request.limit, min_gem_potential=request.min_gem_potential,
+    )
     cached = await recommendation_cache.get(cache_key)
     if cached:
         return RecommendationResponse(**cached)
@@ -250,7 +253,9 @@ async def recommend_by_game(
         {"app_id": 1086940, "count": 5, "query_hint": "림월드 같은 경영 게임"}
     """
     # 1. 캐시 확인 (query_hint 포함 키)
-    cache_key = recommendation_cache.by_game_key(request.app_id, request.count)
+    cache_key = recommendation_cache.by_game_key(
+        request.app_id, request.count, exclude_same_developer=request.exclude_same_developer,
+    )
     cached = await recommendation_cache.get(cache_key)
     if cached:
         return RecommendationResponse(**cached)
@@ -302,6 +307,9 @@ async def recommend_by_preference(
         must_not=request.must_not or {},
         use_masking=request.use_masking,
         max_review_count=request.max_review_count,
+        required_tags=request.required_tags,
+        excluded_tags=request.excluded_tags,
+        min_gem_potential=request.min_gem_potential,
     )
     cached = await recommendation_cache.get(cache_key)
     if cached:

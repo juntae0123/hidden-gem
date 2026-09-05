@@ -50,6 +50,7 @@ from models.game import (
 
 from schemas.game import RecommendedGame
 from services.score_v6 import calculate_score_v6
+from services.score_v7 import calculate_score_v7
 
 
 
@@ -471,6 +472,41 @@ def cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
     return float(max(0.0, min(np.dot(v1, v2) / (n1 * n2), 1.0)))
 
 
+def _wilson_lower(positive_ratio: Optional[float], total: Optional[int], z: float = 1.96) -> float:
+    """Wilson 하한 (동점 처리용). 리뷰 없으면 0."""
+    if not total or total <= 0 or positive_ratio is None:
+        return 0.0
+    n = float(total)
+    p = min(1.0, max(0.0, float(positive_ratio)))
+    denom = 1.0 + z * z / n
+    centre = p + z * z / (2 * n)
+    margin = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
+    return max(0.0, (centre - margin) / denom)
+
+
+def _preference_sort_key(item: Dict) -> tuple:
+    """점수 → gem → Wilson 하한 → 리뷰 적은 순. reverse=True 로 쓰이므로 리뷰 수는 음수."""
+    game = item["game"]
+    sb = item.get("score_breakdown") or {}
+    return (
+        item["score"],
+        sb.get("gem_score", 0.0) or 0.0,
+        _wilson_lower(game.steam_positive_ratio, game.review_count),
+        -(game.review_count or 0),
+    )
+
+
+def _gem_display(metric) -> Optional[float]:
+    """응답에 노출할 gem 값. NULL 일 때만 폴백한다 — `or` 는 percentile 0 을 숨겼다 (D-2 계열)."""
+    if metric is None:
+        return None
+    if metric.gem_percentile is not None:
+        return float(metric.gem_percentile)
+    if metric.gem_potential is not None:
+        return float(metric.gem_potential)
+    return None
+
+
 def compute_metric_score(
     target_vec: np.ndarray,
     cand_vec: np.ndarray,
@@ -497,7 +533,8 @@ def to_display_score(raw_score: float, gem_bonus: float) -> float:
     """
     base = raw_score * 94.0      # 0~94 범위로 스케일
     gem_add = gem_bonus * 5.0    # gem 보너스 최대 +5
-    return min(round(base + gem_add, 1), SCORE_MAX)
+    # 하한 0: 경로 C 의 emb_score(1 - 코사인 거리)는 음수가 될 수 있다
+    return max(0.0, min(round(base + gem_add, 1), SCORE_MAX))
 
 
 # ==================== GameRecommender (v5) ====================
@@ -880,8 +917,9 @@ class GameRecommender:
 
             # ===== v6 점수 (Core + X-Factor + Gem) =====
             # juntae 철학: 장르핵심 + 검색의도 + 독창성 + 발굴
+            # D-10: `or 5.0` 은 실제 값 0.0 을 5.0 으로 바꿨다 (공포 0 이 48%). NULL 만 정책 폴백.
             game_metrics_dict = {
-                f: float(getattr(game.metrics, f, 5.0) or 5.0)
+                f: resolve_null(f, getattr(game.metrics, f, None))
                 for f in NUMERIC_METRIC_FIELDS
             }
             genre = (
@@ -889,13 +927,17 @@ class GameRecommender:
                 if game.genres else ''
             )
 
-            v6_result = calculate_score_v6(
+            score_fn = calculate_score_v7 if settings.SCORE_VERSION == "v7" else calculate_score_v6
+            v6_result = score_fn(
                 game_metrics=game_metrics_dict,
                 target_metrics=preferences,
                 genre=genre,
-                review_count=game.review_count or 0,
-                positive_ratio=game.steam_positive_ratio or 0.5,
-                gem_percentile=float(game.metrics.gem_percentile or 50),
+                review_count=game.review_count,
+                positive_ratio=game.steam_positive_ratio,
+                gem_percentile=(
+                    float(game.metrics.gem_percentile)
+                    if game.metrics.gem_percentile is not None else None
+                ),
             )
             display_score = v6_result['final_score']
 
@@ -904,9 +946,7 @@ class GameRecommender:
                 "metric": game.metrics,
                 "score": display_score,
                 "score_breakdown": {
-                    "core_score": v6_result['breakdown']['core_score'],
-                    "xfactor_score": v6_result['breakdown']['xfactor_score'],
-                    "gem_score": v6_result['breakdown']['gem_score'],
+                    **v6_result['breakdown'],          # core/xfactor/gem (+ v7: distance, fields_used)
                     "final_score": display_score,
                 },
                 "v6_identity": v6_result['identity'],
@@ -916,7 +956,8 @@ class GameRecommender:
 
 
 
-        scored.sort(key=lambda x: x["score"], reverse=True)
+        # 동점 처리 (decisions R-1): 점수 → gem → Wilson 하한 → 리뷰 적은 순(무명 우선). 안정 정렬.
+        scored.sort(key=_preference_sort_key, reverse=True)
         return scored[:count]
 
     # ==================== 시맨틱 검색 / Semantic Search ====================
@@ -1110,14 +1151,21 @@ Examples:
             hint_score = 0.0
             if metric_hints:
                 match = 0.0
+                used = 0
                 for mname, tval in metric_hints.items():
                     if mname not in NUMERIC_METRIC_FIELDS:
                         continue
                     actual = getattr(game.metrics, mname, None)
                     if actual is None:
                         continue
-                    match += max(0, 1.0 - abs(float(actual) - float(tval)) / 10.0)
-                hint_score = match / len(metric_hints)
+                    try:
+                        tval_f = float(tval)
+                    except (TypeError, ValueError):
+                        continue
+                    match += max(0, 1.0 - abs(float(actual) - tval_f) / 10.0)
+                    used += 1
+                # D-22: 건너뛴 힌트는 분모에서도 뺀다. 유효 힌트가 없으면 0 (임베딩만으로 채점)
+                hint_score = match / used if used else 0.0
 
             raw_score = emb_score * 0.85 + hint_score * 0.15
             gem_bonus = self._calculate_gem_bonus(game, game.metrics)
@@ -1168,7 +1216,9 @@ Examples:
                 one_line_summary=game.one_line_summary or "",
                 marketing_hook=game.marketing_hook or "",
                 similarity_score=r["score"],
-                gem_potential=metric.gem_percentile or metric.gem_potential,
+                gem_potential=_gem_display(metric),
+                # 경로 B 분해(metric_score / embedding_score / gem_bonus / final_score) — 감사 관측용
+                score_breakdown=r.get("score_breakdown", {}),
                 match_reasons=reasons,
                 key_metrics=self._get_key_metrics(metric),
             ))
@@ -1199,7 +1249,7 @@ Examples:
                 one_line_summary=game.one_line_summary or "",
                 marketing_hook=game.marketing_hook or "",
                 similarity_score=r["score"],
-                gem_potential=metric.gem_percentile or metric.gem_potential,
+                gem_potential=_gem_display(metric),
                 # v6 분해 (UI 표시용)
                 score_breakdown=r.get("score_breakdown", {}),
                 v6_identity=r.get("v6_identity", ""),
@@ -1231,7 +1281,9 @@ Examples:
                 one_line_summary=game.one_line_summary or "",
                 marketing_hook=game.marketing_hook or "",
                 similarity_score=r["score"],
-                gem_potential=metric.gem_percentile or metric.gem_potential,
+                gem_potential=_gem_display(metric),
+                # 경로 C 분해(metric_score=힌트 / embedding_score / gem_bonus / final_score) — 감사 관측용
+                score_breakdown=r.get("score_breakdown", {}),
                 match_reasons=[],
                 key_metrics=self._get_key_metrics(metric),
             ))

@@ -3,9 +3,9 @@ Redis Cache Layer for Search and Recommendation Results
 Redis 캐시 레이어 - 검색/추천 결과 캐싱
 
 캐시 키 전략:
-    semantic:{query_hash}:{limit}          : 시맨틱 검색 결과
-    rec:game:{app_id}:{count}              : 게임 기반 추천
-    rec:pref:{pref_hash}:{count}           : 선호도 기반 추천
+    semantic:{VER}:{hash(query,min_gem)}:{limit}      : 시맨틱 검색 결과
+    rec:game:{VER}:{app_id}:{count}:{a|x}          : 게임 기반 추천 (x = 같은 개발사 제외)
+    rec:pref:{VER}:{hash(pref,must_not,masking,max_reviews,tags,min_gem)}:{count}
 
 v4 변경:
     by_preference_key()에 must_not, use_masking 인자 추가.
@@ -19,7 +19,11 @@ import hashlib
 import json
 import logging
 import re
-from typing import Any, Optional
+from typing import Any, List, Optional
+
+# 점수 로직을 바꾸면 이 값을 올린다. 키에 들어가므로 옛 결과가 살아남지 못한다.
+# (2026-09-04 스냅샷 캐시 오염 사고: 키에 로직 버전이 없어 변경 전 결과가 그대로 돌아왔다)
+CACHE_VERSION = "v7a"
 
 import redis.asyncio as aioredis
 
@@ -86,20 +90,22 @@ class RecommendationCache:
         """
         return hashlib.md5(text.encode()).hexdigest()[:8]
 
-    def semantic_key(self, query: str, limit: int) -> str:
+    def semantic_key(self, query: str, limit: int, min_gem_potential: float = 0.0) -> str:
         """
         Generate cache key for semantic search results.
         Korean: 시맨틱 검색 결과 캐시 키 생성.
         """
         norm = self._normalize_query(query)
-        return f"semantic:{self._hash(norm)}:{limit}"
+        payload = json.dumps({"q": norm, "min_gem": min_gem_potential}, sort_keys=True)
+        return f"semantic:{CACHE_VERSION}:{self._hash(payload)}:{limit}"
 
-    def by_game_key(self, app_id: int, count: int) -> str:
+    def by_game_key(self, app_id: int, count: int, exclude_same_developer: bool = False) -> str:
         """
         Generate cache key for game-based recommendation results.
         Korean: 게임 기반 추천 결과 캐시 키 생성.
         """
-        return f"rec:game:{app_id}:{count}"
+        flag = "x" if exclude_same_developer else "a"   # 결과를 바꾸는 조건은 키에 들어가야 한다
+        return f"rec:game:{CACHE_VERSION}:{app_id}:{count}:{flag}"
 
     def by_preference_key(
         self,
@@ -108,6 +114,9 @@ class RecommendationCache:
         must_not: Optional[dict] = None,
         use_masking: bool = True,
         max_review_count: Optional[int] = None,
+        required_tags: Optional[List[str]] = None,
+        excluded_tags: Optional[List[str]] = None,
+        min_gem_potential: float = 0.0,
     ) -> str:
         """
         Generate cache key for preference-based recommendation results (v4).
@@ -128,9 +137,13 @@ class RecommendationCache:
             "must_not": dict(sorted((must_not or {}).items())),
             "masking": use_masking,
             "max_reviews": max_review_count,
+            # 결과를 바꾸는 조건 3개가 빠져 있었다 (2026-09-04 검토)
+            "req_tags": sorted(required_tags or []),
+            "exc_tags": sorted(excluded_tags or []),
+            "min_gem": min_gem_potential,
         }
         pref_str = json.dumps(payload, sort_keys=True)
-        return f"rec:pref:{self._hash(pref_str)}:{count}"
+        return f"rec:pref:{CACHE_VERSION}:{self._hash(pref_str)}:{count}"
 
     # ==================== GET / SET ====================
 
@@ -201,7 +214,7 @@ class RecommendationCache:
         """
         try:
             r = await self._get_redis()
-            keys = await r.keys(f"rec:game:{app_id}:*")
+            keys = await r.keys(f"rec:game:*:{app_id}:*")   # 키에 CACHE_VERSION 이 들어가므로 와일드카드
             if keys:
                 await r.delete(*keys)
                 logger.info(f"[Cache] 게임 {app_id} 캐시 삭제: {len(keys)}개")
