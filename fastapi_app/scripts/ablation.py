@@ -240,10 +240,11 @@ async def main():
     print(f"교사 비율 기준선 {teacher_n / max(n, 1):.2f} — 상위 N 의 '교사비율'은 이 값과 비교해 읽는다")
     ev_n = sum(1 for g in pool if g["gem_evidence"] is not None)
     print(f"플래그: SCORE_VERSION={settings.SCORE_VERSION}  GEM_SOURCE={settings.GEM_SOURCE}  "
-          f"(v7 예산 Core {budgets()[0]:.0f} + Gem {budgets()[1]:.0f})  gem_evidence 있음 {ev_n:,}/{n:,}\n")
-    out["flags"] = {"score_version": settings.SCORE_VERSION, "gem_source": settings.GEM_SOURCE, "evidence_rows": ev_n}
+          f"(v7 예산 Core {budgets()[0]:.0f} + Gem {budgets()[1]:.0f})  gem_evidence non-NULL {ev_n:,}/{n:,} "
+          f"(too_new 는 정보용 값·famous 는 0.0 이 저장되므로 NULL 은 리뷰<3 뿐)\n")
 
-    out = {"pool_mode": args.pool, "pool": n, "teacher": teacher_n, "lifecycle": lc_counts, "top_n": args.top, "scenarios": {}}
+    out = {"pool_mode": args.pool, "pool": n, "teacher": teacher_n, "lifecycle": lc_counts, "top_n": args.top, "scenarios": {},
+           "flags": {"score_version": settings.SCORE_VERSION, "gem_source": settings.GEM_SOURCE, "evidence_rows": ev_n}}
     for sc, prefs in scenarios.items():
         core6, xf, gem, core7, gem7 = score_components(pool, prefs)
         v6 = np.minimum(core6 + xf + gem, SCORE_MAX)
