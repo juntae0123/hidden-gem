@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
     REDIS_URL: str = ""
 
+    # ==================== 점수 로직 버전 ====================
+    # v6 = Core(장르핵심+의도, 목표 5.0)+X-Factor+Gem / v7 = 질의 마스크 + 가중 RMSE + Gem
+    # docs/decisions_0905.md R-1. 절제 도구 실측 후 기본값을 v7 로 올린다.
+    SCORE_VERSION: str = "v6"
+
     CACHE_TTL_SEMANTIC: int = 3600
     CACHE_TTL_BY_GAME: int = 3600
     CACHE_TTL_BY_PREFERENCE: int = 1800

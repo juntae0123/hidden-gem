@@ -277,9 +277,9 @@ def _describe_identity(top_factors: list) -> str:
 # ==================== Gem 보너스 (숨은 명작) ====================
 
 def compute_gem_bonus(
-    review_count: int,
-    positive_ratio: float,
-    gem_percentile: float,
+    review_count,
+    positive_ratio,
+    gem_percentile,
 ) -> tuple[float, dict]:
     """
     Hidden gem bonus (발굴 정체성).
@@ -289,9 +289,10 @@ def compute_gem_bonus(
         리뷰 적음 + 평점 높음 + gem_percentile 높음
         스팀 인기순위가 못 잡는 영역.
     """
-    reviews = review_count or 0
-    positive = positive_ratio or 0.5
-    gem_pct = gem_percentile or 50
+    # NULL 과 0 을 구분한다 (D-2 / D-24). `or` 는 실제 값 0 을 폴백으로 바꿔버린다.
+    reviews = review_count if review_count is not None else 0
+    positive = positive_ratio if positive_ratio is not None else 0.5
+    gem_pct = gem_percentile if gem_percentile is not None else 50.0
 
     # 인지도 역수 (적을수록 ↑, 단 최소 신뢰도)
     if reviews < 100:
@@ -306,7 +307,8 @@ def compute_gem_bonus(
         discovery = 0.1   # 다 아는 게임
 
     # 품질 (85%+ 만 인정)
-    quality = max(0, (positive - 0.85) / 0.15) if positive >= 0.85 else 0
+    # 0~1 스케일 전제. 상한 클램프는 0~100 스케일 값이 유입될 때 전원 만점이 되는 것을 막는다 (D-18)
+    quality = min(1.0, max(0.0, (positive - 0.85) / 0.15)) if positive >= 0.85 else 0.0
     gem_signal = gem_pct / 100
 
     bonus = (discovery * 0.4 + quality * 0.3 + gem_signal * 0.3) * SCORE_GEM_MAX
@@ -325,9 +327,9 @@ def calculate_score_v6(
     game_metrics: dict[str, float],
     target_metrics: dict[str, float],
     genre: str,
-    review_count: int = 0,
-    positive_ratio: float = 0.5,
-    gem_percentile: float = 50.0,
+    review_count=None,
+    positive_ratio=None,
+    gem_percentile=None,
 ) -> dict:
     """
     Unified score v6: Core + X-Factor + Gem.
