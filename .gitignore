@@ -60,3 +60,6 @@ upload_log.txt
 
 # Cowork 파일 전달 폴더 (도구가 만든 사본)
 /Claude outputs/
+
+# 파이프라인 로그 (컨테이너 마운트)
+/logs/

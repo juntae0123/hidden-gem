@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 # Hidden Gem 주간 신작 파이프라인 - Windows Task Scheduler 등록
 # 위치: C:\Hidden-Gem-project\scripts\pipeline\setup_weekly_task.ps1
 #

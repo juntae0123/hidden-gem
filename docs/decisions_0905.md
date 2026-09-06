@@ -215,6 +215,22 @@ PRD §4-2 "변별력 25 vs 3.5" 의 25 = 5.0². 개발자가 알고 쓴 것. 경
   Django `raw_*` `null=True` 마이그레이션 후 운영에서 raw 제거(행당 30~40%) / `embedding_backup_20260703`(33MB) 삭제 판단 / Railway Postgres 비밀번호 교체 /
   `/ops/cache*` 인증 확인("Authentication required" 가 코드에 없는 문구 — 출처 확인).
 
+## R-19. (2026-09-06) 운영 비밀 교체 + 주간 스케줄러 등록 — 운영 자동화 마무리
+- **Postgres 비밀번호 교체**: 09-05 심야에 운영 URL 을 채팅에 붙여 받아 비밀번호가 노출됐다. 순서대로 교체:
+  `ALTER USER postgres WITH PASSWORD` → Railway 변수(pgvector `POSTGRES_PASSWORD`/`PGPASSWORD`) → 로컬 `.env PROD_DATABASE_URL` → `up -d batch` → 접속 확인(games 12,848).
+- **Railway 참조 변수의 함정**: django/fastapi 의 `DB_PASSWORD` 는 `${{Postgres.PGPASSWORD}}` 참조라 값은 자동으로 바뀌었지만,
+  **이미 돌고 있는 컨테이너의 환경변수는 그대로**였다. `/health` 는 정적 응답이라 healthy, `/games/ranking` 만 500.
+  → 두 서비스를 **Redeploy** 해야 새 값이 프로세스에 들어간다. 재배포 후 랭킹 정상(new 1위 MECCHA CHAMELEON).
+  교훈: 참조 변수는 "값 갱신"과 "프로세스 반영"이 다른 사건이다. 비밀 교체 절차의 마지막 단계는 항상 **의존 서비스 재배포 + DB 를 실제로 읽는 엔드포인트로 확인**.
+- **`up -d` 가 장기 작업을 죽인다**: 백필을 `exec -d` 로 띄운 직후 비밀번호 절차의 `docker compose up -d batch` 가 컨테이너를 재생성해 백필 프로세스가 같이 죽었다.
+  크롤 단계에서 죽어 OpenAI 배치 제출 전 → 비용 0. 규칙화: **환경/비밀 변경 → `up -d` → 장기 작업 시작** (CLAUDE.md §2).
+- **로그 유실**: `logs/` 가 batch 컨테이너에 마운트되어 있지 않아 `weekly_pipeline.log` 가 재생성마다 사라졌다.
+  compose 에 `./logs:/app/logs` 추가 — 이제 호스트에서 `tail -f logs/weekly_pipeline.log` 로 진행 상황을 본다.
+- **주간 스케줄러**: `setup_weekly_task.ps1` 이 PowerShell 5.1 파서 오류(`MissingEndCurlyBrace`)로 죽었다. 원인은 BOM 없는 UTF-8 —
+  5.1 이 한글 주석을 CP949 로 읽어 깨지면서 블록이 끊긴 것. **BOM + CRLF** 로 저장해 해결. 매주 월 03:30, 실행 제한 26h(Batch 대기 감안), `StartWhenAvailable`.
+  전제: Docker Desktop 로그인 시 자동 시작 + batch 컨테이너 상시 기동.
+- **백필 재시작**: 2026-03-16~06-05 구간, `--limit 500 --loop --skip-history --audit-n 30`, 대상 운영. 예상 ~7,500게임 / $30~40.
+
 ## R-16. (확정 2026-09-05) 신작 토글은 메인에서 빼고 신작 리그의 범위 토글로
 - 구현: `lifecycle.admit(new_only=True)` 는 리뷰 ≥100 신작만, `include_new=True` 를 함께 주면 조용한 신작(리뷰<100)도.
   프런트 검색 페이지: 메인 위 토글 삭제, 신작 리그 섹션 안에 "리뷰 100건 미만의 조용한 신작도 포함 — 학생 모델 분석이라 취향 매칭이 덜 정확할 수 있어요".
