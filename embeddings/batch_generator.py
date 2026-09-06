@@ -551,8 +551,36 @@ def upload_batch(jsonl_path: Path) -> str:
                 print(f"   파일 인식 지연 → {attempt}차 재시도 (10초 후)")
                 time.sleep(10)
                 continue
+            _explain_create_failure(exc, file_id)
             raise
     raise last_exc
+
+
+# 배치 생성 거부 사유 → 사람이 읽을 한 줄 진단.
+# 2026-09-06: 'billing_hard_limit_reached' 가 트레이스백으로만 떠서 파이프라인이
+# 왜 멈췄는지 로그만 봐서는 알 수 없었다 (회차 4에서 중단).
+_CREATE_HINTS = (
+    ("billing_hard_limit_reached", "OpenAI 결제 하드 한도 도달 — 대시보드 Settings > Limits 의 월 예산을 올리거나 결제수단을 확인한다. 코드 문제가 아니다."),
+    ("insufficient_quota", "OpenAI 잔액/쿼터 소진 — 충전 후 재개한다."),
+    ("enqueued token limit", "배치 큐 토큰 한도 초과 — 진행 중 배치가 끝난 뒤 재시도하거나 회차 크기(--limit)를 줄인다."),
+    ("rate limit", "레이트 리밋 — 잠시 후 재시도한다."),
+)
+
+
+def _explain_create_failure(exc: Exception, file_id: str) -> None:
+    msg = str(exc)
+    for needle, hint in _CREATE_HINTS:
+        if needle.lower() in msg.lower():
+            print(f"\n[진단] {hint}")
+            break
+    else:
+        print("\n[진단] 배치 생성이 거부됐다. 위 메시지의 code/message 를 확인한다.")
+    # 배치가 안 만들어졌으면 업로드된 입력 파일은 쓸 데가 없다 — 남겨두면 스토리지에 쌓인다.
+    try:
+        client.files.delete(file_id)
+        print(f"[정리] 업로드만 된 입력 파일 삭제: {file_id}")
+    except Exception as del_exc:
+        print(f"[정리] 입력 파일 삭제 실패({file_id}) — 대시보드 Storage 에서 지운다: {del_exc}")
 
 
 def _print_batch_errors(batch_id: str, error_file_id: str = None) -> None:
