@@ -29,6 +29,16 @@ load_dotenv(ROOT / ".env")
 STEP_RE = re.compile(r"^\[(.+?)\] STEP (\S+):")
 
 
+def _proc_elapsed_sec(stat_path: Path) -> float:
+    """프로세스 경과 초. /proc/PID/stat 22번 필드(starttime, clock tick) 와 /proc/uptime 으로 계산한다.
+    파일 mtime 은 시작 시각이 아니라서 0으로 나온다 (2026-09-06 수정)."""
+    fields = stat_path.read_text().rsplit(") ", 1)[-1].split()  # 실행파일명에 공백/괄호가 있어도 안전
+    starttime_ticks = int(fields[19])                            # 22번째 필드 = 분리 후 20번째
+    hz = os.sysconf("SC_CLK_TCK")
+    uptime = float(Path("/proc/uptime").read_text().split()[0])
+    return max(0.0, uptime - starttime_ticks / hz)
+
+
 def running_steps() -> list[str]:
     """컨테이너 안에서 돌고 있는 embeddings.* 프로세스 (psutil 없이 /proc 만으로)."""
     out = []
@@ -39,9 +49,9 @@ def running_steps() -> list[str]:
             cmd = (p / "cmdline").read_bytes().decode(errors="replace").replace("\0", " ").strip()
             if "embeddings." not in cmd or "pipeline_status" in cmd:
                 continue
-            started = datetime.fromtimestamp((p / "stat").stat().st_mtime)
-            out.append(f"  [{(datetime.now() - started)!s:.7} 경과] {cmd[:110]}")
-        except (OSError, ValueError):
+            m = int(_proc_elapsed_sec(p / "stat") // 60)
+            out.append(f"  [{m // 60}시간 {m % 60}분 경과] {cmd[:110]}")
+        except (OSError, ValueError, IndexError):
             continue
     return out
 
