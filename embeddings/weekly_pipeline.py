@@ -38,7 +38,7 @@ Hidden Gem - Weekly New-Game Ingestion Pipeline
       배치 straggler로 빠진 게임이 다음 회차에 자동 소화되는 구조.
     - 배치는 --wait-timeout(기본 45분) 내 미완료면 취소 후 완료분만 수거한다.
     - 루프 모드에선 percentile 재계산을 마지막에 1회만 돈다.
-    - 멈추기: data/STOP_BACKFILL 파일을 만들면 다음 회차 시작 전에 정상 종료한다 (컨테이너 접근 불필요).
+    - 멈추기: data/STOP_BACKFILL 은 --loop(백필)만, data/STOP_PIPELINE 은 주간 실행까지 전부 멈춘다 (컨테이너 접근 불필요).
 
 스케줄 등록 (Windows):
     PowerShell -ExecutionPolicy Bypass -File scripts/pipeline/setup_weekly_task.ps1
@@ -290,8 +290,13 @@ def main() -> None:
     processed_total = 0
     iterations = 0
     while True:
-        if (DATA_DIR / "STOP_BACKFILL").exists():
-            notify("STOP_BACKFILL 파일 감지 — 다음 회차 진행 없이 종료 (재개: 파일 삭제 후 재실행)")
+        # 킬 스위치 둘: STOP_PIPELINE 은 전부 멈춤, STOP_BACKFILL 은 --loop(백필)만 멈춤.
+        # 09-04 비용 사고 때 만든 STOP_BACKFILL 이 주간 1회차까지 막아 운영 갱신이 조용히 0건이 되던 것 (2026-09-06 발견).
+        if (DATA_DIR / "STOP_PIPELINE").exists():
+            notify("STOP_PIPELINE 파일 감지 — 종료 (재개: data/STOP_PIPELINE 삭제)")
+            break
+        if args.loop and (DATA_DIR / "STOP_BACKFILL").exists():
+            notify("STOP_BACKFILL 파일 감지 — 백필 루프 진행 없이 종료 (재개: 파일 삭제 후 재실행)")
             break
         iterations += 1
         n = run_iteration(iterations)

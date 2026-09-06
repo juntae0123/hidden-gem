@@ -3,7 +3,12 @@
 Hidden Gem 관리 서버. 게임 데이터 적재/수정/분석을 담당하는 Django 백엔드.
 FastAPI가 읽는 PostgreSQL 테이블의 원본 데이터를 여기서 관리한다.
 
-포트: **8001** | 역할: **Admin UI + 데이터 관리** | DB 접근: **Django ORM (read/write)**
+포트: **8001** | 역할: **인증·회원·Admin** | DB 접근: **Django ORM (read/write, 사용자 테이블의 원본)**
+
+> 2026-09 현재 역할 분담: 게임 데이터(games·game_metrics·review_*)의 **원본은 로컬 배치 DB → `embeddings/prod_sync.py` 로 운영 upsert**, 스키마 정본은
+> `fastapi_app/models/game.py`. Django 는 인증(Google OAuth2·Steam OpenID, allauth + simplejwt 회전/블랙리스트), 회원·설문·행동 로그(users·user_actions·
+> game_surveys·metric_ratings·favorites), Admin 을 맡는다. 아래 `load_games`/`analyze_new_games` 커맨드는 초기 구축용이며 주간 수집은 `embeddings/weekly_pipeline.py`.
+> 게임 모델을 `makemigrations` 하지 않는다 — 실제 DB 보다 뒤처진 모델로 마이그레이션하면 컬럼 DROP 위험(트러블슈팅 ③).
 
 ---
 
