@@ -51,6 +51,7 @@ Hidden Gem - Weekly New-Game Ingestion Pipeline
 
 import os
 import sys
+import atexit
 import csv
 import glob
 import argparse
@@ -77,6 +78,31 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 def _mask(url: str) -> str:
     import re
     return re.sub(r"://([^:]+):[^@]+@", r"://\1:***@", url or "")
+
+
+def acquire_lock() -> Path:
+    """같은 파이프라인이 두 개 돌지 못하게 막는다.
+
+    2026-09-06: 백필(13:59 시작)이 도는 중에 주간 실행(18:30)이 겹쳤다. 둘 다 Steam API 를 두드리고
+    리뷰 갱신·gem 산출을 같은 DB 에 동시에 쓴다 (C-6/C-7). 이번엔 운 좋게 끝났지만 막아야 한다.
+    락 파일에 PID 를 적고, 그 PID 가 살아 있지 않으면(비정상 종료 잔해) 이어받는다.
+    """
+    lock = DATA_DIR / "pipeline.lock"
+    if lock.exists():
+        try:
+            old_pid = int(lock.read_text().split()[0])
+        except (ValueError, IndexError, OSError):
+            old_pid = None
+        alive = old_pid is not None and Path(f"/proc/{old_pid}").exists()
+        if alive:
+            log(f"다른 파이프라인이 이미 실행 중이다 (PID {old_pid}) — 시작하지 않는다. "
+                f"정말 겹쳐 돌려야 하면 {lock} 를 지운다.")
+            sys.exit(1)
+        log(f"오래된 락 발견 (PID {old_pid}, 살아있지 않음) — 이어받는다")
+    DATA_DIR.mkdir(exist_ok=True)
+    lock.write_text(f"{os.getpid()} {datetime.now():%Y-%m-%d %H:%M:%S}\n")
+    atexit.register(lambda: lock.unlink(missing_ok=True))
+    return lock
 
 
 def select_target_db(target: str) -> str:
@@ -206,6 +232,8 @@ def main() -> None:
     parser.add_argument("--skip-space-check", action="store_true")
     parser.add_argument("--skip-history", action="store_true", help="주간 리뷰 이력 갱신(활성 전체, ~2.5h) 생략")
     args = parser.parse_args()
+
+    acquire_lock()
 
     target_url = select_target_db(args.target)
     log(f"대상 DB [{args.target}]: {_mask(target_url)}")
