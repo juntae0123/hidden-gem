@@ -204,8 +204,43 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """헬스 체크 (Health Check)"""
-    return {"status": "healthy", "version": "3.2.0"}
+    """헬스 체크 — 의존 구성요소까지 실제로 두드린다.
+
+    2026-09-06: 정적으로 {"status":"healthy"} 만 돌려주던 탓에 운영에서
+    ① DB 비밀번호 교체 후 커넥션이 옛 값이라 랭킹이 전부 500 이던 때도,
+    ② Redis 인증 실패로 캐시가 통째로 죽어 있던 때도 '정상'으로 보였다.
+    무엇을 확인하는지 모르는 헬스체크는 증거가 아니다 (C-14).
+
+    HTTP 는 200 을 유지한다 — Railway 헬스체크가 이 경로를 보고 있어
+    503 을 주면 배포가 죽는다. 대신 status 를 healthy/degraded 로 구분한다.
+    """
+    components: dict = {}
+
+    try:
+        from database import engine
+        from sqlalchemy import text
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        components["db"] = "ok"
+    except Exception as exc:
+        components["db"] = f"error: {type(exc).__name__}: {exc}"[:200]
+
+    try:
+        from services.cache import recommendation_cache
+        r = await recommendation_cache._get_redis()
+        await r.ping()
+        components["redis"] = "ok"
+    except Exception as exc:
+        components["redis"] = f"error: {type(exc).__name__}: {exc}"[:200]
+
+    degraded = [k for k, v in components.items() if v != "ok"]
+    return {
+        "status": "degraded" if degraded else "healthy",
+        "version": "3.2.0",
+        "components": components,
+        "score_version": settings.SCORE_VERSION,
+        "gem_source": settings.GEM_SOURCE,
+    }
 
 
 # ==================== 운영 엔드포인트 ====================
