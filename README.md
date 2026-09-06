@@ -213,11 +213,11 @@ scripts/              스케줄러·백업·이미지 (호스트에서 도는 �
 docs/                 결정(R-1~R-18)·실측·불변식·포트폴리오 원재료  → docs/README.md
 data/                 배치 산출물·스냅샷·홀드아웃 (gitignore)      → data/README.md
 legacy/               은퇴한 코드·산출물 (참고용, 미실행)          → legacy/README.md
-PRD_v4.2.3.md         제품 요구사항
+PRD_v4.3.md           제품 요구사항 (현행). 이전 버전은 docs/prd_history/
 ```
 
 ## 문서
 
-- [PRD](./PRD_v4.2.3.md) — 제품 요구사항과 로드맵
+- [PRD v4.3](./PRD_v4.3.md) — 제품 요구사항과 로드맵 (이전 버전: `docs/prd_history/`)
 - [docs/security_review.md](./docs/security_review.md) — 보안 점검 기록
 - [docs/apply_guide.md](./docs/apply_guide.md) — 배포/운영 절차

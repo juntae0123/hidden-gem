@@ -39,6 +39,7 @@ weekly_pipeline ── 0 db_space(용량 70% 게이트) → 1 steam_crawler → 
 | `migrate.py` | Alembic 없는 멱등 SQL 실행기. 파일은 `embeddings/migrations/` | `--list`, `--file` |
 | `prod_sync.py` | 로컬 → 운영 게임 데이터 upsert(games·game_metrics·review_*). 삭제 없음, 사용자 테이블 무접촉, dry-run 기본, 묶음 실행 | `plan()` 공통 컬럼, `upsert_sql()`, `--include-raw` |
 | `db_space.py` | DB·테이블 크기, 죽은 튜플, `--vacuum`, `--limit-gb --alert-pct`(파이프라인 게이트) | |
+| `pipeline_status.py` | 돌고 있는 파이프라인 현황 — 현재 단계·경과, 실행 중 프로세스, 이번 회차 대상 수, 오늘 등록/분석 건수, 로그 꼬리 | `--target prod\|local`, `--tail N` |
 | `post_backfill.py` | 백필 루프 종료 후 후처리 원커맨드 | |
 | `collect_batch.py` / `make_retry_csv.py` | 멈춘 배치 수동 회수 / 미적재 잔여분 재시도 CSV | |
 | `relabel_version.py` | `extraction_version`·`analysis_method` 잘못 라벨된 적재 복구 | |
