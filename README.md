@@ -1,6 +1,6 @@
 # Hidden Gem
 
-Steam 게임 4,000여 개를 60개 지표로 정량화하고, 취향 기반으로 숨은 명작을 추천하는 서비스.
+Steam 게임 12,843개를 60개 지표로 정량화하고, 취향으로 게임을 찾고 숨은 명작을 발굴하는 서비스.
 
 **Live**: [hidden-gem-gold.vercel.app](https://hidden-gem-gold.vercel.app) · **API**: FastAPI + Django (Railway) · **Web**: Next.js (Vercel)
 
@@ -13,10 +13,12 @@ Steam에는 매년 1만 개 이상의 게임이 출시되지만, 발견은 인�
 분위기·조작 요구도·메커니즘 같은 경험 단위의 지표로 분해해, 취향으로 게임을
 찾을 수 있게 만든 프로젝트다.
 
-- 게임당 60개 지표: 수치 49개(7개 그룹) + 불리언 태그 9개 + 발굴 가능성(gem)/신뢰도
+- 게임당 60개 지표: 수치 49개(7개 그룹) + 불리언 태그 9개 + 신뢰도. 발굴 지수는 LLM 추정이 아닌
+  **Steam 리뷰 실측**(Wilson 하한 × 무명도)
 - 자연어 검색("혼자 조용히 즐기는 전략 게임"), 지표 슬라이더, 카드 스와이프의
-  세 가지 취향 입력 방식
-- 신작은 매주 자동 수집·분석되어 데이터셋이 계속 성장
+  세 가지 취향 입력 방식 + 랭킹 3종(스테디 히든젬 / 요즘 뜨는 / 신작 리그)
+- 신작·정착·유명 게임을 한 척도에 놓지 않는다: 취향 일치는 같은 척도, 발굴·랭킹은 생애주기별로 다른 질문
+- 신작은 매주 자동 수집·분석·리뷰 갱신되어 데이터셋이 계속 성장 (교사 4,190 + 학생 8,653)
 
 기획부터 데이터 구축, 백엔드/프론트엔드, 배포, 운영까지 1인 개발.
 
@@ -61,8 +63,11 @@ graph LR
 - 블라인드 입력: 모델에는 `app_id, name, genres, description` 4개 필드만 제공.
   개발사·평점을 의도적으로 숨겨 인지도 편향을 차단
 
-**신작 확장 (매주 자동)**
-- 경량 모델 + few-shot 증류로 교사와 동일한 스키마 유지, 게임당 비용 수 원 수준
+**학생 데이터 (8,653개, 2026-03~ 출시작 전수 백필 + 매주)**
+- gpt-5.4-mini + 12-shot 증류로 교사와 동일한 스키마 유지. 실측 단가 요청당 $0.0049
+  (Batch 50% × 프롬프트 캐시 90% 중복 적용, 대시보드 검증), 8,653건 $43
+- 홀드아웃 150쌍(교사 게임을 학생이 재분석) — 49 수치 지표 평균 MAE 0.77 로 교사급.
+  LLM 이 추정한 발굴 가능성(gem)은 교사와 상관이 없어(r≈0) **리뷰 실측 지수로 대체**
 - few-shot 예시는 gem 점수 구간별 층화 추출: 명작만 예시로 주면 신작 점수가
   일괄 상향/하향되는 캘리브레이션 붕괴가 실측으로 확인되어, 하/중/상 구간과
   장르 다양성을 강제했다
@@ -72,10 +77,11 @@ graph LR
 **주간 자동화** (`embeddings/weekly_pipeline.py`)
 
 ```
-crawl(신작 발견, DB 중복 제외) → batch(few-shot 분석) → load(UPSERT)
-  → embed(임베딩 생성) → reviews(Steam 리뷰 수 조회 + 노출 게이트)
-  → percentile(gem 백분위 전체 재계산) → recheck(비활성 신작 30일 주기 재평가)
+space(볼륨 70% 게이트) → crawl(신작 발견, DB 중복 제외) → batch(few-shot 분석) → load(UPSERT)
+  → embed(임베딩) → reviews(Steam 리뷰 수 + 노출 게이트) → percentile → recheck(비활성 30일 재평가)
+  → history(활성 게임 주간 리뷰 이력 → '요즘 뜨는' 재료) → gem(발굴 지수 재계산)
 ```
+대상 DB 는 **운영**(Railway Postgres). 로컬 DB 는 개발 미러이고, 로컬→운영 이동은 `embeddings/prod_sync.py`(upsert, 삭제 없음)만 쓴다.
 
 - 노출 게이트: 분석·임베딩은 전수로 수행하되, 서비스 노출(`is_active`)은
   리뷰 수가 기준(기본 10, Steam이 리뷰 점수를 표시하는 최소치) 이상인 게임만.
@@ -93,24 +99,26 @@ crawl(신작 발견, DB 중복 제외) → batch(few-shot 분석) → load(UPSER
 - 크롤러는 429 응답 시 페이지 간격을 자동 상향하는 적응형 스로틀링, 백필 시
   출시일 기준 조기 종료로 불필요한 페이징 제거
 
-## 추천 엔진 (score_v6)
+## 추천 엔진 (score_v7 + 생애주기)
 
-두 종류의 유사도를 결합한 하이브리드 스코어링:
+점수는 **사용자의 취향 입력(또는 검색 문장)에 따라 달라진다** — 모든 게임에 같은 척도. 세 경로:
 
 ```
-지표 유사도 (가중 유클리드 67% + 코사인 33%)     …… 60%
-임베딩 유사도 (pgvector 1536-d, HNSW)            …… 40%
-        ↓ sigmoid 정규화 → 0~94점
-        + 히든젬 보너스 (최대 +5)  →  최종 0~99점
+A 취향/Vibe   사용자가 움직인 지표만 비교(질의 마스크) → 가중 RMSE(w = 1 + |목표−5|/5)
+              → match = exp(−(d/3.5)²) × 87   + 발굴 지수 × 12  →  0~99
+B 게임 기반    지표 유사도 60% + 임베딩 40%  → ×94 + 발굴 ×5
+C 문장 검색    임베딩 85% + LLM 지표 힌트 15% → ×94 + 발굴 ×5   (pgvector HNSW, 힌트는 7일 캐시)
 ```
 
-- **의도 기반 4단계 가중치**: 검색 의도에 따라 각 지표를
-  Primary(5.0) / Secondary(2.0) / Neutral(0.5) / Irrelevant(0.1)로 분류.
-  관련 지표와 무관 지표의 기여도를 약 7배 벌려 변별력을 확보
-- **100점 앵커**: 기준 게임을 100점으로 두고 결과에서 제외, 나머지는 0~99
-  절대 점수 — 점수 인플레이션과 "왜 만점이 없나" 혼란을 동시에 제거
-- 배제 조건 파싱("공포 빼고" → 하드 필터), NULL 지표 3단계 폴백
-- 응답에 score_breakdown과 추천 이유 문장을 포함해 결과를 설명 가능하게 유지
+- **발굴 지수(gem)** = Steam 리뷰 실측 Wilson 하한 × 무명도. **정착 게임(출시 180일 초과, 리뷰 2만 미만)에만** 준다.
+  신작은 시간이 없어서 무명이고 유명작은 이미 발견됐으므로 0 — 상위에 유명작이 올라오지 않는 이유
+- **신작 리그**: 신작은 정착 게임과 발굴로 경쟁하지 않고 신작끼리 취향 매칭. 랭킹도 스테디 히든젬(발굴 지수) /
+  요즘 뜨는(30일 리뷰 증가) / 신작(출시 180일 내 누적 리뷰, 평가 70%+) 으로 분리
+- **동점 처리**: 원점수(raw)로 정렬, 정확 동점만 선호 문장 임베딩 코사인으로 가른다 (Vibe 칩처럼 2~3개 지표면 동점이 수백 개)
+- **측정으로 결정**: 전체 풀 절제(ablation)·스냅샷 diff 로 예측을 먼저 적고 실측으로 맞췄다. v6 의 X-Factor(18점)는
+  상수가 아니라 유명작 통로였고(전체 풀 89% 가 15.6 미만), Core 의 장르 핵심 목표값이 상수 5.0 이었던 결함(D-26)은
+  문서 검토 넷이 놓치고 소스를 읽어서 찾았다 → `docs/final_verdict_0905.md`, `docs/ablation_result_0905.md`
+- 응답에 `score_breakdown`(core·gem·distance·fields_compared)·`lifecycle`·`gem_evidence` 를 포함해 설명 가능
 
 ## 주요 기능
 
@@ -120,6 +128,8 @@ crawl(신작 발견, DB 중복 제외) → batch(few-shot 분석) → load(UPSER
 | 취향 분석 | 49개 지표 슬라이더 (카테고리·툴팁), 결과는 취향 DNA 카드로 저장/공유 |
 | 카드 스와이프 온보딩 | 게임 12개 평가로 초기 취향 산출, 신규 API 없이 추천 응답의 지표 재활용 |
 | Vibe 탐색 | 12개 분위기 칩 원클릭 추천 |
+| 랭킹 | 스테디 히든젬(발굴 지수·뱃지) / 요즘 뜨는 / 신작 리그(지금 달리는·아직 조용한), 장르 필터 |
+| 신작 리그 | 취향 결과 아래 신작끼리 매칭한 별도 섹션 — 신생 게임을 보호하는 "그들만의 리그" |
 | 소셜 로그인 | Google OAuth2, Steam OpenID (allauth + JWT 회전/블랙리스트) |
 | Steam 라이브러리 | 연동 시 보유 게임 플레이타임 상위를 분석해 유사 게임 진입점 제공 |
 
@@ -174,29 +184,36 @@ npm install && npm run dev  # http://localhost:3000
 테스트:
 
 ```bash
-pytest fastapi_app/tests    # 추천 엔진/비용 가드 등 핵심 로직 24개
+.venv/Scripts/pytest fastapi_app/tests/test_score_invariants.py fastapi_app/tests/test_lifecycle.py -q   # 36 passed — 채점 불변식·생애주기·랭킹
+docker compose exec batch python -m embeddings.rec_snapshot --save s8 ; ... --diff s7_rank_qa s8         # 추천 결과 회귀(19 시나리오)
+docker compose exec fastapi python -m scripts.ablation --pool default                                    # 전체 풀 절제 실측
 ```
 
-## 프로젝트 구조
+## 프로젝트 구조 (폴더마다 README 가 있다)
 
 ```
-fastapi_app/          추천 API (라우터/서비스/스코어링)
-  services/score_v6.py       하이브리드 스코어링
-  services/recommender.py    추천 오케스트레이션
-  services/cost_guard.py     OpenAI 비용 자동 차단
-django_core/          인증/회원/Admin (allauth, simplejwt)
-frontend/             Next.js 16 (App Router)
-embeddings/           데이터 파이프라인
-  weekly_pipeline.py         주간 수집 오케스트레이터
-  steam_crawler.py           신작 발견 (적응형 스로틀링)
-  batch_generator.py         few-shot 배치 생성/제출
-  batch_processor.py         결과 파싱/UPSERT (응답 모델명으로 라벨 판정)
-  generate_embeddings.py     신작 임베딩 + 활성화
-  exposure_policy.py         노출 규칙 (리뷰 수 게이트)
-  refresh_reviews.py         Steam 리뷰 수 갱신 / 재평가
-  audit_student.py           교사 vs 학생 홀드아웃 감사
-scripts/              백업/이미지/스케줄러 유틸
-docs/                 설계 노트, 보안 점검, 운영 가이드
+CLAUDE.md             작업 규칙 — 실수마다 규칙 하나 (AI 협업 세션이 먼저 읽는다)
+fastapi_app/          추천·검색·랭킹 API              → fastapi_app/README.md
+  services/score_v7.py       현재 채점기 (질의 마스크 + 가중 RMSE + 발굴 12)
+  services/lifecycle.py      new / established / famous, 입장 규칙 admit()
+  services/evidence.py       Wilson 하한 × 무명도 (발굴 지수)
+  services/recommender.py    세 경로 오케스트레이션, 캐시, 타이브레이크
+  routers/ranking.py         랭킹 3종
+  scripts/ablation.py        전체 풀 절제 실측
+django_core/          인증/회원/Admin (allauth, simplejwt)    → django_core/README.md
+frontend/             Next.js 16 (App Router)                → frontend/README.md
+embeddings/           데이터 파이프라인 (batch 컨테이너)       → embeddings/README.md
+  weekly_pipeline.py         주간 오케스트레이터 (대상: 운영 DB, 용량 게이트, 킬 스위치)
+  steam_crawler.py · batch_generator.py · batch_processor.py · generate_embeddings.py
+  refresh_reviews.py · exposure_policy.py · gem_evidence.py
+  rec_snapshot.py            추천 결과 스냅샷/회귀 비교 (카나리아 포함)
+  prod_sync.py · db_space.py · migrate.py   운영 DB 정합·용량·마이그레이션
+  audit_student.py · usage_report.py        품질 감사 · 비용 실측
+scripts/              스케줄러·백업·이미지 (호스트에서 도는 것)   → scripts/README.md
+docs/                 결정(R-1~R-18)·실측·불변식·포트폴리오 원재료  → docs/README.md
+data/                 배치 산출물·스냅샷·홀드아웃 (gitignore)      → data/README.md
+legacy/               은퇴한 코드·산출물 (참고용, 미실행)          → legacy/README.md
+PRD_v4.2.3.md         제품 요구사항
 ```
 
 ## 문서

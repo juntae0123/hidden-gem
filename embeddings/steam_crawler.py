@@ -469,14 +469,15 @@ def main():
                         help="games 테이블 등록 생략 (CSV만 생성)")
     args = parser.parse_args()
 
-    # 킬 스위치: data/STOP_BACKFILL 파일이 있으면 수집하지 않고 정상 종료한다.
-    # detached로 도는 weekly_pipeline --loop 를 컨테이너 접근 없이(파일만 만들어서) 멈추는 용도.
+    # 킬 스위치: data/STOP_PIPELINE 이 있으면 수집하지 않고 정상 종료한다 (전체 정지).
+    # 백필 전용 STOP_BACKFILL 은 --from(기간 백필)일 때만 본다 — 주간 --days 수집까지 막아 운영 갱신이 0건이 되던 것 (2026-09-06).
     # 크롤 0건 → 오케스트레이터가 "더 처리할 게임 없음"으로 루프를 끝내고 percentile까지 마무리한다.
-    stop_flag = DATA_DIR / "STOP_BACKFILL"
-    if stop_flag.exists():
-        print(f"STOP_BACKFILL 파일 감지 ({stop_flag}) → 수집 생략, 루프 종료 유도. "
-              f"재개하려면 파일을 지우고 파이프라인을 다시 실행.")
-        return
+    for flag_name, only_backfill in (("STOP_PIPELINE", False), ("STOP_BACKFILL", True)):
+        stop_flag = DATA_DIR / flag_name
+        if stop_flag.exists() and (not only_backfill or args.date_from):
+            print(f"{flag_name} 파일 감지 ({stop_flag}) → 수집 생략, 루프 종료 유도. "
+                  f"재개하려면 파일을 지우고 파이프라인을 다시 실행.")
+            return
 
     if args.date_from and args.date_to:
         start_date = datetime.strptime(args.date_from, "%Y-%m-%d").date()
