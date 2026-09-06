@@ -75,6 +75,8 @@ MAX_RETRIES = 4
 HTML_TAG = re.compile(r"<[^<]+?>")
 APPID_IN_HTML = re.compile(r'data-ds-appid="(\d+)"')
 RELEASED_IN_HTML = re.compile(r'search_released[^>]*>\s*([^<]+?)\s*<')
+# 결과 행 하나씩 끊어 app_id 와 출시일을 짝지어 읽는다 (백필에서 기간 밖 후보를 상세 조회 전에 버리기 위함, 2026-09-06)
+ROW_SPLIT = re.compile(r'(?=<a[^>]*?class="[^"]*search_result_row)')
 
 # Steam release_date.date locales: "2026년 7월 9일" / "9 Jul, 2026" / "Jul 9, 2026"
 DATE_KO = re.compile(r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일")
@@ -161,15 +163,21 @@ def _parse_search_date(raw: str):
     return None
 
 
-def discover_via_store_search(max_candidates: int, stop_before: Optional[date] = None) -> List[int]:
+def discover_via_store_search(max_candidates: int, stop_before: Optional[date] = None,
+                              skip_after: Optional[date] = None) -> List[int]:
     """List app_ids sorted by real release date (games only).
     실제 출시일 역순으로 app_id를 수집한다 (게임만).
     stop_before가 주어지면(백필) 그 날짜보다 오래된 페이지에 도달하는 순간 중단 -
-    2만 페이지를 무조건 도는 대신 필요한 깊이까지만 페이징한다."""
+    2만 페이지를 무조건 도는 대신 필요한 깊이까지만 페이징한다.
+    skip_after가 주어지면(백필 --to) 그보다 나중에 나온 게임은 후보에서 아예 뺀다 -
+    검색은 최신순이라 기간 위쪽 게임이 앞에 몰려 있고, 이걸 남겨두면 회차마다
+    상세 조회(1.5s/건)를 하고 기간 밖이라 버리는 일을 반복한다 (2026-09-06)."""
     app_ids: List[int] = []
     start = 0
     page_size = 50
     pages = 0
+    skipped_newer = [0]  # skip_after 로 걸러낸 수 (리스트 = 중첩 스코프에서 갱신)
+    warned_rows = [False]
 
     print("발견: Steam 스토어 검색 (출시일 역순, 게임만)"
           + (f" — {stop_before} 이전 도달 시 중단" if stop_before else ""))
@@ -203,8 +211,34 @@ def discover_via_store_search(max_candidates: int, stop_before: Optional[date] =
         if not found:
             break
 
-        for aid in found:
-            app_ids.append(int(aid))
+        # 행 단위로 app_id-출시일을 짝지어, skip_after 보다 나중 게임은 후보에서 뺀다.
+        # 행 분해가 실패하면(스팀 HTML 구조 변경) 예전처럼 전부 담는다 — 조용히 0건이 되는 것보다 낫다.
+        picked = []
+        if skip_after:
+            parsed = 0
+            for row in ROW_SPLIT.split(html):
+                m = APPID_IN_HTML.search(row)
+                if not m:
+                    continue
+                parsed += 1
+                d = RELEASED_IN_HTML.search(row)
+                rd = _parse_search_date(d.group(1)) if d else None
+                if rd and rd > skip_after:   # 기간 밖(더 최신) — 상세 조회 없이 버린다
+                    skipped_newer[0] += 1
+                    continue
+                picked.append(int(m.group(1)))
+            if parsed < len(found):
+                # 행 분해가 페이지의 app_id 를 다 못 잡았다(스팀 HTML 구조 변경) → 예전 동작으로 폴백.
+                # 조용히 후보가 줄어드는 것보다 낫다.
+                if not warned_rows[0]:
+                    print(f"   행 분해 실패({parsed}/{len(found)}) → 날짜 선필터 없이 진행")
+                    warned_rows[0] = True
+                picked = [int(a) for a in found]
+        else:
+            picked = [int(a) for a in found]
+
+        for aid in picked:
+            app_ids.append(aid)
             if len(app_ids) >= max_candidates:
                 break
 
@@ -229,7 +263,8 @@ def discover_via_store_search(max_candidates: int, stop_before: Optional[date] =
             seen.add(a)
             ordered.append(a)
 
-    print(f"   → 후보 {len(ordered)}개")
+    print(f"   → 후보 {len(ordered)}개"
+          + (f" (기간 이후 {skipped_newer[0]:,}개는 상세 조회 전에 제외)" if skipped_newer[0] else ""))
     return ordered
 
 
@@ -498,7 +533,8 @@ def main():
     # 발견: 필터 손실을 흡수하도록 여유있게 후보 수집
     max_candidates = args.candidates or args.limit * 8
     if args.source == "search":
-        candidates = discover_via_store_search(max_candidates=max_candidates, stop_before=start_date)
+        candidates = discover_via_store_search(max_candidates=max_candidates, stop_before=start_date,
+                                               skip_after=end_date if args.date_from else None)
         if not candidates:
             print("스토어 검색 실패 → 공식 API 폴백")
             candidates = discover_via_applist(max_candidates=max_candidates)
