@@ -14,6 +14,7 @@ import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { CookieConsent } from '@/components/ui/CookieConsent';
 import { SurveyGate } from '@/components/ui/SurveyGate';
+import { SignupNudge } from '@/components/ui/SignupNudge';
 
 const UMAMI_URL = process.env.NEXT_PUBLIC_UMAMI_URL || 'http://localhost:3001';
 const UMAMI_WEBSITE_ID = process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID || '';
@@ -44,6 +45,7 @@ export default function RootLayout({
           <Footer />
           <CookieConsent />
           <SurveyGate />
+          <SignupNudge />
         </Providers>
 
         {/* Umami 분석 — afterInteractive는 body 끝에 (head에 두면 #418) */}
