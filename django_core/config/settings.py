@@ -163,8 +163,8 @@ LOGIN_REDIRECT_URL = '/'
 ACCOUNT_ADAPTER = 'apps.users.views.JWTAccountAdapter' 
 SOCIALACCOUNT_ADAPTER = 'apps.users.views.JWTSocialAccountAdapter'
 
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
-
+# 프런트 주소. 운영에서는 콤마로 여러 개(운영 도메인 + www) 를 줄 수 있고,
+# 그 값이 그대로 CORS/CSRF 화이트리스트가 된다 (아래 참조).
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 
 # ==================== 보안 헤더 (운영 전용) / Security Headers ====================
@@ -207,7 +207,7 @@ if DEBUG:
 else:
     # 운영: FRONTEND_URL 콤마 구분 다중 허용 + Vercel 프리뷰 정규식
     CORS_ALLOWED_ORIGINS = [
-        o.strip() for o in os.getenv("FRONTEND_URL", "https://hiddengem.io").split(",") if o.strip()
+        o.strip() for o in os.getenv("FRONTEND_URL", "https://hiddengemdb.com").split(",") if o.strip()
     ]
     CORS_ALLOWED_ORIGIN_REGEXES = [r"^https://.*\.vercel\.app$"]
 

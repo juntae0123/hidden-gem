@@ -6,6 +6,7 @@
  */
 'use client';
 
+import { SITE_URL } from '@/lib/constants';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Share2, Download, X } from 'lucide-react';
 import { METRIC_LABELS, cn } from '@/lib/utils';
@@ -110,7 +111,7 @@ function drawCard(
   });
 
   // 푸터 (배포 도메인을 자동으로 따라감)
-  const host = typeof window !== 'undefined' ? window.location.host : 'hiddengem.io';
+  const host = typeof window !== 'undefined' ? window.location.host : SITE_URL.replace(/^https?:\/\//, '');
   ctx.fillStyle = '#52525B';
   ctx.font = '400 26px system-ui, -apple-system, sans-serif';
   ctx.fillText(`내 취향 분석하기 → ${host}`, 72, SIZE - 64);
