@@ -13,6 +13,12 @@ Hidden Gem - Weekly New-Game Ingestion Pipeline
     5. refresh_reviews      Steam 리뷰 수 조회 + 노출 게이트(is_active) 적용
     6. recalc_percentile    gem_percentile 전체 재계산 (루프 끝 1회)
     7. refresh_reviews --recheck  비활성 신작 30일 주기 재평가
+    7'. refresh_reviews --stale --cohort all --no-gate   활성 게임 주간 리뷰 이력 (rising 재료, ~2.5h)
+    8. gem_evidence --fill         리뷰 실측 기반 발굴 지수 갱신 (R-3, 서빙 GEM_SOURCE=evidence 의 입력)
+    0. db_space --limit-gb          시작 전 DB 용량 점검 — 한도 70% 이상이면 Discord 알림 후 중단 (C-13)
+
+대상 DB (R-18, 2026-09-06): 기본 **운영**(`--target prod`, .env 의 PROD_DATABASE_URL). 지금까지 파이프라인이 로컬 db 에만
+쓰고 있어서 운영이 4,193건에 멈춰 있었다. 로컬은 `--target local` 로 명시할 때만. 어느 쪽이든 시작 로그에 대상이 찍힌다.
 
 사용법:
     # 수동 실행 (기본: 최근 7일, 최대 50개)
@@ -66,6 +72,24 @@ NEW_GAMES_CSV = DATA_DIR / "new_games.csv"
 DEFAULT_FEWSHOT = DATA_DIR / "fewshot" / "fewshot_examples.jsonl"
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+
+
+def _mask(url: str) -> str:
+    import re
+    return re.sub(r"://([^:]+):[^@]+@", r"://\1:***@", url or "")
+
+
+def select_target_db(target: str) -> str:
+    """하위 단계 전부가 읽는 DATABASE_URL 을 대상에 맞게 고정한다 (각 스크립트의 load_dotenv 는 기존 env 를 덮지 않는다)."""
+    if target == "prod":
+        url = os.getenv("PROD_DATABASE_URL")
+        if not url:
+            print("PROD_DATABASE_URL 이 없다 — .env 에 운영 DATABASE_PUBLIC_URL 을 넣고 batch 컨테이너를 다시 만들어라 (up -d batch)")
+            sys.exit(1)
+        os.environ["DATABASE_URL"] = url
+    else:
+        url = os.getenv("DATABASE_URL")
+    return url
 
 
 def log(msg: str) -> None:
@@ -171,7 +195,16 @@ def main() -> None:
     parser.add_argument("--audit-n", type=int, default=0,
                         help="루프 종료 후 교사 게임 N개로 품질 드리프트 점검 (0=끔, 권장 30, 약 $0.2)")
     parser.add_argument("--max-loops", type=int, default=60, help="루프 상한 (기본 60)")
+    parser.add_argument("--target", choices=["prod", "local"], default="prod",
+                        help="대상 DB. 기본 prod(.env PROD_DATABASE_URL). local 은 개발 미러 갱신용")
+    parser.add_argument("--volume-gb", type=float, default=float(os.getenv("DB_VOLUME_GB", "5")),
+                        help="운영 볼륨 한도(GB) — db_space 사용률 계산용 (기본 5, env DB_VOLUME_GB)")
+    parser.add_argument("--skip-space-check", action="store_true")
+    parser.add_argument("--skip-history", action="store_true", help="주간 리뷰 이력 갱신(활성 전체, ~2.5h) 생략")
     args = parser.parse_args()
+
+    target_url = select_target_db(args.target)
+    log(f"대상 DB [{args.target}]: {_mask(target_url)}")
 
     py = sys.executable
     started = datetime.now()
@@ -183,6 +216,17 @@ def main() -> None:
     if not args.crawl_only and not Path(args.fewshot).exists():
         notify(f"few-shot 파일 없음: {args.fewshot} — 중단. fewshot_sampler.py로 먼저 생성할 것.")
         sys.exit(1)
+
+    # 0. 용량 점검 (C-13): 한도 70% 이상이면 쓰기 시작 전에 멈춘다
+    if not args.skip_space_check:
+        r = subprocess.run([py, "-m", "embeddings.db_space", "--limit-gb", str(args.volume_gb), "--alert-pct", "70"],
+                           cwd=PROJECT_ROOT)
+        if r.returncode == 2:
+            notify(f"DB 용량 한도 70% 이상 ({args.target}) — 파이프라인 중단. 볼륨 증설 또는 정리 후 재실행")
+            sys.exit(2)
+        if r.returncode != 0:
+            notify(f"DB 용량 점검 실패 (exit {r.returncode}) — 중단")
+            sys.exit(r.returncode)
 
     stuck_state: dict = {}
 
@@ -269,6 +313,13 @@ def main() -> None:
     if not args.crawl_only:
         # 게이트에 걸려 비활성인 신작 중 30일 넘게 재조회 안 한 것 — 리뷰가 붙었으면 다시 켠다
         run_step("recheck", [py, "-m", "embeddings.refresh_reviews", "--recheck", "--stale-days", "30"])
+        # 주간 리뷰 이력 (R-11 rising 의 재료): 활성 게임 전부, 마지막 조회 7일 초과분. 1.3초/건 → 활성 7천 건이면 ~2.5h.
+        # 게이트는 건드리지 않는다(--no-gate) — 노출 규칙 변경은 R-4 가 따로 정한다.
+        if not args.skip_history:
+            run_step("history", [py, "-m", "embeddings.refresh_reviews", "--stale", "--stale-days", "7",
+                                 "--cohort", "all", "--no-gate"])
+        # 발굴 지수 갱신 (R-3): 리뷰 수가 바뀐 만큼 Wilson×무명도도 바뀐다. 전 게임 재계산, 수 초.
+        run_step("gem", [py, "-m", "embeddings.gem_evidence", "--fill", "--yes"])
 
     if args.audit_n and processed_total:
         # 품질 드리프트 게이트: 교사 게임 N개를 학생 모델로 다시 매겨 기준선과 대조한다.

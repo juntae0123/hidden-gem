@@ -104,6 +104,11 @@ def fetch_targets(mode: str, stale_days: int, limit: Optional[int],
         where, params = "g.app_id = ANY(:ids)", {"ids": app_ids}
     elif mode == "all-new":
         where = base
+    elif mode == "stale":
+        # 주간 이력용: 활성 게임 전부, 마지막 조회가 stale_days 넘은 것. review_history 에 주 1점씩 쌓여 '요즘 뜨는'(30일 Δ)의 재료가 된다.
+        where = (base + """ AND g.is_active = TRUE
+                   AND (l.refreshed_at IS NULL OR l.refreshed_at < NOW() - (:days || ' days')::interval)""")
+        params = {**params, "days": str(stale_days)}
     elif mode == "recheck":
         where = (base + """ AND g.is_active = FALSE AND g.is_analyzed = TRUE
                    AND (l.refreshed_at IS NULL OR l.refreshed_at < NOW() - (:days || ' days')::interval)""")
@@ -199,6 +204,8 @@ def main():
     mode.add_argument("--new", action="store_true", help="미조회 신작 (기본)")
     mode.add_argument("--recheck", action="store_true", help="비활성 신작 재조회 (--stale-days)")
     mode.add_argument("--all-new", action="store_true", help="신작 전부 재조회")
+    mode.add_argument("--stale", action="store_true",
+                      help="활성 게임 중 마지막 조회가 --stale-days 넘은 것 전부 (주간 이력 적재용, --cohort all --no-gate 와 함께)")
     mode.add_argument("--gate-only", action="store_true", help="조회 없이 게이트만 적용")
     mode.add_argument("--threshold-report", action="store_true",
                       help="조회·변경 없이 후보 임계값별 통과 수만 출력 (기준 결정용)")
@@ -227,7 +234,7 @@ def main():
         return
 
     if not args.gate_only and not args.threshold_report:
-        m = "recheck" if args.recheck else "all-new" if args.all_new else "new"
+        m = "recheck" if args.recheck else "all-new" if args.all_new else "stale" if args.stale else "new"
         targets = fetch_targets(m, args.stale_days, args.limit, args.app_id, args.cohort)
         est_min = len(targets) * (REQUEST_DELAY_SEC + 0.3) / 60
         print(f"대상 ({m}, {args.cohort}): {len(targets):,}건, 예상 {est_min:.0f}분")
