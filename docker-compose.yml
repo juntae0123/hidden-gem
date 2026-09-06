@@ -185,6 +185,7 @@ services:
       - ./data:/app/data
       - ./fastapi_app:/app/fastapi_app:ro
       - ./.env:/app/.env:ro
+      - ./logs:/app/logs          # weekly_pipeline.log 가 컨테이너 재생성에도 남게 (2026-09-06)
     working_dir: /app
     # 평소엔 대기 상태. 실제 작업은 docker compose exec batch ... 로 실행
     command: sleep infinity

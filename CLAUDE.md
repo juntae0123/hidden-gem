@@ -33,6 +33,9 @@
 - 플래그를 적용한 뒤에는 **적용됐다는 증거**를 본다: `python -c "from config import settings; print(settings.X)"`
   (컨테이너 안), 응답 `score_breakdown.gem_source`, ablation 헤더 `플래그:` 줄.
 
+- `docker compose up -d <svc>` 는 컨테이너를 **재생성**한다 — 그 안에서 `exec -d` 로 돌던 장기 작업(백필·prod_sync)은 죽는다. 순서는 항상 **환경/비밀 변경 → `up -d` → 장기 작업 시작**. 여러 할 일을 목록으로 건넬 때도 이 순서로 배열한다. 실수 기록: 2026-09-06 백필 시작 직후 비밀번호 교체 절차의 `up -d batch` 가 백필을 죽임.
+- 컨테이너 안에서만 쓰는 로그는 재생성 시 사라진다 — 남겨야 할 로그 디렉터리는 compose volumes 에 마운트한다 (`./logs:/app/logs`).
+
 ## 1'. 명령 블록에 자리표시자를 넣지 않는다
 - `<운영 DB URL>` 같은 꺾쇠 자리표시자는 **금지**. 사용자는 블록을 통째로 붙인다 — bash 가 `<`·`>` 를 리다이렉트로 읽어 그 줄이 조용히 죽고
   다음 줄(`git push`)은 그대로 실행된다. 실수 기록: 운영 마이그레이션 3줄이 안 돈 채 push 만 나감 (2026-09-05 심야).
@@ -48,6 +51,7 @@
 - 운영에 1천 행 이상 쓰기 전 `embeddings.db_space` 로 크기·한도를 본다 (C-13). 실수 기록: 볼륨 0.5GB 에 12,843행을 밀어 Postgres 크래시 루프 (2026-09-05 심야).
 - 로컬→운영 데이터 이동은 `embeddings.prod_sync` 만 쓴다 (upsert, 삭제 없음, dry-run 먼저). 운영의 사용자 테이블은 절대 건드리지 않는다.
 - 운영 스키마 제약(NOT NULL 등)은 로컬과 다를 수 있다 — dry-run 은 이걸 못 잡는다. 실패하면 제약을 풀지 말고 데이터를 맞춘다.
+- 운영 비밀(DB 비밀번호·URL·API 키)은 채팅에 요구하지 않는다 — 사용자에게 `.env` 에 넣게 하고 나는 변수명만 쓴다(`$PROD_DB`, `PROD_DATABASE_URL`). 채팅에 노출되면 그날 안에 교체한다(순서: ALTER USER → Railway 변수 → 로컬 .env → `up -d batch` → 접속 확인). 실수 기록: 2026-09-05 운영 URL 을 붙여 받아 비밀번호 노출.
 
 ## 3. 점수 로직 수정 — 세 경로 + 절제 도구 + 캐시 키
 - 경로 A(`score_v6`/`score_v7`, 취향·Vibe) / B(`recommend_by_game`) / C(`semantic_search`) **전부** 같은 규칙을 따르는지 grep 으로 확인.
