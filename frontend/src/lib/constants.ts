@@ -3,6 +3,16 @@
  * Hidden Gem 앱 전역 상수 정의.
  */
 
+// 사이트 절대 주소 — OG/사이트맵/공유 카드가 쓴다.
+// 배포 환경에서 NEXT_PUBLIC_SITE_URL 로 덮어쓸 수 있다 (프리뷰 배포 등).
+export const SITE_URL = (
+  process.env.NEXT_PUBLIC_SITE_URL || 'https://hiddengemdb.com'
+).replace(/\/$/, '')
+
+// 문의 연락처 (개인정보처리방침·약관에 노출)
+export const CONTACT_EMAIL =
+  process.env.NEXT_PUBLIC_CONTACT_EMAIL || 'juntai0312@gmail.com'
+
 // 검색 플레이스홀더 예시 / Search placeholder examples
 export const SEARCH_PLACEHOLDERS = [
   "예: '혼자 조용히 즐기는 전략 게임'",

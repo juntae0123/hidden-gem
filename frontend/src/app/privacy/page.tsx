@@ -2,6 +2,7 @@
  * Privacy Policy page.
  * 개인정보처리방침 페이지 (PIPA + GDPR 준수).
  */
+import { CONTACT_EMAIL } from '@/lib/constants';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -69,10 +70,10 @@ export default function PrivacyPage() {
         <p className="mt-3">
           데이터 삭제는{' '}
           <a
-            href="mailto:privacy@hiddengem.io"
+            href={`mailto:${CONTACT_EMAIL}`}
             className="text-purple-600 hover:underline"
           >
-            privacy@hiddengem.io
+            {CONTACT_EMAIL}
           </a>
           로 요청하실 수 있습니다.
         </p>
@@ -89,8 +90,8 @@ export default function PrivacyPage() {
       <Section title="8. 개인정보 보호책임자">
         <p>
           문의:{' '}
-          <a href="mailto:privacy@hiddengem.io" className="text-purple-600 hover:underline">
-            privacy@hiddengem.io
+          <a href={`mailto:${CONTACT_EMAIL}`} className="text-purple-600 hover:underline">
+            {CONTACT_EMAIL}
           </a>
         </p>
       </Section>
