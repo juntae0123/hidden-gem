@@ -13,6 +13,7 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
     TokenBlacklistView,
 )
+from apps.users.dashboard import dashboard as ops_dashboard
 from apps.users.views import (
     UserMeView, OnboardingView, RecentGamesView,
     PendingSurveyView, SubmitSurveyView,
@@ -21,6 +22,8 @@ from apps.users.views import (
 )
 
 urlpatterns = [
+    # 운영 대시보드 — admin.site.urls 보다 먼저 (staff 로그인 필요)
+    path('admin/dashboard/', ops_dashboard, name='ops_dashboard'),
     path('admin/', admin.site.urls),
 
     # Google OAuth (allauth 표준)

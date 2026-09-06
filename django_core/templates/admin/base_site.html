@@ -1,0 +1,14 @@
+{% extends "admin/base.html" %}
+{# 관리자 상단 브랜딩 + 운영 대시보드 바로가기 (2026-09-06) #}
+
+{% block title %}{{ title }} | Hidden Gem 운영{% endblock %}
+
+{% block branding %}
+<div id="site-name">
+  <a href="{% url 'admin:index' %}">Hidden Gem 운영</a>
+  <a href="/admin/dashboard/"
+     style="margin-left:16px;padding:4px 12px;border-radius:6px;background:var(--primary);color:var(--primary-fg);font-size:13px;font-weight:600;">
+    운영 대시보드
+  </a>
+</div>
+{% endblock %}

@@ -1,0 +1,136 @@
+{% extends "admin/base_site.html" %}
+{# 운영 대시보드 — 읽기 전용. 숫자 출처를 각 카드에 적는다. #}
+
+{% block content %}
+<style>
+  .ops-wrap { max-width: 1180px; }
+  .ops-h { margin: 22px 0 10px; font-size: 15px; font-weight: 700; color: var(--body-fg); }
+  .ops-h small { font-weight: 400; color: var(--body-quiet-color); margin-left: 8px; font-size: 12px; }
+  .ops-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .ops-card { background: var(--darkened-bg); border: 1px solid var(--hairline-color); border-radius: 10px; padding: 12px 14px; }
+  .ops-card .k { font-size: 12px; color: var(--body-quiet-color); }
+  .ops-card .v { font-size: 24px; font-weight: 700; margin-top: 2px; color: var(--body-fg); }
+  .ops-card .s { font-size: 11px; color: var(--body-quiet-color); margin-top: 2px; }
+  table.ops { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.ops th, table.ops td { padding: 6px 10px; border-bottom: 1px solid var(--hairline-color); text-align: left; }
+  table.ops th { color: var(--body-quiet-color); font-weight: 600; font-size: 12px; }
+  table.ops td.num, table.ops th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .ops-two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 900px) { .ops-two { grid-template-columns: 1fr; } }
+  .ops-note { font-size: 12px; color: var(--body-quiet-color); margin-top: 6px; }
+</style>
+
+<div class="ops-wrap">
+  <p class="ops-note">기준 시각 {{ now|date:"Y-m-d H:i" }} (KST) · 이 화면은 읽기 전용이다.</p>
+
+  <div class="ops-h">방문 <small>user_actions 의 서로 다른 session_id — 로그인 안 한 방문자 포함</small></div>
+  <div class="ops-cards">
+    <div class="ops-card"><div class="k">오늘 방문</div><div class="v">{{ traffic.today|default:0 }}</div><div class="s">행동 {{ traffic.acts_today|default:0 }}건</div></div>
+    <div class="ops-card"><div class="k">최근 7일</div><div class="v">{{ traffic.d7|default:0 }}</div></div>
+    <div class="ops-card"><div class="k">최근 30일</div><div class="v">{{ traffic.d30|default:0 }}</div></div>
+    <div class="ops-card"><div class="k">누적 세션</div><div class="v">{{ traffic.total|default:0 }}</div><div class="s">누적 행동 {{ traffic.acts_total|default:0 }}건</div></div>
+    <div class="ops-card"><div class="k">상세→스팀 전환</div><div class="v">{{ ctr }}%</div><div class="s">7일: 상세 {{ funnel.detail|default:0 }} / 이동 {{ funnel.steam|default:0 }}</div></div>
+  </div>
+
+  <div class="ops-h">회원 <small>users 테이블</small></div>
+  <div class="ops-cards">
+    <div class="ops-card"><div class="k">전체 회원</div><div class="v">{{ users.total|default:0 }}</div></div>
+    <div class="ops-card"><div class="k">오늘 가입</div><div class="v">{{ users.today|default:0 }}</div><div class="s">7일 {{ users.d7|default:0 }} · 30일 {{ users.d30|default:0 }}</div></div>
+    <div class="ops-card"><div class="k">온보딩 완료</div><div class="v">{{ users.onboarded|default:0 }}</div></div>
+    <div class="ops-card"><div class="k">Steam 연동</div><div class="v">{{ users.steam|default:0 }}</div></div>
+    <div class="ops-card"><div class="k">7일 내 활동</div><div class="v">{{ users.active7|default:0 }}</div></div>
+    <div class="ops-card"><div class="k">찜 / 설문 / 지표평가</div><div class="v">{{ surveys.favorites|default:0 }}</div><div class="s">설문 {{ surveys.surveys|default:0 }} · 평가 {{ surveys.ratings|default:0 }}</div></div>
+  </div>
+
+  <div class="ops-two">
+    <div>
+      <div class="ops-h">일별 추이 <small>최근 14일</small></div>
+      <table class="ops">
+        <tr><th>날짜</th><th class="num">방문(세션)</th><th class="num">행동</th><th class="num">로그인 유저</th></tr>
+        {% for d in daily %}
+        <tr><td>{{ d.day|date:"m/d (D)" }}</td><td class="num">{{ d.sessions }}</td><td class="num">{{ d.acts }}</td><td class="num">{{ d.logged_in }}</td></tr>
+        {% empty %}<tr><td colspan="4">아직 행동 로그가 없다.</td></tr>{% endfor %}
+      </table>
+    </div>
+    <div>
+      <div class="ops-h">행동 종류별</div>
+      <table class="ops">
+        <tr><th>행동</th><th class="num">오늘</th><th class="num">7일</th><th class="num">누적</th></tr>
+        {% for a in by_action %}
+        <tr><td>{{ a.name }}</td><td class="num">{{ a.today }}</td><td class="num">{{ a.d7 }}</td><td class="num">{{ a.total }}</td></tr>
+        {% empty %}<tr><td colspan="4">없음</td></tr>{% endfor %}
+      </table>
+    </div>
+  </div>
+
+  <div class="ops-two">
+    <div>
+      <div class="ops-h">인기 검색어 <small>최근 7일</small></div>
+      <table class="ops">
+        <tr><th>검색어</th><th class="num">횟수</th></tr>
+        {% for q in top_queries %}<tr><td>{{ q.q }}</td><td class="num">{{ q.n }}</td></tr>
+        {% empty %}<tr><td colspan="2">없음</td></tr>{% endfor %}
+      </table>
+    </div>
+    <div>
+      <div class="ops-h">많이 본 게임 <small>최근 7일 · 상세/추천/검색 클릭</small></div>
+      <table class="ops">
+        <tr><th>게임</th><th class="num">조회</th></tr>
+        {% for g in top_games %}
+        <tr><td><a href="https://store.steampowered.com/app/{{ g.app_id }}" target="_blank" rel="noreferrer">{{ g.name }}</a></td><td class="num">{{ g.n }}</td></tr>
+        {% empty %}<tr><td colspan="2">없음</td></tr>{% endfor %}
+      </table>
+    </div>
+  </div>
+
+  <div class="ops-h">데이터 현황 <small>games / game_metrics / review_history</small></div>
+  <div class="ops-cards">
+    <div class="ops-card"><div class="k">전체 게임</div><div class="v">{{ games.total|default:0 }}</div><div class="s">분석완료 {{ games.analyzed|default:0 }}</div></div>
+    <div class="ops-card"><div class="k">노출 활성</div><div class="v">{{ games.active|default:0 }}</div><div class="s">비활성은 리뷰 부족(보존)</div></div>
+    <div class="ops-card"><div class="k">오늘 등록</div><div class="v">{{ games.today|default:0 }}</div><div class="s">분석 대기 {{ games.pending|default:0 }}</div></div>
+    <div class="ops-card"><div class="k">신작(180일)</div><div class="v">{{ games.new180|default:0 }}</div><div class="s">유명작(리뷰 2만+) {{ games.famous|default:0 }}</div></div>
+    <div class="ops-card"><div class="k">최근 게임 등록</div><div class="v" style="font-size:15px">{{ games.last_created|date:"m/d H:i"|default:"-" }}</div><div class="s">리뷰 갱신 {{ review_fresh.at|date:"m/d H:i"|default:"-" }}</div></div>
+    <div class="ops-card"><div class="k">발굴지수 갱신</div><div class="v" style="font-size:15px">{{ gem_updated|date:"m/d H:i"|default:"-" }}</div><div class="s">리뷰 이력 {{ review_fresh.n|default:0 }}행</div></div>
+  </div>
+
+  <div class="ops-two">
+    <div>
+      <div class="ops-h">분석 방식별</div>
+      <table class="ops">
+        <tr><th>방식</th><th class="num">건수</th></tr>
+        {% for m in by_method %}<tr><td>{{ m.name }}</td><td class="num">{{ m.n }}</td></tr>{% endfor %}
+      </table>
+    </div>
+    <div>
+      <div class="ops-h">발굴 지수 사유별 <small>ok = 점수 산출됨</small></div>
+      <table class="ops">
+        <tr><th>사유</th><th class="num">건수</th></tr>
+        {% for g in gem %}<tr><td>{{ g.name }}</td><td class="num">{{ g.n }}</td></tr>
+        {% empty %}<tr><td colspan="2">gem_evidence 컬럼 없음</td></tr>{% endfor %}
+      </table>
+    </div>
+  </div>
+
+  <div class="ops-h">최근 가입 회원 <small>15명 · 상세는 <a href="{% url 'admin:users_customuser_changelist' %}">회원 목록</a></small></div>
+  <table class="ops">
+    <tr><th>ID</th><th>이름</th><th>이메일</th><th>가입</th><th>최근활동</th><th class="num">검색</th><th class="num">클릭</th><th>온보딩</th><th>성별/나이</th></tr>
+    {% for u in recent_users %}
+    <tr>
+      <td><a href="/admin/users/customuser/{{ u.id }}/change/">{{ u.id }}</a></td>
+      <td>{{ u.name }}</td><td>{{ u.email|default:"-" }}</td>
+      <td>{{ u.date_joined|date:"m/d H:i" }}</td>
+      <td>{{ u.last_active_at|date:"m/d H:i"|default:"-" }}</td>
+      <td class="num">{{ u.total_searches|default:0 }}</td>
+      <td class="num">{{ u.total_clicks|default:0 }}</td>
+      <td>{% if u.onboarding_completed %}완료{% else %}-{% endif %}</td>
+      <td>{{ u.gender|default:"-" }} / {{ u.age_group|default:"-" }}</td>
+    </tr>
+    {% empty %}<tr><td colspan="9">아직 가입한 회원이 없다.</td></tr>{% endfor %}
+  </table>
+
+  <p class="ops-note" style="margin-top:20px">
+    방문 수치는 자체 행동 로그(user_actions) 기준이라 쿠키 동의와 무관하게 남는다.
+    페이지뷰·유입 경로·체류시간은 Umami 쪽이 원본이다(동의한 방문자만).
+  </p>
+</div>
+{% endblock %}
