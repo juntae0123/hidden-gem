@@ -111,8 +111,12 @@ def notify(msg: str) -> None:
 
 
 def run_step(name: str, cmd: list[str]) -> None:
+    """단계 실행. 자식 출력도 로그 파일로 넘긴다 — `exec -d` 로 띄우면 stdout 이 버려져
+    STEP 줄만 남고 진행 상황이 안 보이던 것 (2026-09-06)."""
     log(f"STEP {name}: {' '.join(cmd)}")
-    result = subprocess.run(cmd, cwd=PROJECT_ROOT)
+    LOG_DIR.mkdir(exist_ok=True)
+    with open(LOG_DIR / "weekly_pipeline.log", "a", encoding="utf-8") as lf:
+        result = subprocess.run(cmd, cwd=PROJECT_ROOT, stdout=lf, stderr=subprocess.STDOUT)
     if result.returncode != 0:
         notify(f"{name} 단계 실패 (exit {result.returncode}) — 파이프라인 중단")
         sys.exit(result.returncode)
