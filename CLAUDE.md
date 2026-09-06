@@ -36,6 +36,14 @@
 - `docker compose up -d <svc>` 는 컨테이너를 **재생성**한다 — 그 안에서 `exec -d` 로 돌던 장기 작업(백필·prod_sync)은 죽는다. 순서는 항상 **환경/비밀 변경 → `up -d` → 장기 작업 시작**. 여러 할 일을 목록으로 건넬 때도 이 순서로 배열한다. 실수 기록: 2026-09-06 백필 시작 직후 비밀번호 교체 절차의 `up -d batch` 가 백필을 죽임.
 - 컨테이너 안에서만 쓰는 로그는 재생성 시 사라진다 — 남겨야 할 로그 디렉터리는 compose volumes 에 마운트한다 (`./logs:/app/logs`).
 
+## 1''. Git Bash(MINGW) 는 `/`로 시작하는 인자를 윈도우 경로로 바꾼다
+- 사용자는 Git Bash 를 쓴다. `docker compose exec ... --csv /app/data/new_games.csv` 를 주면
+  MSYS 경로 변환이 일어나 컨테이너에 `C:/Program Files/Git/app/data/new_games.csv` 가 전달된다.
+  실수 기록: 2026-09-06 백필 batch#4 진단 명령이 이것 때문에 '파일 없음'으로 죽어 한 번 헛돌았다.
+- 규칙: 컨테이너 내부 경로는 **앞 슬래시 없이** 쓴다 (`--csv data/new_games.csv`) — batch/fastapi 의 working_dir 가 `/app` 이라 그대로 맞는다.
+  꼭 절대경로가 필요하면 `MSYS_NO_PATHCONV=1` 을 명령 앞에 붙이거나 `//app/...` 로 쓴다.
+- DB URL(`postgresql://...`)·`-c "SELECT ..."` 는 변환 대상이 아니다. 변환되는 건 `/`로 시작하는 경로형 인자다.
+
 ## 1'. 명령 블록에 자리표시자를 넣지 않는다
 - `<운영 DB URL>` 같은 꺾쇠 자리표시자는 **금지**. 사용자는 블록을 통째로 붙인다 — bash 가 `<`·`>` 를 리다이렉트로 읽어 그 줄이 조용히 죽고
   다음 줄(`git push`)은 그대로 실행된다. 실수 기록: 운영 마이그레이션 3줄이 안 돈 채 push 만 나감 (2026-09-05 심야).
