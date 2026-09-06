@@ -48,6 +48,9 @@ CONFLICT_KEY = {
 }
 NEVER_UPDATE = {"games": {"id", "app_id", "created_at"}, "game_metrics": {"game_id"},
                 "review_refresh_log": {"app_id"}, "review_history": set()}
+# 운영에 올리지 않는 컬럼 — 분석 재현용 원문 JSON. 서빙은 읽지 않고, 행당 수 KB 라 운영 볼륨의 큰 몫을 차지한다
+# (2026-09-06 실측: 운영 game_metrics 4,193행 227MB 중 TOAST 141MB). 로컬이 원본 보관소. --include-raw 로 되돌릴 수 있다.
+EXCLUDE_COLS = {"game_metrics": {"raw_content", "raw_reasoning"}}
 
 
 def _mask(url: str) -> str:
@@ -120,10 +123,20 @@ def upsert_sql(table: str, cols: List[str], vector_cols: dict) -> str:
     return f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders}) ON CONFLICT ({', '.join(key)}) {action}"
 
 
-def sync_table(src, dst, table: str, p: dict, batch: int, dry_run: bool) -> int:
+def db_size(engine) -> str:
+    with engine.connect() as c:
+        return c.execute(text("SELECT pg_size_pretty(pg_database_size(current_database()))")).scalar()
+
+
+def sync_table(src, dst, table: str, p: dict, batch: int, dry_run: bool, include_raw: bool = False) -> int:
     cols = [c for c in p["common"] if not (table == "games" and c == "id")]
     if table == "game_metrics":
         cols = [c for c in cols if c != "game_id"]        # 타깃 id 로 채운다
+    if not include_raw:
+        skipped = [c for c in cols if c in EXCLUDE_COLS.get(table, set())]
+        if skipped:
+            print(f"   제외(운영 미적재): {skipped}")
+        cols = [c for c in cols if c not in EXCLUDE_COLS.get(table, set())]
     sql = upsert_sql(table, (["game_id"] if table == "game_metrics" else []) + cols, p["vector"])
     n = 0
     t0 = time.time()
@@ -171,6 +184,7 @@ def main():
     ap.add_argument("--batch", type=int, default=300)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--yes", action="store_true", help="실제로 쓴다. 없으면 dry-run")
+    ap.add_argument("--include-raw", action="store_true", help="raw_content/raw_reasoning 도 올린다 (기본 제외)")
     args = ap.parse_args()
     dry_run = args.dry_run or not args.yes
 
@@ -184,7 +198,11 @@ def main():
     print(f"prod_sync  {'DRY-RUN (쓰지 않음)' if dry_run else '실행'}")
     print(f"  소스: {_mask(src_url)}\n  타깃: {_mask(dst_url)}")
     print("=" * 62)
-    src, dst = create_engine(src_url), create_engine(dst_url)
+    # 타깃은 묶음 실행 — 행마다 왕복하면 프록시 지연 × 행 수가 그대로 시간 (2026-09-05 실측: games 12,843행 61분).
+    # psycopg2 execute_batch 로 page_size 행씩 한 왕복에 보낸다.
+    src = create_engine(src_url)
+    dst = create_engine(dst_url, executemany_mode="values_plus_batch", executemany_batch_page_size=args.batch)
+    print(f"  타깃 DB 크기(시작): {db_size(dst)}")
 
     tables = [t.strip() for t in args.tables.split(",") if t.strip()]
     for t in tables:
@@ -203,9 +221,9 @@ def main():
               f"{'  벡터: ' + ','.join(sorted(p['vector'])) if p['vector'] else ''}")
         if p["missing_in_dst"]:
             print(f"   경고: 타깃에 없는 컬럼 {p['missing_in_dst']} — 이 컬럼은 옮기지 않는다 (필요하면 마이그레이션 먼저)")
-        total += sync_table(src, dst, t, p, args.batch, dry_run)
+        total += sync_table(src, dst, t, p, args.batch, dry_run, include_raw=args.include_raw)
 
-    print(f"\n{'집계' if dry_run else '완료'} 총 {total:,}행.")
+    print(f"\n{'집계' if dry_run else '완료'} 총 {total:,}행.  타깃 DB 크기(끝): {db_size(dst)}")
     if dry_run:
         print("실제 반영: --yes")
     else:

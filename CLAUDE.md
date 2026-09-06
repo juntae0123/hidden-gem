@@ -44,6 +44,11 @@
 - push 를 권하기 전에 `git log origin/master..master --oneline` 으로 미푸시 커밋을 세고, 그 안에 스키마·플래그 변경이 있는지 본다.
 - 사용자가 자는 시간엔 배포하지 않는다. push 는 사용자가 한다.
 
+## 2''. 운영 DB 에 쓰기 전
+- 운영에 1천 행 이상 쓰기 전 `embeddings.db_space` 로 크기·한도를 본다 (C-13). 실수 기록: 볼륨 0.5GB 에 12,843행을 밀어 Postgres 크래시 루프 (2026-09-05 심야).
+- 로컬→운영 데이터 이동은 `embeddings.prod_sync` 만 쓴다 (upsert, 삭제 없음, dry-run 먼저). 운영의 사용자 테이블은 절대 건드리지 않는다.
+- 운영 스키마 제약(NOT NULL 등)은 로컬과 다를 수 있다 — dry-run 은 이걸 못 잡는다. 실패하면 제약을 풀지 말고 데이터를 맞춘다.
+
 ## 3. 점수 로직 수정 — 세 경로 + 절제 도구 + 캐시 키
 - 경로 A(`score_v6`/`score_v7`, 취향·Vibe) / B(`recommend_by_game`) / C(`semantic_search`) **전부** 같은 규칙을 따르는지 grep 으로 확인.
   실수 기록: `GEM_SOURCE=evidence` 를 v7 과 B/C 에만 넣어 `SCORE_VERSION=v6` 상태에선 A 만 legacy 로 남을 판이었다 (2026-09-05).

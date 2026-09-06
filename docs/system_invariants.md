@@ -132,6 +132,12 @@ semantic:{query_hash}:{limit}   rec:game:{app_id}:{count}   rec:pref:{pref_hash}
 ③ Railway 변수 `SCORE_VERSION=v7`, `GEM_SOURCE=evidence` ④ push. ①~③ 없이 push 하면 롤백은 Railway Redeploy(직전) 뿐이다.
 `ADD COLUMN IF NOT EXISTS` 라 ① 은 재실행 안전. 컬럼 추가 없이 코드만 배포하는 경우에도 GEM_SOURCE 기본값(legacy)이면 새 컬럼을 읽기만 하므로 ① 만 있으면 된다.
 
+### C-13. 대량 쓰기 전에 타깃의 남은 공간을 본다 — WAL 이 데이터보다 먼저 볼륨을 채운다
+운영 Postgres 볼륨이 0.5GB 일 때 12,843행 upsert 를 밀어넣자 데이터(≈200MB)가 아니라 **WAL(기본 max_wal_size 1GB)** 이 먼저 디스크를 채웠다.
+`No space left on device` → autovacuum PANIC → 재시작 루프(복구 redo 는 끝나는데 WAL 한 파일 쓸 공간이 없어 다시 죽음). 볼륨 증설 외엔 못 살린다.
+→ 규칙: 운영에 1천 행 이상 쓰기 전 `db_space` 로 DB 크기와 볼륨 한도를 본다. 필요 공간 = 데이터 증분 + WAL 1GB + 여유. 묶음 실행으로 시간을 줄이면 WAL 도 덜 쌓인다.
+  볼륨 사용량 감시(70% 알림)를 주간 파이프라인에 넣는다. 한도가 있는 저장소는 "언젠가 터진다" — 감시가 답이다.
+
 ### C-7. Steam API 를 두 스크립트가 동시에 두드릴 수 있다
 크롤러(store 검색 1.6s + appdetails 1.5s)와 `refresh_reviews`(appreviews 1.0s)는 같은 IP를 쓴다.
 합치면 Steam 비공식 한도(약 200req/5min)를 넘어 **둘 다 429** 를 맞는다. → 동시 실행 금지.

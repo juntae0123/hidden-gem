@@ -203,6 +203,18 @@ PRD §4-2 "변별력 25 vs 3.5" 의 25 = 5.0². 개발자가 알고 쓴 것. 경
 - 카나리아 해석: 개발자 원문 "메챠가 1위 아니면 말이 안 된다"는 지금 데이터에서 누적 기준으로 성립. 더 많이 검증받은 신작이 나오면 1위가 바뀌는 게 정상이고 스냅샷이 회차마다 기록한다.
 - 부수 결정: `analyze_query`(시맨틱 질의 → 힌트 LLM) 결과 7일 캐시 `qa:*`, invalidate_all 제외 — 측정 잡음(±0.7, 10위 경계 뒤집힘) 제거 + 비용 절감.
 
+## R-18. (2026-09-06 완료) 운영 DB 정합 — 로컬이 게임 데이터 원본, 운영은 upsert 로 따라간다
+- 발견(09-05 심야): 운영 DB 는 4,193건·리뷰 0. 백필·리뷰·증거 지수 전부 로컬 DB 에만 있었다(`.env DATABASE_URL` = 로컬 db). 사용자 데이터(users·actions·surveys)는 운영이 원본.
+- 사고 둘: ① 자리표시자 명령 → 마이그레이션 없이 push (컬럼 `IF NOT EXISTS` 로 빌드 전 수습) ② `prod_sync` 첫 실행이 운영 볼륨을 가득 채워 Postgres 크래시 루프
+  (WAL 못 씀). 볼륨 0.5→5GB 증설 후 복구. 롤백 잔해는 VACUUM 으로 회수(305→200MB).
+- 도구: `embeddings/prod_sync.py`(테이블 4개 app_id 기준 upsert, 공통 컬럼만, vector/json CAST, 삭제 없음, dry-run 기본, 묶음 실행) / `embeddings/db_space.py`(용량·죽은 튜플·VACUUM).
+  속도: 행 단위 61분 → 묶음 85초. `raw_content/raw_reasoning` 은 운영 NOT NULL(Django 모델)이라 제외 못 함 → `--include-raw`. 운영 최종 399MB.
+- 결과: 운영 games 12,843 / game_metrics 12,843 / review_* 12,843. 랭킹 new 1위 MECCHA CHAMELEON, steady 1위 Judofuri — 로컬 s7 과 동일.
+  Railway 변수 `SCORE_VERSION=v7` `GEM_SOURCE=evidence` 적용 확인(by-preference Petal by Petal 92.7, gem 7.4).
+- 후속: 파이프라인(batch_processor·refresh_reviews·gem_evidence·weekly)의 대상 DB 를 운영으로 고정 / `db_space` 를 주간 첫 단계 + 70% Discord 알림 /
+  Django `raw_*` `null=True` 마이그레이션 후 운영에서 raw 제거(행당 30~40%) / `embedding_backup_20260703`(33MB) 삭제 판단 / Railway Postgres 비밀번호 교체 /
+  `/ops/cache*` 인증 확인("Authentication required" 가 코드에 없는 문구 — 출처 확인).
+
 ## R-16. (확정 2026-09-05) 신작 토글은 메인에서 빼고 신작 리그의 범위 토글로
 - 구현: `lifecycle.admit(new_only=True)` 는 리뷰 ≥100 신작만, `include_new=True` 를 함께 주면 조용한 신작(리뷰<100)도.
   프런트 검색 페이지: 메인 위 토글 삭제, 신작 리그 섹션 안에 "리뷰 100건 미만의 조용한 신작도 포함 — 학생 모델 분석이라 취향 매칭이 덜 정확할 수 있어요".
