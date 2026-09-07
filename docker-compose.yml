@@ -109,6 +109,7 @@ services:
       # 값 바꾼 뒤엔 `docker compose up -d fastapi` (restart 는 env 를 다시 읽지 않는다).
       - SCORE_VERSION=${SCORE_VERSION:-v6}
       - GEM_SOURCE=${GEM_SOURCE:-legacy}
+      - OPS_TOKEN=${OPS_TOKEN:-}
       - VIBE_SECONDARY_ENABLED=${VIBE_SECONDARY_ENABLED:-False}
       - PREF_EMBED_TIEBREAK=${PREF_EMBED_TIEBREAK:-True}
     ports:

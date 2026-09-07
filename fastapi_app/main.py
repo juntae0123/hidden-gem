@@ -18,7 +18,7 @@ import os
 from contextlib import asynccontextmanager
 
 import sentry_sdk
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
@@ -244,22 +244,40 @@ async def health_check():
 
 
 # ==================== 운영 엔드포인트 ====================
+# 2026-09-07: /ops/* 는 인증이 전혀 없었다. 저장소가 공개라 경로를 누구나 알고,
+# POST /ops/cache/invalidate 한 번으로 운영 캐시를 통째로 비울 수 있었다.
+# 규칙: 토큰이 설정돼 있지 않으면 운영에서는 **막는다**(fail closed). 로컬(DEBUG)만 통과.
 
-@app.get("/ops/cost")
+
+async def require_ops_token(x_ops_token: str | None = Header(default=None)) -> None:
+    """운영 엔드포인트 게이트. 헤더 `X-Ops-Token` 을 settings.OPS_TOKEN 과 비교한다."""
+    import secrets as _secrets
+
+    expected = (settings.OPS_TOKEN or "").strip()
+    if not expected:
+        if settings.DEBUG:
+            return  # 로컬 개발: 토큰 없이 허용
+        raise HTTPException(status_code=503, detail="OPS_TOKEN 미설정 — 운영 엔드포인트 비활성")
+    if not x_ops_token or not _secrets.compare_digest(x_ops_token, expected):
+        raise HTTPException(status_code=401, detail="유효한 X-Ops-Token 필요")
+
+
+
+@app.get("/ops/cost", dependencies=[Depends(require_ops_token)])
 async def get_cost_stats():
     """OpenAI 비용 현황 조회 (OpenAI Cost Stats)"""
     from services.cost_guard import cost_guard
     return await cost_guard.get_stats()
 
 
-@app.get("/ops/cache")
+@app.get("/ops/cache", dependencies=[Depends(require_ops_token)])
 async def get_cache_stats():
     """Redis 캐시 현황 조회 (Cache Stats)"""
     from services.cache import recommendation_cache
     return await recommendation_cache.get_stats()
 
 
-@app.post("/ops/cache/invalidate")
+@app.post("/ops/cache/invalidate", dependencies=[Depends(require_ops_token)])
 async def invalidate_cache():
     """전체 캐시 초기화 (Cache Invalidation)"""
     from services.cache import recommendation_cache
