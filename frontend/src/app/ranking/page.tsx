@@ -43,19 +43,19 @@ export default function RankingPage() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-xl font-semibold">랭킹</h1>
-        <p className="text-sm text-zinc-500 mt-1">{tab.desc}</p>
+        <h1 className="text-2xl font-bold">랭킹</h1>
+        <p className="text-[15px] text-zinc-500 mt-1.5">{tab.desc}</p>
       </header>
 
       {/* 탭 — 생애주기별로 다른 질문 */}
-      <div className="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
+      <div className="flex items-center gap-2 border-b border-zinc-200 dark:border-zinc-800">
         {TABS.map((t) => (
           <button
             key={t.key}
             type="button"
             onClick={() => setType(t.key)}
             className={cn(
-              'px-3 py-2 text-[13px] -mb-px border-b-2',
+              'px-4 py-3 text-[16px] font-semibold -mb-px border-b-2',
               (t.key === 'new' ? isNewTab : type === t.key)
                 ? 'border-purple-600 text-purple-700 dark:text-purple-300'
                 : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200',
@@ -76,7 +76,7 @@ export default function RankingPage() {
               onClick={() => setType(v.key)}
               title={v.desc}
               className={cn(
-                'px-3 py-1.5 rounded-lg text-[12px] border',
+                'px-3.5 py-2 rounded-lg text-[14px] font-medium border',
                 type === v.key
                   ? 'bg-emerald-500/10 border-emerald-500 text-emerald-700 dark:text-emerald-300'
                   : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-emerald-400',
@@ -85,7 +85,7 @@ export default function RankingPage() {
               {v.label}
             </button>
           ))}
-          <span className="text-[11px] text-zinc-500">{NEW_VIEWS.find((v) => v.key === type)?.desc}</span>
+          <span className="text-[13px] text-zinc-500">{NEW_VIEWS.find((v) => v.key === type)?.desc}</span>
         </div>
       )}
 

@@ -54,11 +54,11 @@ export function Navbar() {
       'bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md',
       'border-b border-zinc-200 dark:border-zinc-800'
     )}>
-      <nav className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <nav className="max-w-7xl mx-auto px-6 h-[68px] flex items-center justify-between">
         {/* 로고 */}
         <Link href="/" className="flex items-center gap-2">
-          <span className="text-purple-600 text-xl leading-none">✦</span>
-          <span className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+          <span className="text-purple-600 text-2xl leading-none">✦</span>
+          <span className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
             Hidden Gem
           </span>
         </Link>
@@ -78,7 +78,7 @@ export function Navbar() {
                   href={tab.href}
                   onClick={() => trackEvent('nav_taste_click')}
                   className={cn(
-                    'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                    'flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[15px] font-semibold transition-colors',
                     active
                       ? 'bg-purple-600 text-white'
                       : 'bg-purple-600/10 text-purple-700 dark:text-purple-300 hover:bg-purple-600/20'
@@ -96,7 +96,7 @@ export function Navbar() {
                 key={tab.href}
                 href={tab.href}
                 className={cn(
-                  'px-4 py-2 rounded-lg text-sm transition-colors',
+                  'px-4 py-2.5 rounded-lg text-[15px] font-medium transition-colors',
                   active
                     ? 'bg-purple-600/10 text-purple-700 dark:text-purple-300'
                     : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
