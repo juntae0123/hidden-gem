@@ -1257,13 +1257,13 @@ Examples:
         rows = result.fetchall()
         if len(rows) < limit:
             # 그래도 부족하면 필터 없이 넓게 뽑아 파이썬에서 거른다 (정확도 우선, 지연 몇 ms)
-            logger.info(f"[semantic] '{query}' HNSW 필터 후 {len(rows)}건 < limit {limit} → 광역 재조회")
+            logger.info(f"[semantic] q(len={len(query)}) HNSW 필터 후 {len(rows)}건 < limit {limit} → 광역 재조회")
             wide_sql = text(sql.text.replace("LIMIT :limit", "LIMIT :wide_limit").replace(lifecycle_sql, ""))
             wide_params = {k: v for k, v in params.items() if k not in ("limit", "new_days", "new_min_rc")}
             wide_params["wide_limit"] = 400
             rows = (await db.execute(wide_sql, wide_params)).fetchall()
         if not rows:
-            logger.info(f"[semantic] '{query}' pgvector 후보 0건 (limit {limit * 2}, include_new={include_new})")
+            logger.info(f"[semantic] q(len={len(query)}) pgvector 후보 0건 (limit {limit * 2}, include_new={include_new})")
             return []
 
         # 게임 정보 조회
