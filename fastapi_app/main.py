@@ -160,9 +160,10 @@ if settings.DEBUG:
         "http://127.0.0.1:3000",
     ]
 else:
-    # 운영: FRONTEND_URL 콤마 구분 다중 허용
-    # Korean: 여러 주소를 콤마로 받아 허용 (Vercel 프리뷰는 아래 regex가 커버)
-    _frontend = os.getenv("FRONTEND_URL", "https://hiddengem.io")
+    # 운영: FRONTEND_URL 콤마 구분 다중 허용 (Vercel 프리뷰는 아래 regex 가 커버)
+    # ⚠️ 이 변수는 Railway **fastapi 서비스**에 따로 있다 — django 의 FRONTEND_URL 과 별개.
+    #    2026-09-07 도메인 전환 때 django 만 갱신해 프런트가 "연결에 문제가 있어요"로 죽었다.
+    _frontend = os.getenv("FRONTEND_URL", "https://hiddengemdb.com,https://www.hiddengemdb.com")
     ALLOWED_ORIGINS = [o.strip() for o in _frontend.split(",") if o.strip()]    
 app.add_middleware(
     CORSMiddleware,
