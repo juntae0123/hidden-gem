@@ -217,6 +217,9 @@ C 문장 검색  semantic_search               (임베딩85% + 힌트15%) × 94 
       `raise_for_status()` → 콜백 **500**. 확인: `python manage.py check_oauth` (빈칸·Site 연결·중복만 본다). (C-17)
 - [ ] **남의 API 를 부르는 콜백이 그 API 장애를 500 으로 흘리지 않나** — 스팀 콜백은 `SafeSteamCallbackView` 가
       `requests.RequestException` 을 잡아 `/login?error=steam_unavailable` 로 되돌린다. 새 소셜 provider 도 같이 감싼다. (C-17)
+- [ ] **소셜 로그인이 회원가입 폼으로 빠지지 않나** — allauth 자동 가입 판정은 `user.email` 이 아니라
+      `sociallogin.email_addresses` 를 본다. 이메일을 안 주는 provider(스팀)는 `pre_social_login` 에서
+      합성 주소를 그 자리에 넣는다. 확인: `manage.py test apps.users` — '훅을 빼면 거부된다'까지 고정돼 있다. (C-17)
 - [ ] **운영에서 500 트레이스백이 로그에 남나** — Django 기본 `LOGGING` 은 console 핸들러에 `require_debug_true` 가
       걸려 있어 `DEBUG=False` 면 아무것도 안 찍는다. `settings.LOGGING` 에 `django.request` → stdout 을 명시해 둔다. (C-17)
 - [ ] **push 전에 운영 DB 스키마가 코드와 맞나** — 모델에 컬럼을 추가했나? 그러면 운영 마이그레이션 → 채움 → Railway 변수 → push 순서 (C-12)

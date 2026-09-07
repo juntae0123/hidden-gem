@@ -20,6 +20,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from allauth.account.adapter import DefaultAccountAdapter
+from allauth.account.models import EmailAddress
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.providers.steam.views import SteamOpenIDCallbackView
 from apps.users.serializers import UserSerializer, OnboardingSerializer
@@ -72,6 +73,41 @@ class JWTSocialAccountAdapter(DefaultSocialAccountAdapter):
     get_callback_url 절대 오버라이드 X (redirect_uri 보호)
     """
 
+    # 스팀 계정에 붙일 합성 이메일. 스팀 OpenID 는 이메일을 주지 않는다.
+    STEAM_EMAIL_DOMAIN = 'users.hiddengem.local'
+
+    @classmethod
+    def _steam_email(cls, uid):
+        return f'steam_{uid}@{cls.STEAM_EMAIL_DOMAIN}'
+
+    def pre_social_login(self, request, sociallogin):
+        """스팀 로그인이 회원가입 폼으로 빠지지 않게 한다.
+
+        allauth 의 자동 가입 판정(process_auto_signup_email)은 `user.email` 이 아니라
+        **`sociallogin.email_addresses`** 를 본다. 비어 있고 EMAIL_REQUIRED 면 자동 가입을
+        포기하고 `/accounts/3rdparty/signup/` 폼을 띄운다.
+        (EMAIL_REQUIRED 기본값은 ACCOUNT_SIGNUP_FIELDS=['email*'] 에서 True 로 유도된다)
+
+        populate_user 에서 user.email 만 채웠던 게 부족했던 이유가 이것 —
+        판정이 보는 자리에 넣어야 한다. 실수 기록: 2026-09-07.
+
+        EMAIL_REQUIRED 를 끄는 방법도 있지만, 그러면 이메일을 안 주는 **모든** provider 가
+        조용히 자동 가입된다. 스팀에만 한정해 합성 주소를 붙인다.
+        """
+        super().pre_social_login(request, sociallogin)
+
+        if sociallogin.is_existing or sociallogin.account.provider != 'steam':
+            return
+        if sociallogin.email_addresses:
+            return
+
+        email = self._steam_email(sociallogin.account.uid)
+        sociallogin.email_addresses = [
+            EmailAddress(email=email, verified=False, primary=True)
+        ]
+        if sociallogin.user and not sociallogin.user.email:
+            sociallogin.user.email = email
+
     def populate_user(self, request, sociallogin, data):
         """Steam은 이메일을 제공하지 않으므로 합성 이메일로 자동 가입을 통과시킨다.
 
@@ -80,8 +116,7 @@ class JWTSocialAccountAdapter(DefaultSocialAccountAdapter):
         """
         user = super().populate_user(request, sociallogin, data)
         if sociallogin.account.provider == 'steam' and not user.email:
-            steam_id = sociallogin.account.uid
-            user.email = f'steam_{steam_id}@users.hiddengem.local'
+            user.email = self._steam_email(sociallogin.account.uid)
         return user
 
     def save_user(self, request, sociallogin, form=None):
