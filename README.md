@@ -275,7 +275,7 @@ docker compose exec fastapi python -m scripts.ablation --pool default           
 ## 프로젝트 구조 (폴더마다 README 가 있다)
 
 ```
-CLAUDE.md             작업 규칙 — 실수마다 규칙 하나 (AI 협업 세션이 먼저 읽는다)
+CLAUDE.md             작업 규칙 = 실수 대장 — 사고마다 원인 확정 후 규칙 한 줄. 새 환경 세팅·AI 협업 세션이 먼저 읽는다
 fastapi_app/          추천·검색·랭킹 API              → fastapi_app/README.md
   services/score_v7.py       현재 채점기 (질의 마스크 + 가중 RMSE + 발굴 12)
   services/lifecycle.py      new / established / famous, 입장 규칙 admit()
@@ -304,7 +304,8 @@ legacy/               은퇴한 코드·산출물 (참고용, 미실행)        
 
 - [docs/security_review.md](./docs/security_review.md) — 보안 점검 기록
 - [docs/apply_guide.md](./docs/apply_guide.md) — 배포/운영 절차
-- [docs/decisions_0905.md](./docs/decisions_0905.md) — 설계 결정 R-1~R-22 (상황·검토·판단·근거)
-- [docs/system_invariants.md](./docs/system_invariants.md) — 불변식 C-1~C-14 + 변경 전 체크리스트
+- [CLAUDE.md](./CLAUDE.md) — 작업 규칙(실수 대장). 이 프로젝트에서 낸 사고와 그로부터 나온 규칙
+- [docs/decisions_0905.md](./docs/decisions_0905.md) — 설계 결정 R-1~R-24 (상황·검토·판단·근거)
+- [docs/system_invariants.md](./docs/system_invariants.md) — 불변식 C-1~C-16 + 변경 전 체크리스트
 - [docs/ablation_result_0905.md](./docs/ablation_result_0905.md) — 절제·스냅샷 실측 (예측을 먼저 적고 틀린 것도 남겼다)
 - [docs/domain_setup_hiddengemdb.md](./docs/domain_setup_hiddengemdb.md) — 도메인 전환 체크리스트
