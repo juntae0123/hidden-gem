@@ -71,3 +71,9 @@ upload_log.txt
 PRD_*.md
 /docs/prd_history/
 /data/prompts/
+
+# 공개 저장소에 넣지 않는 개인 문서 — 사본은 Desktop/Hidden-Gem-비공개/docs_business/
+# (구직 전략·면접 답안·자율세션 브리핑. 저장소는 코드와 설계 기록만 공개한다)
+docs/portfolio_raw.md
+docs/portfolio_2026-09-06.md
+docs/morning_briefing_0829.md
