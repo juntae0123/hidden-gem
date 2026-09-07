@@ -108,6 +108,12 @@ class JWTSocialAccountAdapter(DefaultSocialAccountAdapter):
         if sociallogin.user and not sociallogin.user.email:
             sociallogin.user.email = email
 
+        # 이 줄이 로그에 없으면 훅이 안 탄 것이다 — 배포 여부부터 본다.
+        logger.info(
+            "[Steam] 신규 가입 — 합성 이메일을 email_addresses 에 주입 (uid=%s)",
+            sociallogin.account.uid,
+        )
+
     def populate_user(self, request, sociallogin, data):
         """Steam은 이메일을 제공하지 않으므로 합성 이메일로 자동 가입을 통과시킨다.
 
