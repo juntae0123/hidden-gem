@@ -66,3 +66,8 @@ upload_log.txt
 
 .env*
 !.env.example
+
+# 비공개 자료 — 저장소 밖(Desktop/Hidden-Gem-비공개)에서 관리 (2026-09-07)
+PRD_*.md
+/docs/prd_history/
+/data/prompts/

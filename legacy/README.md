@@ -11,6 +11,6 @@
 | `embeddings_v1/` | 8월 말 배치 도구 초판(auto_batch_sender·batch_merger·split_batch·db_updator·smoke test·.bak) + `history/`(3월 수집기) | `embeddings/batch_generator.py`·`batch_processor.py` |
 | `fastapi_scripts_v6/` | score_v6 변별력 검증·Vibe 분포 점검 스크립트(8~9월 초) | `fastapi_app/scripts/ablation.py`, `embeddings/rec_snapshot.py` |
 | `div_log_early/` | 3월 개발 노트 3개 | 별도 저장소 `div-log_hidden-gem` |
-| `root_artifacts/` | 초기 명세 노트북, 설치 노트북, 스크린샷, 업로드 로그, 3월 db dump(131B), project_way.md | `PRD_v4.3.md`, `docs/` |
+| `root_artifacts/` | 초기 명세 노트북, 설치 노트북, 스크린샷, 업로드 로그, 3월 db dump(131B), project_way.md | `docs/` (PRD 는 비공개) |
 
 2026-09-06 정리 (R-18 이후). 새로 은퇴시키는 코드는 여기 폴더를 만들고 이 표에 한 줄 추가한다.
