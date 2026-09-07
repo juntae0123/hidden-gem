@@ -20,15 +20,15 @@ import { cn } from '@/lib/utils';
 import type { RankingType } from '@/types/game';
 
 const TABS: { key: RankingType; label: string; desc: string }[] = [
-  { key: 'steady', label: '스테디 히든젬', desc: '출시 6개월 지난 게임 중, 인지도 대비 평가가 높은 순 — 리뷰 30건 이상만' },
-  { key: 'rising', label: '요즘 뜨는',     desc: '최근 30일 리뷰 증가율 순 — 유명작이 독식하지 않게 비율로 봅니다' },
-  { key: 'new',    label: '신작 리그',     desc: '출시 6개월 이내 게임끼리만의 리그 — 정착 게임과 비교하지 않아요' },
+  { key: 'steady', label: '숨은 명작',   desc: '많이 안 알려졌는데 해본 사람들 평이 좋은 게임' },
+  { key: 'rising', label: '요즘 뜨는',   desc: '최근 한 달 사이 리뷰가 빠르게 늘고 있는 게임' },
+  { key: 'new',    label: '신작',       desc: '최근 6개월 안에 나온 게임만' },
 ];
 
 // 신작 리그 안의 두 시선: 지금 달리는 신작(180일 안에 모은 리뷰 수, 평가 70%+) / 아직 조용한 신작(리뷰 100 미만, 평가 순)  — R-17
 const NEW_VIEWS: { key: RankingType; label: string; desc: string }[] = [
-  { key: 'new',       label: '지금 달리는', desc: '출시 180일 안에 모은 리뷰 수 순 — 평가 70% 이상만' },
-  { key: 'new_quiet', label: '아직 조용한', desc: '리뷰 100건 미만 중 평가가 좋은 순 — 첫 리뷰가 필요한 게임들' },
+  { key: 'new',       label: '많이 해본', desc: '나온 뒤로 리뷰가 많이 쌓인 순' },
+  { key: 'new_quiet', label: '아직 조용한', desc: '리뷰 100건이 안 되는 게임 중 평이 좋은 순' },
 ];
 
 export default function RankingPage() {
@@ -118,7 +118,7 @@ export default function RankingPage() {
       {!isLoading && !error && data?.status === 'collecting' && (
         <div className="rounded-xl p-8 text-center bg-orange-500/[0.04] border border-orange-500/30">
           <div className="text-orange-700 dark:text-orange-400 text-sm font-medium">데이터 쌓는 중</div>
-          <p className="mt-1 text-[12px] text-zinc-500">{data.note || '리뷰 이력이 30일치 모이면 계산됩니다.'}</p>
+          <p className="mt-1 text-[12px] text-zinc-500">{data.note || '리뷰가 얼마나 늘었는지 보려면 한 달치 기록이 필요해요. 매주 쌓고 있습니다.'}</p>
         </div>
       )}
 
@@ -130,8 +130,8 @@ export default function RankingPage() {
 
       {isNewTab && items.length > 0 && (
         <p className="text-[12px] text-zinc-500">
-          신작 리그는 신생 게임을 보호하는 그들만의 리그예요. 정착 게임과 발굴 지수로 비교하지 않고, 신작끼리만 봅니다.
-          마음에 드는 게임에 첫 리뷰를 남기는 사람이 다음 히든젬을 만듭니다.
+          갓 나온 게임은 리뷰가 쌓일 시간이 없어서, 오래된 게임과 같은 줄에 세우면 늘 집니다. 그래서 따로 봅니다.
+          마음에 드는 게임에 첫 리뷰를 남겨주면 다음 사람이 그 게임을 찾습니다.
         </p>
       )}
     </div>
