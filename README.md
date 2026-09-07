@@ -1,8 +1,8 @@
 # Hidden Gem
 
-Steam 게임 12,843개를 60개 지표로 정량화하고, 취향으로 게임을 찾고 숨은 명작을 발굴하는 서비스.
+Steam 게임 **17,313개**를 60개 지표로 정량화하고, 취향으로 게임을 찾고 숨은 명작을 발굴하는 서비스.
 
-**Live**: [hidden-gem-gold.vercel.app](https://hidden-gem-gold.vercel.app) · **API**: FastAPI + Django (Railway) · **Web**: Next.js (Vercel)
+**Live**: [hiddengemdb.com](https://hiddengemdb.com) · **Web**: Next.js 16 (Vercel) · **API**: FastAPI + Django (Railway) · 2026-03~ 운영 중
 
 <!-- docs/images/main.png : 메인 페이지 스크린샷 -->
 
@@ -18,7 +18,7 @@ Steam에는 매년 1만 개 이상의 게임이 출시되지만, 발견은 인�
 - 자연어 검색("혼자 조용히 즐기는 전략 게임"), 지표 슬라이더, 카드 스와이프의
   세 가지 취향 입력 방식 + 랭킹 3종(스테디 히든젬 / 요즘 뜨는 / 신작 리그)
 - 신작·정착·유명 게임을 한 척도에 놓지 않는다: 취향 일치는 같은 척도, 발굴·랭킹은 생애주기별로 다른 질문
-- 신작은 매주 자동 수집·분석·리뷰 갱신되어 데이터셋이 계속 성장 (교사 4,190 + 학생 8,653)
+- 신작은 매주 자동 수집·분석·리뷰 갱신되어 데이터셋이 계속 성장 (교사 4,190 + 학생 13,123 · 2026-03-16~ 출시작 전 구간 백필 완료)
 
 기획부터 데이터 구축, 백엔드/프론트엔드, 배포, 운영까지 1인 개발.
 
@@ -113,9 +113,9 @@ flowchart LR
 - 블라인드 입력: 모델에는 `app_id, name, genres, description` 4개 필드만 제공.
   개발사·평점을 의도적으로 숨겨 인지도 편향을 차단
 
-**학생 데이터 (8,653개, 2026-03~ 출시작 전수 백필 + 매주)**
+**학생 데이터 (13,123개, 2026-03-16~ 출시작 전 구간 백필 완료 + 매주 자동)**
 - gpt-5.4-mini + 12-shot 증류로 교사와 동일한 스키마 유지. 실측 단가 요청당 $0.0049
-  (Batch 50% × 프롬프트 캐시 90% 중복 적용, 대시보드 검증), 8,653건 $43
+  (Batch 50% × 프롬프트 캐시 90% 중복 적용, 대시보드 검증) — 회차 500건당 $2.45, 누적 약 $60
 - 홀드아웃 150쌍(교사 게임을 학생이 재분석) — 49 수치 지표 평균 MAE 0.77 로 교사급.
   LLM 이 추정한 발굴 가능성(gem)은 교사와 상관이 없어(r≈0) **리뷰 실측 지수로 대체**
 - few-shot 예시는 gem 점수 구간별 층화 추출: 명작만 예시로 주면 신작 점수가
@@ -143,7 +143,8 @@ space(볼륨 70% 게이트) → crawl(신작 발견, DB 중복 제외) → batch
   혼동표, confidence 분산). 회차별 분포 감시와 별개로 주기적 실행
   (`embeddings/audit_student.py`)
 
-- Windows Task Scheduler 주 1회 실행, 단계 실패 시 Discord 알림 후 중단
+- Windows Task Scheduler 매주 월 03:30 실행(실행 제한 26h — OpenAI Batch 대기 감안), 단계 실패 시 Discord 알림 후 중단.
+  이중 실행은 `data/pipeline.lock`(PID) 으로 차단하고, 자식 단계의 출력까지 `logs/weekly_pipeline.log` 에 남긴다
 - Batch API 장애 대비 동기 폴백(`--sync`), 미완료 배치의 부분 결과 수거 도구,
   잔여분 재시도 CSV 생성기까지 부분 실패를 전제로 설계
 - 크롤러는 429 응답 시 페이지 간격을 자동 상향하는 적응형 스로틀링, 백필 시
@@ -162,13 +163,19 @@ C 문장 검색    임베딩 85% + LLM 지표 힌트 15% → ×94 + 발굴 ×5  
 
 - **발굴 지수(gem)** = Steam 리뷰 실측 Wilson 하한 × 무명도. **정착 게임(출시 180일 초과, 리뷰 2만 미만)에만** 준다.
   신작은 시간이 없어서 무명이고 유명작은 이미 발견됐으므로 0 — 상위에 유명작이 올라오지 않는 이유
-- **신작 리그**: 신작은 정착 게임과 발굴로 경쟁하지 않고 신작끼리 취향 매칭. 랭킹도 스테디 히든젬(발굴 지수) /
-  요즘 뜨는(30일 리뷰 증가) / 신작(출시 180일 내 누적 리뷰, 평가 70%+) 으로 분리
+- **신작 리그**: 신작은 정착 게임과 발굴로 경쟁하지 않고 신작끼리 취향 매칭. 랭킹은 화면에서 **숨은 명작**(발굴 지수) /
+  **요즘 뜨는**(30일 리뷰 증가) / **신작**(출시 180일 내 누적 리뷰, 평가 70%+, 하위 탭으로 '많이 해본'·'아직 조용한')
+  으로 분리. 내부 용어(발굴 지수·정착 게임)는 화면 문구에서 걷어냈다 — 사용자는 그 단어를 모른다
 - **동점 처리**: 원점수(raw)로 정렬, 정확 동점만 선호 문장 임베딩 코사인으로 가른다 (Vibe 칩처럼 2~3개 지표면 동점이 수백 개)
 - **측정으로 결정**: 전체 풀 절제(ablation)·스냅샷 diff 로 예측을 먼저 적고 실측으로 맞췄다. v6 의 X-Factor(18점)는
   상수가 아니라 유명작 통로였고(전체 풀 89% 가 15.6 미만), Core 의 장르 핵심 목표값이 상수 5.0 이었던 결함(D-26)은
   문서 검토 넷이 놓치고 소스를 읽어서 찾았다 → `docs/final_verdict_0905.md`, `docs/ablation_result_0905.md`
 - 응답에 `score_breakdown`(core·gem·distance·fields_compared)·`lifecycle`·`gem_evidence` 를 포함해 설명 가능
+- **백필 후 회귀 확인(s8, 2026-09-07)**: 모수가 12,843 → 17,313 으로 늘었는데 취향 10 시나리오는 상위 10 이
+  전부 유지되고 점수 변화 0.00 이었다 — 신규가 전부 `too_new` 라 발굴 모수가 불변이므로 **바뀌면 그게 버그**다.
+  신작 리그 1위는 메챠 카멜레온 → 서브노티카 2 로 교체(누적 리뷰 8.7만 → 12.7만)됐고, 이는 R-17 정렬이
+  정상 작동한 결과라 카나리아 기준을 새 1위로 갱신했다. `요즘 뜨는`은 0건 — 리뷰 이력의 **두 시점 스냅샷**이
+  아직 없어 30일 Δ 를 계산할 수 없다(행이 아니라 시간 간격이 없는 것). 주간 실행이 쌓으면 4~5주 뒤 살아난다
 
 ## 주요 기능
 
@@ -202,6 +209,14 @@ C 문장 검색    임베딩 85% + LLM 지표 힌트 15% → ×94 + 발굴 ×5  
   SET_NULL로 보존 (PIPA/GDPR 삭제권 대응과 통계 가치의 양립)
 - **비용 가드**: OpenAI 사용액이 시간/일 임계값을 넘으면 신규 호출을 자동
   차단하고 Discord로 알림. 1인 운영에서 비용 사고를 구조적으로 방지
+- **파생 지표는 원본 행이 아니라 시간 간격을 요구한다**: 백필로 리뷰 이력을 17,556행 채워도 같은 게임의
+  두 시점 스냅샷이 없으면 증가율 지표는 계산되지 않는다. 같은 종류의 지표를 새로 만들 때는
+  "몇 시점이 필요한가"를 먼저 적는다
+- **관리형 플랫폼의 참조 변수는 값 갱신과 프로세스 반영이 다른 사건이다**: Railway 의
+  `${{Postgres.PGPASSWORD}}` 는 값이 바뀌어도 돌고 있는 컨테이너의 환경변수는 옛 값이다.
+  비밀 교체 절차의 마지막 단계는 항상 **의존 서비스 재배포 + DB 를 실제로 읽는 엔드포인트로 확인**
+- **파이프라인 이중 실행 차단**: 백필과 주간 실행이 겹쳐 같은 Steam API·DB 를 동시에 두드린 적이 있어
+  `data/pipeline.lock` 에 PID 를 기록한다. 비정상 종료로 남은 잔해는 이어받는다
 
 ## 운영
 
@@ -210,13 +225,19 @@ C 문장 검색    임베딩 85% + LLM 지표 힌트 15% → ×94 + 발굴 ×5  
   (gzip 검사 → pg_restore 구조 확인 → 테이블 수 검증 → Discord 보고)
 - 장애 대응: 시나리오별 복구 절차 문서화(DRP), 분기 1회 복구 리허설
 - 분석: 셀프호스팅 Umami (쿠키 동의 연동, 커스텀 이벤트로 퍼널 측정)
-- 운영 하드닝: DEBUG 기본 False, SECRET_KEY 미설정 시 기동 거부,
-  운영에서 API 문서 비노출
+- 운영 하드닝: DEBUG 기본 False, SECRET_KEY 미설정 시 기동 거부, 운영에서 API 문서 비노출,
+  `/ops/*` 는 `X-Ops-Token` 필수 — **토큰 미설정 시 운영에서는 503 으로 막는다(fail closed)**
+- 헬스체크는 실제로 두드린다: `/health` 가 DB `SELECT 1` + Redis `PING` 을 수행하고 `components` 로
+  사유까지 돌려준다. 정적 `{"status":"healthy"}` 였을 때 DB 비밀번호 교체 후 랭킹이 전부 500 이던 것도,
+  Redis 인증 실패로 캐시가 죽어 있던 것도 잡히지 않았다 — 무엇을 확인하는지 모르는 헬스체크는 증거가 아니다
+- 운영 대시보드: Django `/admin/dashboard/` 에서 방문(세션 기준)·행동·회원·데이터 현황을 한 화면에서 본다
+- 운영 DB 정합: 게임 데이터는 로컬이 원본 → `prod_sync` 로 upsert(삭제 없음), 사용자 데이터는 운영이 원본.
+  대량 쓰기 전 `db_space` 로 용량 확인(70% 게이트)
 
 ## 로컬 실행
 
 ```bash
-cp .env.example .env        # 키 채우기: OPENAI_API_KEY, STEAM_API_KEY, GOOGLE_*
+cp .env.example .env        # 키 채우기: OPENAI_API_KEY, STEAM_API_KEY, GOOGLE_*, OPS_TOKEN
 docker compose up -d        # db, redis, django, fastapi, batch, umami
 docker exec hidden_gem_django python scripts/setup_oauth.py   # 소셜 로그인 등록
 
@@ -230,6 +251,13 @@ npm install && npm run dev  # http://localhost:3000
 | django | 8001 | 인증/회원/Admin |
 | batch | - | 데이터 파이프라인 워커 (`docker compose exec batch ...`) |
 | umami | 3001 | 셀프호스팅 분석 |
+
+운영 상태 확인:
+
+```bash
+curl -s http://localhost:8000/health                                   # db·redis 를 실제로 두드린다
+docker compose exec batch python -m embeddings.pipeline_status         # 파이프라인 현황(단계·경과·오늘 등록)
+```
 
 테스트:
 
@@ -257,10 +285,11 @@ embeddings/           데이터 파이프라인 (batch 컨테이너)       → e
   steam_crawler.py · batch_generator.py · batch_processor.py · generate_embeddings.py
   refresh_reviews.py · exposure_policy.py · gem_evidence.py
   rec_snapshot.py            추천 결과 스냅샷/회귀 비교 (카나리아 포함)
+  pipeline_status.py         돌고 있는 파이프라인 현황 (단계·경과·오늘 등록·로그 꼬리)
   prod_sync.py · db_space.py · migrate.py   운영 DB 정합·용량·마이그레이션
   audit_student.py · usage_report.py        품질 감사 · 비용 실측
 scripts/              스케줄러·백업·이미지 (호스트에서 도는 것)   → scripts/README.md
-docs/                 결정(R-1~R-18)·실측·불변식·포트폴리오 원재료  → docs/README.md
+docs/                 결정(R-1~R-22)·실측·불변식(C-1~C-14)·포트폴리오 원재료 → docs/README.md
 data/                 배치 산출물·스냅샷·홀드아웃 (gitignore)      → data/README.md
 legacy/               은퇴한 코드·산출물 (참고용, 미실행)          → legacy/README.md
 PRD_v4.3.md           제품 요구사항 (현행). 이전 버전은 docs/prd_history/
@@ -271,3 +300,7 @@ PRD_v4.3.md           제품 요구사항 (현행). 이전 버전은 docs/prd_hi
 - [PRD v4.3](./PRD_v4.3.md) — 제품 요구사항과 로드맵 (이전 버전: `docs/prd_history/`)
 - [docs/security_review.md](./docs/security_review.md) — 보안 점검 기록
 - [docs/apply_guide.md](./docs/apply_guide.md) — 배포/운영 절차
+- [docs/decisions_0905.md](./docs/decisions_0905.md) — 설계 결정 R-1~R-22 (상황·검토·판단·근거)
+- [docs/system_invariants.md](./docs/system_invariants.md) — 불변식 C-1~C-14 + 변경 전 체크리스트
+- [docs/ablation_result_0905.md](./docs/ablation_result_0905.md) — 절제·스냅샷 실측 (예측을 먼저 적고 틀린 것도 남겼다)
+- [docs/domain_setup_hiddengemdb.md](./docs/domain_setup_hiddengemdb.md) — 도메인 전환 체크리스트
