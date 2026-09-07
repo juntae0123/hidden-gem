@@ -406,3 +406,10 @@ PRD §4-2 "변별력 25 vs 3.5" 의 25 = 5.0². 개발자가 알고 쓴 것. 경
   `FRONTEND_URL` 에 콤마 없음. 실행: `docker compose exec django python manage.py test apps.users`
 - 같은 사고의 두 얼굴: R-25 는 "키를 라이브러리가 읽는 필드에", R-26 은 "이메일을 라이브러리가 판정하는 자리에".
   둘 다 '넣었다'와 '그 코드가 읽는다'의 차이였다.
+
+### R-26 확인 (2026-09-07 밤)
+- 배포 후 스팀 로그인 실측: 스팀 동의 화면 → **회원가입 폼 없이** 프런트 온보딩("환영해요")으로 진입. 정상.
+- 남은 미관 문제: 스팀 동의 화면에 표시되는 사이트 이름이 `django-production-2f02.up.railway.app` 이다.
+  OpenID realm 은 콜백이 있는 호스트(`request.build_absolute_uri('/')`)여야 하므로, 이름을 바꾸려면
+  django 서비스에 커스텀 도메인(예: `api.hiddengemdb.com`)을 붙이는 것이 정공법이다. realm 만 따로 바꾸면
+  return_to 가 realm 밖이 되어 스팀이 거부한다. → 내일 항목.
