@@ -22,6 +22,11 @@ Steam에는 매년 1만 개 이상의 게임이 출시되지만, 발견은 인�
 
 기획부터 데이터 구축, 백엔드/프론트엔드, 배포, 운영까지 1인 개발.
 
+> **공개 범위와 권리.** 이 저장소는 열람·평가 목적으로 공개한다. 코드·문서의 저작권은 저자에게 있으며
+> 별도 라이선스를 부여하지 않는다(복제·재배포·상업적 이용 불허). 다음은 저장소에 포함하지 않는다 —
+> 60지표 데이터셋과 운영 DB, **지표 분석 프롬프트·few-shot 예시**(데이터셋 재현 레시피), PRD·사업 계획.
+> 지표 이름과 채점 공식은 코드와 문서에 있다. 필요 시 요청하면 범위를 정해 공유한다.
+
 ## 아키텍처
 
 ```mermaid
@@ -292,12 +297,11 @@ scripts/              스케줄러·백업·이미지 (호스트에서 도는 �
 docs/                 결정(R-1~R-22)·실측·불변식(C-1~C-14)·포트폴리오 원재료 → docs/README.md
 data/                 배치 산출물·스냅샷·홀드아웃 (gitignore)      → data/README.md
 legacy/               은퇴한 코드·산출물 (참고용, 미실행)          → legacy/README.md
-PRD_v4.3.md           제품 요구사항 (현행). 이전 버전은 docs/prd_history/
+(비공개)              PRD·사업 계획·분석 프롬프트·few-shot 은 저장소 밖에서 관리한다 — 아래 '공개 범위' 참조
 ```
 
 ## 문서
 
-- [PRD v4.3](./PRD_v4.3.md) — 제품 요구사항과 로드맵 (이전 버전: `docs/prd_history/`)
 - [docs/security_review.md](./docs/security_review.md) — 보안 점검 기록
 - [docs/apply_guide.md](./docs/apply_guide.md) — 배포/운영 절차
 - [docs/decisions_0905.md](./docs/decisions_0905.md) — 설계 결정 R-1~R-22 (상황·검토·판단·근거)
