@@ -43,6 +43,14 @@ from services.vibe_config import get_vibe_list, get_vibe_preferences, get_vibe_s
 
 from services.cache import recommendation_cache
 from services.cost_guard import cost_guard
+from services.ratelimit import rate_limit
+
+# LLM·임베딩을 호출하는 엔드포인트는 IP 단위로 제한한다 (2026-09-07).
+# settings.RATE_LIMIT_* 가 정의만 되어 있고 어디에도 적용돼 있지 않았다 — 무제한이면
+# 서로 다른 질의를 반복해 qa 캐시를 우회하면 호출당 비용이 그대로 나간다.
+_LIMIT_SEMANTIC = rate_limit("semantic", lambda: settings.RATE_LIMIT_SEARCH_ANON)
+_LIMIT_RECOMMEND = rate_limit("recommend", lambda: settings.RATE_LIMIT_RECOMMEND_ANON)
+_LIMIT_DEFAULT = rate_limit("default", lambda: settings.RATE_LIMIT_DEFAULT)
 
 router = APIRouter(prefix="/games", tags=["Games"])
 
@@ -65,7 +73,8 @@ class SemanticSearchRequest(BaseModel):
 
 # ==================== 검색 / Search ====================
 
-@router.get("/search", response_model=List[GameSearchResult])
+@router.get("/search", response_model=List[GameSearchResult],
+            dependencies=[Depends(_LIMIT_DEFAULT)])
 async def search_games(
     q: Optional[str] = Query(None, min_length=1, description="검색어 (이름/장르/개발사)"),
     genre: Optional[str] = Query(None, description="장르 필터"),
@@ -122,7 +131,8 @@ async def search_games(
     return results
 
 
-@router.post("/search/semantic", response_model=RecommendationResponse)
+@router.post("/search/semantic", response_model=RecommendationResponse,
+             dependencies=[Depends(_LIMIT_SEMANTIC)])
 async def semantic_search(
     request: SemanticSearchRequest,
     db: AsyncSession = Depends(get_db),
@@ -244,7 +254,8 @@ async def get_game_detail(app_id: int, db: AsyncSession = Depends(get_db)):
 
 # ==================== 추천 / Recommendation ====================
 
-@router.post("/recommend/by-game", response_model=RecommendationResponse)
+@router.post("/recommend/by-game", response_model=RecommendationResponse,
+             dependencies=[Depends(_LIMIT_RECOMMEND)])
 async def recommend_by_game(
     request: RecommendByGameRequest,
     db: AsyncSession = Depends(get_db),
@@ -300,7 +311,8 @@ async def recommend_by_game(
     return response
 
 
-@router.post("/recommend/by-preference", response_model=RecommendationResponse)
+@router.post("/recommend/by-preference", response_model=RecommendationResponse,
+             dependencies=[Depends(_LIMIT_RECOMMEND)])
 async def recommend_by_preference(
     request: RecommendByPreferenceRequest,
     db: AsyncSession = Depends(get_db),
@@ -406,7 +418,7 @@ async def recommend_by_preference(
 # ==================== Vibe Cluster (Phase 2-A) ====================
 
 
-@router.post("/recommend/by-vibe")
+@router.post("/recommend/by-vibe", dependencies=[Depends(_LIMIT_RECOMMEND)])
 async def recommend_by_vibe(
     vibe_key: str = Query(..., description="Vibe key (예: cozy_escape)"),
     count: int = Query(12, ge=1, le=50),
