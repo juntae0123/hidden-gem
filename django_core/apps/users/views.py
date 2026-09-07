@@ -21,6 +21,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from allauth.account.adapter import DefaultAccountAdapter
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
+from allauth.socialaccount.providers.steam.views import SteamOpenIDCallbackView
 from apps.users.serializers import UserSerializer, OnboardingSerializer
 
 logger = logging.getLogger(__name__)
@@ -114,6 +115,38 @@ class JWTSocialAccountAdapter(DefaultSocialAccountAdapter):
             f"error={error}, exception={exception}"
         )
         return redirect(f"{FRONTEND_URL}/login?error=auth_failed")
+
+
+class SafeSteamCallbackView(SteamOpenIDCallbackView):
+    """스팀 콜백 — Steam Web API 가 실패해도 500 대신 로그인 화면으로 돌려보낸다.
+
+    allauth 의 SteamOpenIDProvider.sociallogin_from_response 는 OpenID 검증 직후
+    GetPlayerSummaries 를 호출하고 resp.raise_for_status() 를 그대로 던진다.
+    그 예외를 감싸는 곳이 없어서, 키가 틀리거나 스팀이 잠시 죽으면 콜백이 500 이 된다.
+
+    2026-09-07 사고: SocialApp.secret 이 비어 있어(키를 client_id 에만 넣었다)
+    Steam API 가 403 → 콜백 500. 원인은 자격증명이었지만, 스팀 장애 때도 같은 500 이
+    나므로 여기서 한 번 잡아 사용자에게는 "다시 시도" 화면을 준다.
+    """
+
+    def get(self, request, *args, **kwargs):
+        try:
+            return super().get(request, *args, **kwargs)
+        except requests.RequestException as exc:
+            status = getattr(getattr(exc, 'response', None), 'status_code', None)
+            logger.error(
+                "[Steam] 콜백 실패 — Steam API 응답 %s (%s). "
+                "SocialApp.secret(=Steam Web API Key) 설정을 먼저 확인한다.",
+                status, type(exc).__name__,
+            )
+            return redirect(f"{FRONTEND_URL}/login?error=steam_unavailable")
+        except (KeyError, ValueError) as exc:
+            logger.error(
+                "[Steam] 콜백 응답 해석 실패 — %s: %s", type(exc).__name__, exc
+            )
+            return redirect(f"{FRONTEND_URL}/login?error=steam_unavailable")
+
+    post = get
 
 
 class UserMeView(APIView):

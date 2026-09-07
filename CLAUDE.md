@@ -73,6 +73,21 @@
 - push 를 권하기 전에 `git log origin/master..master --oneline` 으로 미푸시 커밋을 세고, 그 안에 스키마·플래그 변경이 있는지 본다.
 - 사용자가 자는 시간엔 배포하지 않는다. push 는 사용자가 한다.
 
+## 2'''''. 자격증명은 '넣었다'가 아니라 '라이브러리가 읽는 곳에 넣었다'가 기준이다
+- 스팀 로그인 콜백 500. 원인은 코드가 아니라 DB 한 칸이었다 — `SocialApp.secret` 이 비어 있었다.
+  allauth 65.x 의 `SteamOpenIDProvider.sociallogin_from_response` 는 `steam_api_key = self.app.secret` — **secret 필드**를 읽는다.
+  우리 `setup_oauth.py` 는 키를 `client_id` 에만 넣었다. 빈 키로 Steam API 호출 → 403 → `raise_for_status()` → 콜백 500.
+  실수 기록: 2026-09-07 도메인 전환 후 첫 스팀 로그인.
+- 규칙: 외부 provider 자격증명을 세팅했으면 **라이브러리 소스에서 그 값을 어느 필드로 읽는지 확인**한다(문서보다 소스가 먼저다).
+  확인 명령을 남긴다 — `python manage.py check_oauth` (값은 안 찍고 빈칸·Site 연결·중복만 본다).
+- 남의 API 를 부르는 콜백은 그 API 가 죽어도 500 이 아니어야 한다. 스팀 콜백은 `SafeSteamCallbackView` 로 감싸 로그인 화면으로 되돌린다.
+
+## 2''''''. DEBUG=False 면 Django 는 500 트레이스백을 **어디에도** 안 찍는다
+- Django 기본 `LOGGING` 의 console 핸들러에는 `require_debug_true` 필터가 걸려 있다. 운영에서 500 이 나도 Railway 로그에 아무것도 안 남는다(메일 핸들러만 붙어 있다).
+  실수 기록: 2026-09-07 스팀 콜백 500 의 원인을 로그로 못 찾아 라이브러리 소스를 읽어 역추적했다.
+- 규칙: 운영 서비스에는 `LOGGING` 을 **명시**한다 — `django.request` ERROR → stdout. 이걸 안 해두면 다음 500 도 또 추측으로 푼다.
+- 500 을 보고받으면 순서: ① 배포 로그의 트레이스백 ② 없으면 로깅부터 켠다 ③ 그다음 코드.
+
 ## 2''''. 저장소는 공개, 레시피는 비공개
 - 공개 저장소에 두지 않는 것: **PRD·사업 계획**, **분석 시스템 프롬프트**(`data/prompts/`), **few-shot**(`data/fewshot/`), 데이터셋, `.env`.
   보관 위치는 `Desktop/Hidden-Gem-비공개/` (prd/, prompts/). 프롬프트를 바꾸면 그 폴더에도 복사한다 — 저장소 백업에 안 들어간다.

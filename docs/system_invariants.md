@@ -212,6 +212,13 @@ C 문장 검색  semantic_search               (임베딩85% + 힌트15%) × 94 
       돌고 있는 컨테이너의 환경변수는 옛 값이다. django/fastapi 재배포 후 **DB 를 실제로 읽는 엔드포인트**로 확인한다
       (`/health` 는 정적 응답이라 증거가 아니다). (C-14)
 - [ ] **장기 작업을 죽이지 않나** — `docker compose up -d` 는 컨테이너를 재생성한다. `exec -d` 로 돌던 백필/동기화가 있으면 먼저 확인한다. (C-14)
+- [ ] **외부 provider 자격증명이 라이브러리가 읽는 필드에 있나** — allauth steam 은 `SocialApp.client_id` 가 아니라
+      **`secret`** 을 읽는다(`SteamOpenIDProvider.sociallogin_from_response`). 빈 키로 Steam API 를 호출하면 403 →
+      `raise_for_status()` → 콜백 **500**. 확인: `python manage.py check_oauth` (빈칸·Site 연결·중복만 본다). (C-17)
+- [ ] **남의 API 를 부르는 콜백이 그 API 장애를 500 으로 흘리지 않나** — 스팀 콜백은 `SafeSteamCallbackView` 가
+      `requests.RequestException` 을 잡아 `/login?error=steam_unavailable` 로 되돌린다. 새 소셜 provider 도 같이 감싼다. (C-17)
+- [ ] **운영에서 500 트레이스백이 로그에 남나** — Django 기본 `LOGGING` 은 console 핸들러에 `require_debug_true` 가
+      걸려 있어 `DEBUG=False` 면 아무것도 안 찍는다. `settings.LOGGING` 에 `django.request` → stdout 을 명시해 둔다. (C-17)
 - [ ] **push 전에 운영 DB 스키마가 코드와 맞나** — 모델에 컬럼을 추가했나? 그러면 운영 마이그레이션 → 채움 → Railway 변수 → push 순서 (C-12)
 
 ---

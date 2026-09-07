@@ -46,7 +46,9 @@ function LoginContent() {
         {/* 에러 메시지 */}
         {error && (
           <div className="mb-4 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 text-xs text-center">
-            로그인에 실패했어요. 다시 시도해주세요.
+            {error === 'steam_unavailable'
+              ? '스팀 연결이 잠시 불안정해요. 다시 시도해주세요.'
+              : '로그인에 실패했어요. 다시 시도해주세요.'}
           </div>
         )}
 

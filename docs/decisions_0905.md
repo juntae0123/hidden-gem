@@ -352,3 +352,29 @@ PRD §4-2 "변별력 25 vs 3.5" 의 25 = 5.0². 개발자가 알고 쓴 것. 경
 - 외부 검토 입력은 **소스 원문**(`score_v6.py`/`score_v7.py`, `recommender.py` 해당 구간). as-is 문서는 보조.
 - 두 모델의 일치는 근거로 세지 않는다. 근거는 코드·데이터·실측만.
 - 서빙 계층 변경은 반드시 스냅샷 전후 + 절제 수치를 커밋 메시지에 적는다.
+
+## R-25. (2026-09-07 밤) 스팀 로그인 콜백 500 — 키를 라이브러리가 안 읽는 필드에 넣었다
+- 증상: 도메인 전환 후 첫 스팀 로그인. `/accounts/steam/callback/?janrain_nonce=…&openid.mode=id_res` 에서 `Server Error (500)`.
+  구글 로그인은 정상. 직전 커밋(573e11a, FRONTEND_URL 분리)과는 무관 — 그건 리다이렉트 문자열 문제였고 여기선 리다이렉트 전에 죽는다.
+- 원인(라이브러리 소스 확인): `allauth/socialaccount/providers/steam/provider.py`
+  ```python
+  def sociallogin_from_response(self, request, response):
+      steam_id = extract_steam_id(response.identity_url)
+      steam_api_key = self.app.secret          # ← client_id 가 아니라 secret
+      response._extra = request_steam_account_summary(steam_api_key, steam_id)
+  ```
+  `request_steam_account_summary` 는 `resp.raise_for_status()` 를 그대로 던지고, `OpenIDCallbackView.get` 은 이 호출을 감싸지 않는다.
+  우리 `scripts/setup_oauth.py` 는 `client_id=STEAM_API_KEY, secret=''` 로 등록했다 → 빈 키로 Steam API 호출 → 403 → 500.
+- 왜 로그로 못 찾았나: Django 기본 `LOGGING` 의 console 핸들러에 `require_debug_true` 필터가 걸려 있다. `DEBUG=False` 인 운영에서는
+  500 트레이스백이 stdout 에 안 찍힌다(메일 핸들러만 붙는다). Railway 로그가 조용했던 게 정상 동작이었다.
+- 조치(4개):
+  1. `settings.LOGGING` 명시 — `django.request` ERROR → stdout, root INFO → stdout. **다음 500 은 로그로 잡는다.**
+  2. `setup_oauth.py` 가 `secret` 에도 키를 넣는다(두 필드 모두).
+  3. `apps.users.views.SafeSteamCallbackView` — `requests.RequestException`/`KeyError`/`ValueError` 를 잡아
+     `/login?error=steam_unavailable` 로 리다이렉트. `config/urls.py` 에서 allauth include **앞에** 같은 경로로 등록(문자열이 같아 `reverse('steam_callback')` 영향 없음).
+     스팀 API 장애 때도 500 이 아니라 "다시 시도" 화면이 나온다.
+  4. `manage.py check_oauth` — provider 별로 **그 provider 가 실제로 읽는 필드**가 비었는지, 현재 Site 가 연결됐는지, 중복 SocialApp 이 있는지 본다(값은 안 찍는다).
+- 운영 DB 조치(코드 배포로는 안 고쳐진다): Django admin → SocialApp → Steam → `Secret key` 에 Steam Web API Key 를 넣는다.
+- 검증(로컬, 실제로 돌림): `resolve('/accounts/steam/callback/')` → `SafeSteamCallbackView`, `reverse('steam_callback')` → `/accounts/steam/callback/`,
+  Steam API 403 주입 시 응답 **302 → https://hiddengemdb.com/login?error=steam_unavailable** (콤마 없음), 그리고 그 과정에서 ERROR 로그가 stdout 에 찍히는 것까지 확인.
+- 분류: A(연결 지점을 이름으로 추측 — "client_id 에 키를 넣는다"는 옛 allauth 관행을 문서 없이 따랐다) + 관측 부재(로깅).
