@@ -17,7 +17,10 @@ Vercel Registrar 등록. 갱신 $10.46/yr, 자동 갱신 켜짐, 만료 2027-09-
    - `NEXT_PUBLIC_SITE_URL = https://hiddengemdb.com`
    - (Umami 를 쓰면) `NEXT_PUBLIC_UMAMI_URL`, `NEXT_PUBLIC_UMAMI_WEBSITE_ID` 확인
    저장 후 재배포해야 반영된다.
-3. **Railway → django 서비스 → Variables**
+3. **Railway → fastapi 서비스 → Variables** ← ⚠️ 이걸 빼먹어서 프런트가 "연결에 문제가 있어요"로 죽었다 (09-07)
+   - `FRONTEND_URL = https://hiddengemdb.com,https://www.hiddengemdb.com,https://hidden-gem-gold.vercel.app`
+     (FastAPI CORS 허용 목록. django 의 같은 이름 변수와 **별개**다)
+3-2. **Railway → django 서비스 → Variables**
    - `FRONTEND_URL = https://hiddengemdb.com,https://www.hiddengemdb.com`
      (이 값이 그대로 CORS + CSRF 화이트리스트가 된다)
    - `ALLOWED_HOSTS` 에 django 도메인 유지 + 나중에 커스텀 서브도메인 붙이면 추가
