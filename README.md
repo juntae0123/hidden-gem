@@ -25,33 +25,83 @@ Steam에는 매년 1만 개 이상의 게임이 출시되지만, 발견은 인�
 ## 아키텍처
 
 ```mermaid
-graph LR
-    subgraph Client
-        W[Next.js 16<br/>Vercel]
+flowchart TB
+    subgraph client["사용자"]
+        UI["<b>Next.js 16</b> · Vercel<br/>취향 문장 · 49지표 슬라이더 · 카드 스와이프"]
     end
-    subgraph Backend["Backend (Railway)"]
-        F[FastAPI<br/>추천/검색 API]
-        D[Django<br/>인증/회원/Admin]
+
+    subgraph api["API · Railway"]
+        FA["<b>FastAPI</b><br/>추천 · 검색 · 랭킹 (읽기 경로)"]
+        DJ["<b>Django</b><br/>인증 · 회원 · 운영 대시보드"]
     end
-    subgraph Data
-        P[(PostgreSQL<br/>+ pgvector HNSW)]
-        R[(Redis<br/>캐시)]
+
+    subgraph store["데이터"]
+        PG[("<b>PostgreSQL 17</b><br/>pgvector HNSW<br/>17,313 게임 × 60지표")]
+        RD[("<b>Redis</b><br/>결과 캐시<br/>키에 채점 로직 버전 포함")]
     end
-    subgraph Pipeline["Batch Worker (주 1회)"]
-        C[Steam 크롤러] --> G[GPT 분석<br/>few-shot 증류] --> L[적재/임베딩/백분위]
+
+    subgraph batch["주간 파이프라인 · 매주 월 03:30"]
+        direction LR
+        CR["Steam 크롤러"] --> BG["gpt-5.4-mini<br/>12-shot 증류"] --> LD["적재 · 임베딩"] --> RV["리뷰 갱신"] --> GE["발굴 지수<br/>Wilson × 무명도"]
     end
-    W -->|REST| F
-    W -->|OAuth/JWT| D
-    F --> P & R
-    D --> P
-    L --> P
-    O[OpenAI API] -.-> G
-    S[Steam API] -.-> C
+
+    UI -->|REST| FA
+    UI -->|"OAuth 2.0 / JWT"| DJ
+    FA -->|읽기| PG
+    FA <-->|캐시| RD
+    DJ --> PG
+    GE -->|"upsert · 삭제 없음"| PG
+    ST["Steam API"] -.-> CR
+    OA["OpenAI Batch API<br/>요청당 $0.0049 (실측)"] -.-> BG
+    KS["용량 게이트 70% · 비용 가드 · 킬 스위치<br/>STOP_PIPELINE / STOP_BACKFILL"] -.->|중단 가능| batch
+
+    classDef c fill:#eef2ff,stroke:#4f46e5,color:#1e1b4b
+    classDef a fill:#ecfeff,stroke:#0891b2,color:#083344
+    classDef d fill:#f0fdf4,stroke:#16a34a,color:#052e16
+    classDef b fill:#fff7ed,stroke:#ea580c,color:#431407
+    classDef x fill:#f8fafc,stroke:#94a3b8,color:#0f172a,stroke-dasharray:4 3
+    class UI c
+    class FA,DJ a
+    class PG,RD d
+    class CR,BG,LD,RV,GE b
+    class ST,OA,KS x
 ```
 
-역할 분리: FastAPI는 추천·검색 읽기 경로(SQLAlchemy async), Django는
-인증·회원·데이터 관리(ORM/Admin)를 담당한다. 두 프레임워크가 같은 PostgreSQL을
-공유하며, 스키마 정본은 SQLAlchemy 모델로 고정해 이중 ORM의 드리프트를 막았다.
+**역할 분리** — FastAPI 는 추천·검색 읽기 경로(SQLAlchemy async), Django 는 인증·회원·데이터 관리(ORM/Admin)를 담당한다.
+두 프레임워크가 같은 PostgreSQL 을 공유하며, **스키마 정본은 SQLAlchemy 모델로 고정**해 이중 ORM 의 드리프트를 막았다.
+데이터는 어떤 경로로도 삭제하지 않는다 — 노출 제외는 `is_active` 플래그로만 한다.
+
+### 점수가 만들어지는 경로
+
+취향 입력은 고정된 "좋은 게임 순위"를 부르지 않는다. **말한 축만 채점하고, 발굴은 별도 항으로 분리**한다.
+
+```mermaid
+flowchart LR
+    Q["취향 입력"] --> M["질의 마스크<br/>말하지 않은 축은 채점에서 제외"]
+    M --> DIST["가중 RMSE<br/>마스크된 축만"]
+    DIST --> GA["가우시안 매치<br/>exp(-(d/3.5)²)"]
+    GA --> CORE["<b>Core 87점</b>"]
+
+    LC{"생애주기 분리"} --> NEWG["신작 ≤180일<br/>신작 리그에서 신작끼리"]
+    LC --> ESTG["정착작<br/>발굴 대상"]
+    LC --> FAMG["유명작 리뷰 2만+<br/>발굴 제외"]
+    ESTG --> EV["gem_evidence<br/>Wilson 하한 × 무명도"]
+    EV --> GEM["<b>발굴 12점</b><br/>근거 없으면 NULL (폴백 없음)"]
+
+    CORE --> SUM["최종 0~99"]
+    GEM --> SUM
+
+    classDef core fill:#eef2ff,stroke:#4f46e5,color:#1e1b4b
+    classDef gem fill:#fdf4ff,stroke:#a21caf,color:#4a044e
+    classDef lc fill:#f8fafc,stroke:#94a3b8,color:#0f172a
+    class Q,M,DIST,GA,CORE core
+    class EV,GEM gem
+    class LC,NEWG,ESTG,FAMG lc
+    class SUM core
+```
+
+절제(ablation) 실측으로 확인한 것 — 이전 버전의 X-Factor 항은 질의와 무관하게 유명작을 끌어올리고 있었다
+(단독 정렬 시 상위 20 의 리뷰 중앙값 19,700). v7 에서 게이트로 격하했고, 전환 후 취향 상위 10 에서 유명작은 0건이 됐다.
 
 ## 데이터: 교사-학생 증류 파이프라인
 

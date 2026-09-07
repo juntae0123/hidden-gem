@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     # R-3: 발굴(gem) 입력 소스. legacy = LLM gem_percentile + discovery/review_bonus (v6 시절)
     #      evidence = game_metrics.gem_evidence_score (Steam 리뷰 실측, Wilson × 무명도). 채운 뒤에만 켠다.
     GEM_SOURCE: str = "legacy"
+
+    # 운영 엔드포인트(/ops/*) 게이트 토큰. 비어 있으면 운영에서는 503 으로 막는다(로컬 DEBUG 만 통과).
+    OPS_TOKEN: str = ""
     GEM_MAX_V7_EVIDENCE: float = 12.0      # evidence 모드의 v7 gem 예산 (Core 87). τ3.5 기준 취향 오차 ≈1.35 까지 상쇄하는 정책값 (R-13)
 
     # R-14: 정확 동점 타이브레이커 — 선호를 문장으로 풀어 임베딩한 뒤 게임 임베딩과 코사인. 점수는 안 바꾸고 동점만 가른다.

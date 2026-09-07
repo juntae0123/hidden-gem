@@ -40,6 +40,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 SNAP_DIR = DATA_DIR / "audit" / "snapshots"
 API = os.getenv("FASTAPI_BASE", "http://fastapi:8000/api/v1")
+# /ops/* 는 2026-09-07 부터 X-Ops-Token 을 요구한다. 없으면 401/503 이 오고 스냅샷은 중단된다.
+OPS_HEADERS = {"X-Ops-Token": os.getenv("OPS_TOKEN", "")} if os.getenv("OPS_TOKEN") else {}
 # /ops/* 는 api prefix 밖에 있다 (main.py 에 직접 매달려 있음)
 API_ROOT = API.split("/api/")[0]
 TOP_N = 10
@@ -89,7 +91,7 @@ def clear_cache() -> dict:
     last_err = None
     for attempt in range(15):
         try:
-            b = requests.get(f"{API_ROOT}/ops/cache", timeout=20)
+            b = requests.get(f"{API_ROOT}/ops/cache", headers=OPS_HEADERS, timeout=20)
             out["before"] = b.json() if b.status_code == 200 else {"error": f"HTTP {b.status_code}"}
             last_err = None
             break
@@ -107,7 +109,7 @@ def clear_cache() -> dict:
         return out
 
     try:
-        r = requests.post(f"{API_ROOT}/ops/cache/invalidate", timeout=30)
+        r = requests.post(f"{API_ROOT}/ops/cache/invalidate", headers=OPS_HEADERS, timeout=30)
         if r.status_code != 200:
             out["why"] = f"무효화 엔드포인트 HTTP {r.status_code}: {r.text[:120]}"
             return out
@@ -117,7 +119,7 @@ def clear_cache() -> dict:
         return out
 
     try:
-        a = requests.get(f"{API_ROOT}/ops/cache", timeout=20)
+        a = requests.get(f"{API_ROOT}/ops/cache", headers=OPS_HEADERS, timeout=20)
         out["after"] = a.json() if a.status_code == 200 else {"error": f"HTTP {a.status_code}"}
     except requests.RequestException as e:
         out["why"] = f"삭제 후 통계 조회 불가: {str(e)[:120]}"
