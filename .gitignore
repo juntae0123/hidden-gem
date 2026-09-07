@@ -63,3 +63,6 @@ upload_log.txt
 
 # 파이프라인 로그 (컨테이너 마운트)
 /logs/
+
+.env*
+!.env.example

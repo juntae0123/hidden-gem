@@ -361,3 +361,75 @@ class TestWeightingDifferentiatesScores:
         )
         assert wm["narrative_depth"] == W_PRIMARY
         assert wm["lore_richness"] == W_PRIMARY
+
+# ==================== 레이트 리밋이 실제로 붙었는가 (2026-09-07) ====================
+# 기존 테스트는 settings.RATE_LIMIT_* 의 존재와 값만 검사했다. 그래서 값이 정의돼 있고
+# 테스트가 통과하는데도 **어떤 엔드포인트에도 적용되지 않은** 상태를 반년간 통과시켰다.
+# 설정이 아니라 '적용'을 검사한다.
+#
+# `main` 을 import 하지 않는다 — 호스트 venv 엔 sentry_sdk 가, 컨테이너엔 pytest 가 없어
+# main 은 어느 환경에서도 테스트로 import 되지 않는다. 라우터 모듈을 직접 본다.
+
+def _dep_names(route) -> str:
+    return " ".join(
+        f"{getattr(d.call, '__module__', '')}.{getattr(d.call, '__qualname__', '')}"
+        for d in route.dependant.dependencies
+    )
+
+
+class TestRateLimitApplied:
+    """LLM·임베딩을 호출하는 경로에 레이트 리밋 의존성이 실제로 걸려 있는지."""
+
+    PROTECTED = [
+        ("/games/search/semantic", "POST"),
+        ("/games/recommend/by-game", "POST"),
+        ("/games/recommend/by-preference", "POST"),
+        ("/games/recommend/by-vibe", "POST"),
+        ("/games/search", "GET"),
+    ]
+
+    def test_llm_endpoints_have_rate_limit(self):
+        from routers.games import router
+
+        by_key = {(r.path, m): r for r in router.routes for m in getattr(r, "methods", [])}
+        missing = []
+        for path, method in self.PROTECTED:
+            route = by_key.get((path, method))
+            assert route is not None, f"라우트를 찾지 못했다: {method} {path}"
+            if "ratelimit" not in _dep_names(route):
+                missing.append(f"{method} {path}")
+        assert not missing, f"레이트 리밋이 붙지 않은 엔드포인트: {missing}"
+
+    def test_ops_endpoints_require_token(self):
+        """/ops/* 는 전부 토큰 게이트가 걸려 있어야 한다 (C-15)."""
+        from routers.ops import router
+
+        routes = [r for r in router.routes if hasattr(r, "dependant")]
+        assert len(routes) >= 3, f"/ops 라우트가 {len(routes)}개뿐이다"
+        for r in routes:
+            assert "require_ops_token" in _dep_names(r), f"토큰 게이트 없음: {r.path}"
+
+    def test_ops_token_fail_closed(self):
+        """토큰이 비어 있고 DEBUG 가 아니면 503 — 열린 채로 남지 않는다."""
+        import asyncio
+        from fastapi import HTTPException
+        from routers.ops import require_ops_token
+        from config import settings
+
+        saved = (settings.OPS_TOKEN, settings.DEBUG)
+        try:
+            settings.OPS_TOKEN, settings.DEBUG = "", False
+            try:
+                asyncio.run(require_ops_token(None))
+                assert False, "토큰 미설정인데 통과했다"
+            except HTTPException as e:
+                assert e.status_code == 503
+            settings.OPS_TOKEN = "abc"
+            try:
+                asyncio.run(require_ops_token("wrong"))
+                assert False, "잘못된 토큰이 통과했다"
+            except HTTPException as e:
+                assert e.status_code == 401
+            asyncio.run(require_ops_token("abc"))  # 정상 토큰은 통과
+        finally:
+            settings.OPS_TOKEN, settings.DEBUG = saved

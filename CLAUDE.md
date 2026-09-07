@@ -16,6 +16,7 @@
 | `rec_snapshot`, `gem_evidence`, `migrate`, `refresh_reviews`, `recalc_percentile`, `batch_processor` | **batch** (embeddings/ 마운트, PYTHONPATH=/app) | `docker compose exec batch python -m embeddings.<모듈> ...` |
 | `scripts.ablation` | **fastapi** (cwd=/app=fastapi_app, DB 의존성) | `docker compose exec fastapi python -m scripts.ablation --pool default` |
 | pytest | **호스트 venv** (컨테이너에 pytest 없음) | `.venv/Scripts/pytest fastapi_app/tests/... -q` |
+| 테스트가 import 할 수 있는 것 | 라우터·서비스 모듈만. **`main` 은 import 하지 않는다** — 호스트 venv 에 `sentry_sdk` 가 없다 (2026-09-07 `ModuleNotFoundError`). 앱 수준 검사는 라우터 모듈(`routers.games.router`, `routers.ops.router`)을 직접 본다 | |
 | 마이그레이션 SQL | `embeddings/migrations/` 에 둔다 | `deploy/` 는 batch 에 마운트되지 않는다 (FileNotFoundError, 2026-09-05) |
 
 - 실수 기록: fastapi 컨테이너에 `embeddings.rec_snapshot`·`fastapi_app.scripts.ablation`·`pytest` 를 주었다가 4개 전부 실패 (2026-09-05).
@@ -54,6 +55,13 @@
 - 모델(`models/game.py`)에 컬럼을 추가했으면 **push 전에** 운영 DB 마이그레이션 → 채움 → Railway 변수 → push (C-12). 순서를 바꾸면 500.
 - push 를 권하기 전에 `git log origin/master..master --oneline` 으로 미푸시 커밋을 세고, 그 안에 스키마·플래그 변경이 있는지 본다.
 - 사용자가 자는 시간엔 배포하지 않는다. push 는 사용자가 한다.
+
+## 2'''. 방어는 '설정'이 아니라 '적용'을 검사한다
+- `settings.RATE_LIMIT_*` 는 정의돼 있고 테스트도 통과했지만 **어떤 엔드포인트에도 붙어 있지 않았다**(taste.py 만 예외).
+  설정의 존재·값만 검사하는 테스트는 통과하면서 무방비를 통과시킨다. 실수 기록: 2026-09-07 공개 전 점검에서 발견.
+- 규칙: 보호 장치를 만들면 **그 장치가 대상 경로에 붙었는지**를 테스트한다(라우트의 dependencies 검사). 값 검증은 그다음이다.
+  같은 함정을 이미 두 번 겪었다 — 정적 `/health`(무엇을 확인하는지 모르는 헬스체크), 무인증 `/ops/*`(경로만 숨김).
+- 새 엔드포인트를 추가하면 확인할 것 셋: ① 레이트 리밋 의존성 ② 인증(운영용이면 토큰) ③ 입력 길이·형식 제한.
 
 ## 2''. 운영 DB 에 쓰기 전
 - 운영에 1천 행 이상 쓰기 전 `embeddings.db_space` 로 크기·한도를 본다 (C-13). 실수 기록: 볼륨 0.5GB 에 12,843행을 밀어 Postgres 크래시 루프 (2026-09-05 심야).
