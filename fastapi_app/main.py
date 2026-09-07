@@ -170,7 +170,7 @@ app.add_middleware(
     # 기본: Vercel 프리뷰 전체 허용 (Bearer 토큰 방식이라 쿠키 탈취 위험은 없음).
     # 운영에서 좁히려면 CORS_ORIGIN_REGEX 환경변수로 자기 프로젝트 슬러그만 허용:
     #   예) https://hidden-gem-.*\.vercel\.app
-    allow_origin_regex=os.getenv("CORS_ORIGIN_REGEX", r"https://.*\.vercel\.app"),
+    allow_origin_regex=os.getenv("CORS_ORIGIN_REGEX", r"^https://hidden-gem[a-z0-9-]*\.vercel\.app$"),  # 남의 vercel.app 은 제외 (2026-09-07)
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
@@ -225,7 +225,8 @@ async def health_check():
             await conn.execute(text("SELECT 1"))
         components["db"] = "ok"
     except Exception as exc:
-        components["db"] = f"error: {type(exc).__name__}: {exc}"[:200]
+        # 운영에서는 예외 타입만 — 메시지에 내부 호스트명·포트가 들어간다
+        components["db"] = f"error: {type(exc).__name__}" + (f": {exc}"[:160] if settings.DEBUG else "")
 
     try:
         from services.cache import recommendation_cache
@@ -233,7 +234,7 @@ async def health_check():
         await r.ping()
         components["redis"] = "ok"
     except Exception as exc:
-        components["redis"] = f"error: {type(exc).__name__}: {exc}"[:200]
+        components["redis"] = f"error: {type(exc).__name__}" + (f": {exc}"[:160] if settings.DEBUG else "")
 
     degraded = [k for k, v in components.items() if v != "ok"]
     return {

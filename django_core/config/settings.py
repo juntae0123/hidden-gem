@@ -209,7 +209,10 @@ else:
     CORS_ALLOWED_ORIGINS = [
         o.strip() for o in os.getenv("FRONTEND_URL", "https://hiddengemdb.com").split(",") if o.strip()
     ]
-    CORS_ALLOWED_ORIGIN_REGEXES = [r"^https://.*\.vercel\.app$"]
+    # 2026-09-07: `.*\.vercel\.app` 은 남의 Vercel 앱도 전부 허용했다. 세션 쿠키가 SameSite=None 이라
+    # 관리자가 로그인한 채 악성 vercel.app 페이지를 열면 그 페이지가 admin 응답을 읽을 수 있다.
+    # 이 프로젝트의 프리뷰 URL(hidden-gem-*.vercel.app)만 허용한다.
+    CORS_ALLOWED_ORIGIN_REGEXES = [r"^https://hidden-gem[a-z0-9-]*\.vercel\.app$"]
 
 # 쿠키/JWT 함께 사용하려면 필수
 CORS_ALLOW_CREDENTIALS = True
