@@ -24,6 +24,10 @@ Vercel Registrar 등록. 갱신 $10.46/yr, 자동 갱신 켜짐, 만료 2027-09-
    - `FRONTEND_URL = https://hiddengemdb.com,https://www.hiddengemdb.com`
      (이 값이 그대로 CORS + CSRF 화이트리스트가 된다)
    - `ALLOWED_HOSTS` 에 django 도메인 유지 + 나중에 커스텀 서브도메인 붙이면 추가
+**주의** — `FRONTEND_URL` 을 콤마 목록으로 줄 때, Django 는 목록 전체를 CORS/CSRF 에 쓰고
+**리다이렉트에는 첫 항목만** 쓴다(`FRONTEND_URLS` / `FRONTEND_URL`). 첫 항목이 실제 서비스 주소여야 한다 —
+www 를 먼저 쓰면 로그인 후 www 로 튄다.
+
 4. **Google Cloud Console → OAuth 클라이언트**
    - 콜백은 Django 도메인이라 리디렉션 URI 는 그대로 둬도 로그인은 된다.
    - 승인된 JavaScript 원본에 `https://hiddengemdb.com` 을 추가해두면 안전.

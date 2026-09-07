@@ -54,6 +54,10 @@
   꼭 절대경로가 필요하면 `MSYS_NO_PATHCONV=1` 을 명령 앞에 붙이거나 `//app/...` 로 쓴다.
 - DB URL(`postgresql://...`)·`-c "SELECT ..."` 는 변환 대상이 아니다. 변환되는 건 `/`로 시작하는 경로형 인자다.
 
+- **콤마 목록 변수를 리다이렉트에 쓰지 않는다**: `FRONTEND_URL` 은 CORS/CSRF 화이트리스트 겸용이라 콤마 목록일 수 있다.
+  그 값을 그대로 리다이렉트 URL 에 붙이면 `https://a.com,https://b.com/auth/callback` 이 되어 NXDOMAIN 이 난다.
+  실수 기록: 2026-09-07 구글 로그인이 `hiddengemdb.com,https` 로 이동해 실패. 규칙: 화이트리스트는 `FRONTEND_URLS`(목록),
+  리다이렉트는 `settings.FRONTEND_URL`(첫 항목). 뷰에서 `os.getenv` 로 직접 읽지 않는다.
 - **프런트 도메인 하나 = 네 곳**: ① Railway **fastapi** `FRONTEND_URL`(CORS) ② Railway **django** `FRONTEND_URL`(CORS+CSRF) ③ Vercel `NEXT_PUBLIC_SITE_URL`
   ④ Google OAuth 승인된 원본. 실수 기록: 2026-09-07 도메인 전환에서 ①을 빼먹어 새 도메인에서 API 전부 CORS 거부 → "연결에 문제가 있어요".
   같은 이름의 변수가 서비스마다 따로 있다 — 하나 고쳤다고 끝난 게 아니다(플래그 5곳 규칙과 같은 구조).

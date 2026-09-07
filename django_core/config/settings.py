@@ -163,9 +163,16 @@ LOGIN_REDIRECT_URL = '/'
 ACCOUNT_ADAPTER = 'apps.users.views.JWTAccountAdapter' 
 SOCIALACCOUNT_ADAPTER = 'apps.users.views.JWTSocialAccountAdapter'
 
-# 프런트 주소. 운영에서는 콤마로 여러 개(운영 도메인 + www) 를 줄 수 있고,
-# 그 값이 그대로 CORS/CSRF 화이트리스트가 된다 (아래 참조).
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+# 프런트 주소. 운영에서는 콤마로 여러 개(운영 도메인 + www)를 줄 수 있고, 그 값이 그대로
+# CORS/CSRF 화이트리스트가 된다 (아래 참조).
+#
+# ⚠️ 2026-09-07 사고: 리다이렉트(OAuth 콜백 → 프런트)에 이 값을 **그대로** 쓰면
+#    `https://a.com,https://b.com/auth/callback` 이 되어 DNS_PROBE_FINISHED_NXDOMAIN 이 난다.
+#    목록은 화이트리스트용(FRONTEND_URLS), 리다이렉트는 **첫 항목**(FRONTEND_URL)만 쓴다.
+FRONTEND_URLS = [
+    o.strip().rstrip('/') for o in os.getenv('FRONTEND_URL', 'http://localhost:3000').split(',') if o.strip()
+]
+FRONTEND_URL = FRONTEND_URLS[0] if FRONTEND_URLS else 'http://localhost:3000'
 
 # ==================== 보안 헤더 (운영 전용) / Security Headers ====================
 # 개발(DEBUG=True)에서는 HTTPS가 없으므로 전부 비활성.
@@ -206,9 +213,7 @@ if DEBUG:
     ]
 else:
     # 운영: FRONTEND_URL 콤마 구분 다중 허용 + Vercel 프리뷰 정규식
-    CORS_ALLOWED_ORIGINS = [
-        o.strip() for o in os.getenv("FRONTEND_URL", "https://hiddengemdb.com").split(",") if o.strip()
-    ]
+    CORS_ALLOWED_ORIGINS = list(FRONTEND_URLS)   # 화이트리스트는 목록 전체
     # 2026-09-07: `.*\.vercel\.app` 은 남의 Vercel 앱도 전부 허용했다. 세션 쿠키가 SameSite=None 이라
     # 관리자가 로그인한 채 악성 vercel.app 페이지를 열면 그 페이지가 admin 응답을 읽을 수 있다.
     # 이 프로젝트의 프리뷰 URL(hidden-gem-*.vercel.app)만 허용한다.

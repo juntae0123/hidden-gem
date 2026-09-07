@@ -10,6 +10,8 @@ v11 → v12 정석:
 import logging
 import os
 
+from django.conf import settings
+
 import requests
 from django.contrib.auth import get_user_model
 from django.shortcuts import redirect
@@ -24,7 +26,9 @@ from apps.users.serializers import UserSerializer, OnboardingSerializer
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+# 리다이렉트에는 **단일 주소**만 쓴다. 환경변수는 콤마 목록일 수 있어(CORS 화이트리스트 겸용)
+# settings 가 첫 항목만 골라둔 값을 가져온다 — 직접 os.getenv 하면 콤마가 URL 에 섞인다 (2026-09-07 사고).
+FRONTEND_URL = settings.FRONTEND_URL
 
 
 class JWTAccountAdapter(DefaultAccountAdapter):
