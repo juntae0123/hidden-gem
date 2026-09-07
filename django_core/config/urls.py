@@ -9,6 +9,7 @@ v5 → v6 정석:
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework_simplejwt.views import (
     TokenRefreshView,
     TokenBlacklistView,
@@ -19,12 +20,18 @@ from apps.users.views import (
     PendingSurveyView, SubmitSurveyView,
     FavoriteToggleView, FavoriteListView,
     TastePreferenceView, DeleteAccountView, SteamLibraryView,
+    SafeSteamCallbackView,
 )
 
 urlpatterns = [
     # 운영 대시보드 — admin.site.urls 보다 먼저 (staff 로그인 필요)
     path('admin/dashboard/', ops_dashboard, name='ops_dashboard'),
     path('admin/', admin.site.urls),
+
+    # 스팀 콜백만 우리 뷰로 가로챈다 — allauth include 보다 **먼저** 놓아야 이긴다.
+    # (Steam API 실패 시 500 대신 로그인 화면으로: SafeSteamCallbackView 주석 참고)
+    # URL 문자열은 allauth 의 'steam_callback' 과 동일하므로 return_to 검증에 영향 없음.
+    path('accounts/steam/callback/', csrf_exempt(SafeSteamCallbackView.as_view())),
 
     # Google OAuth (allauth 표준)
     # /accounts/google/login/           - 로그인 시작

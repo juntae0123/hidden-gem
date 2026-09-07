@@ -275,3 +275,48 @@ GPT_MODELS = {
 REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
 REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
 REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
+
+# ==================== 로깅 ====================
+# ⚠️ 2026-09-07 사고: 스팀 로그인 콜백이 500 이 났는데 Railway 로그에 아무것도 안 남았다.
+#    Django 기본 LOGGING 은 console 핸들러에 require_debug_true 필터가 걸려 있어서
+#    DEBUG=False(운영)에서는 트레이스백을 어디에도 출력하지 않는다(메일 핸들러만 붙는다).
+#    → 운영에서 500 의 원인을 보려면 stdout 핸들러를 직접 붙여야 한다.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'plain': {
+            'format': '[{asctime}] {levelname} {name}: {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'stdout': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'plain',
+        },
+    },
+    'root': {
+        'handlers': ['stdout'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        # 500 트레이스백. DEBUG 여부와 무관하게 항상 stdout 으로.
+        'django.request': {
+            'handlers': ['stdout'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        # 액세스 로그는 gunicorn 이 이미 찍으므로 중복 방지
+        'django.server': {
+            'handlers': ['stdout'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'django.db.backends': {
+            'handlers': ['stdout'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+}

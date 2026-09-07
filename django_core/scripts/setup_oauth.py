@@ -74,7 +74,13 @@ def setup_google_app(site):
 def setup_steam_app(site):
     """
     Register Steam SocialApp (OpenID).
-    Korean: Steam SocialApp 등록. client_id = Steam Web API Key, secret 불필요.
+    Korean: Steam SocialApp 등록.
+
+    ⚠️ 2026-09-07 사고: 키를 client_id 에만 넣었더니 스팀 콜백이 500 이 났다.
+       allauth 65.x 의 SteamOpenIDProvider.sociallogin_from_response 는
+       `steam_api_key = self.app.secret` — **secret 필드**를 읽는다.
+       (client_id 는 안 읽는다. 키가 빈 채로 Steam API 를 때려 403 → raise_for_status → 500)
+       라이브러리가 실제로 읽는 필드에 넣는다. 두 필드 모두 채워 두는 편이 안전하다.
     """
     api_key = os.getenv('STEAM_API_KEY', '')
 
@@ -87,7 +93,7 @@ def setup_steam_app(site):
         defaults={
             'name': 'Steam',
             'client_id': api_key,
-            'secret': '',
+            'secret': api_key,   # allauth 가 읽는 쪽은 이것
         }
     )
     app.sites.add(site)
