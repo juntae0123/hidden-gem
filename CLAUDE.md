@@ -81,6 +81,11 @@
 - 규칙: 외부 provider 자격증명을 세팅했으면 **라이브러리 소스에서 그 값을 어느 필드로 읽는지 확인**한다(문서보다 소스가 먼저다).
   확인 명령을 남긴다 — `python manage.py check_oauth` (값은 안 찍고 빈칸·Site 연결·중복만 본다).
 - 남의 API 를 부르는 콜백은 그 API 가 죽어도 500 이 아니어야 한다. 스팀 콜백은 `SafeSteamCallbackView` 로 감싸 로그인 화면으로 되돌린다.
+- 같은 날 같은 모양으로 한 번 더 걸렸다: `secret` 을 채워 500 이 사라지자 이번엔 **회원가입 폼**이 떴다.
+  allauth 의 자동 가입 판정은 `user.email` 이 아니라 `sociallogin.email_addresses` 를 본다(`process_auto_signup_email`).
+  `populate_user` 에서 채운 값은 폼용이지 판정용이 아니었다 → `pre_social_login` 에서 스팀에만 합성 주소를 넣는다.
+  규칙: **값을 넣기 전에 그 값을 읽는 코드를 찾는다.** 필드 이름이 같아도 읽는 자리가 다르면 안 넣은 것과 같다.
+  회귀 테스트는 '고친 뒤 통과'만 두지 않고 **'훅을 빼면 다시 거부된다'** 까지 고정한다 (`apps/users/tests.py`).
 
 ## 2''''''. DEBUG=False 면 Django 는 500 트레이스백을 **어디에도** 안 찍는다
 - Django 기본 `LOGGING` 의 console 핸들러에는 `require_debug_true` 필터가 걸려 있다. 운영에서 500 이 나도 Railway 로그에 아무것도 안 남는다(메일 핸들러만 붙어 있다).

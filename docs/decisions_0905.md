@@ -378,3 +378,31 @@ PRD §4-2 "변별력 25 vs 3.5" 의 25 = 5.0². 개발자가 알고 쓴 것. 경
 - 검증(로컬, 실제로 돌림): `resolve('/accounts/steam/callback/')` → `SafeSteamCallbackView`, `reverse('steam_callback')` → `/accounts/steam/callback/`,
   Steam API 403 주입 시 응답 **302 → https://hiddengemdb.com/login?error=steam_unavailable** (콤마 없음), 그리고 그 과정에서 ERROR 로그가 stdout 에 찍히는 것까지 확인.
 - 분류: A(연결 지점을 이름으로 추측 — "client_id 에 키를 넣는다"는 옛 allauth 관행을 문서 없이 따랐다) + 관측 부재(로깅).
+
+## R-26. (2026-09-07 밤, R-25 후속) 500 을 고치니 회원가입 폼이 나왔다 — 판정이 보는 자리에 이메일이 없었다
+- 증상: `secret` 을 채워 500 은 사라졌다(스팀 API 가 personaname 을 정상 반환). 그런데 로그인이 완료되지 않고
+  `/accounts/3rdparty/signup/` 회원가입 폼("Steam 의 계정을 이용하여 Hidden Gem 으로 로그인하려 합니다")이 떴다.
+- 원인: allauth 의 자동 가입 판정은 `user.email` 을 보지 않는다.
+  ```python
+  # allauth/socialaccount/internal/flows/signup.py
+  def process_auto_signup_email(request, sociallogin):
+      email = None
+      if sociallogin.email_addresses:          # ← 여기만 본다
+          email = sociallogin.email_addresses[0].email
+      if email: ...
+      elif app_settings.EMAIL_REQUIRED:
+          auto_signup = False                  # → redirect_to_signup
+  ```
+  `SOCIALACCOUNT_EMAIL_REQUIRED` 기본값은 `ACCOUNT_SIGNUP_FIELDS=['email*']` 에서 True 로 유도된다.
+  우리는 `populate_user` 에서 `user.email` 만 채웠다 — 폼을 통과시키는 값이지, 판정이 보는 값이 아니었다.
+- 조치: `JWTSocialAccountAdapter.pre_social_login` 에서 provider 가 steam 이고 `email_addresses` 가 비어 있을 때만
+  합성 주소 `steam_<uid>@users.hiddengem.local` 를 `sociallogin.email_addresses` 에 넣는다(신규 가입 건만, `is_existing` 이면 통과).
+  `pre_social_login` 은 `process_signup` **앞에** 호출되므로 판정 시점에 값이 있다.
+- 대안으로 `SOCIALACCOUNT_EMAIL_REQUIRED = False` 한 줄이 있었지만 채택하지 않았다 — 이메일을 안 주는 **모든**
+  provider 가 조용히 자동 가입된다. 스팀에만 한정하는 쪽이 나중에 provider 를 추가할 때 안전하다.
+- 테스트 신설 `django_core/apps/users/tests.py` (9건, 전부 통과):
+  자동 가입 판정이 True 인지 / **훅이 없으면 False 로 남는지**(기전 고정) / 구글은 개입 안 하는지 /
+  콜백 라우팅이 우리 뷰인지 / `reverse('steam_callback')` 경로 불변 / Steam API 403 → 302 /
+  `FRONTEND_URL` 에 콤마 없음. 실행: `docker compose exec django python manage.py test apps.users`
+- 같은 사고의 두 얼굴: R-25 는 "키를 라이브러리가 읽는 필드에", R-26 은 "이메일을 라이브러리가 판정하는 자리에".
+  둘 다 '넣었다'와 '그 코드가 읽는다'의 차이였다.
