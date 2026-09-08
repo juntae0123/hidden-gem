@@ -55,7 +55,7 @@ export default function RankingPage() {
             type="button"
             onClick={() => setType(t.key)}
             className={cn(
-              'px-4 py-3 text-[16px] font-semibold -mb-px border-b-2',
+              'px-3 sm:px-4 py-3 text-[15px] sm:text-[16px] font-semibold -mb-px border-b-2 whitespace-nowrap',
               (t.key === 'new' ? isNewTab : type === t.key)
                 ? 'border-purple-600 text-purple-700 dark:text-purple-300'
                 : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200',

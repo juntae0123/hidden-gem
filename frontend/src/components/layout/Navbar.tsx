@@ -54,17 +54,19 @@ export function Navbar() {
       'bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md',
       'border-b border-zinc-200 dark:border-zinc-800'
     )}>
-      <nav className="max-w-7xl mx-auto px-6 h-[68px] flex items-center justify-between">
+      <nav className="max-w-7xl mx-auto px-3 sm:px-6 h-14 sm:h-[68px] flex items-center justify-between gap-2">
         {/* 로고 */}
-        <Link href="/" className="flex items-center gap-2">
-          <span className="text-purple-600 text-2xl leading-none">✦</span>
-          <span className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
+        <Link href="/" className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <span className="text-purple-600 text-xl sm:text-2xl leading-none">✦</span>
+          {/* 좁은 화면(≤399px)에서는 이름을 숨긴다 — 히어로에 같은 이름이 바로 나온다.
+              키운 글씨를 그대로 두면 '랭 킹' 처럼 메뉴가 세로로 쪼개진다 (2026-09-07 모바일 사고) */}
+          <span className="hidden min-[400px]:inline text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
             Hidden Gem
           </span>
         </Link>
 
         {/* 탭 */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
           {TABS.map((tab) => {
             const active =
               pathname === tab.href ||
@@ -78,13 +80,14 @@ export function Navbar() {
                   href={tab.href}
                   onClick={() => trackEvent('nav_taste_click')}
                   className={cn(
-                    'flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[15px] font-semibold transition-colors',
+                    'flex items-center gap-1.5 rounded-lg font-semibold transition-colors whitespace-nowrap',
+                    'px-2.5 py-2 text-[13px] sm:px-4 sm:py-2.5 sm:text-[15px]',
                     active
                       ? 'bg-purple-600 text-white'
                       : 'bg-purple-600/10 text-purple-700 dark:text-purple-300 hover:bg-purple-600/20'
                   )}
                 >
-                  <Sparkles className="w-4 h-4" />
+                  <Sparkles className="hidden sm:block w-4 h-4" />
                   {tab.label}
                 </Link>
               );
@@ -96,7 +99,8 @@ export function Navbar() {
                 key={tab.href}
                 href={tab.href}
                 className={cn(
-                  'px-4 py-2.5 rounded-lg text-[15px] font-medium transition-colors',
+                  'rounded-lg font-medium transition-colors whitespace-nowrap',
+                  'px-2.5 py-2 text-[13px] sm:px-4 sm:py-2.5 sm:text-[15px]',
                   active
                     ? 'bg-purple-600/10 text-purple-700 dark:text-purple-300'
                     : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
@@ -109,7 +113,7 @@ export function Navbar() {
         </div>
 
         {/* 우측 액션 */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* 로그인 상태에 따른 분기 */}
           {mounted && isLoggedIn && user ? (
             // 로그인됨 — 닉네임 + 드롭다운
@@ -118,14 +122,14 @@ export function Navbar() {
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setShowMenu(v => !v); }}
                 className={cn(
-                  'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md',
+                  'flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 rounded-md',
                   'border border-zinc-200 dark:border-zinc-800',
                   'text-zinc-700 dark:text-zinc-200 text-[12px]',
                   'hover:border-purple-500 transition-colors'
                 )}
               >
                 <User className="w-3.5 h-3.5 text-purple-600" />
-                <span className="max-w-[80px] truncate">
+                <span className="max-w-[56px] sm:max-w-[80px] truncate">
                   {user.nickname || user.email.split('@')[0]}
                 </span>
               </button>
@@ -168,7 +172,7 @@ export function Navbar() {
             <Link
               href="/login"
               className={cn(
-                'w-9 h-9 rounded-lg flex items-center justify-center',
+                'w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center',
                 'border border-zinc-200 dark:border-zinc-800',
                 'text-zinc-600 dark:text-zinc-300',
                 'hover:border-purple-500 hover:text-purple-600',
@@ -185,7 +189,7 @@ export function Navbar() {
             type="button"
             onClick={toggleTheme}
             className={cn(
-              'w-9 h-9 rounded-lg flex items-center justify-center',
+              'w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center',
               'border border-zinc-200 dark:border-zinc-800',
               'text-zinc-600 dark:text-zinc-300',
               'hover:border-purple-500 hover:text-purple-600',
