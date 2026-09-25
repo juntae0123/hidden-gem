@@ -126,6 +126,10 @@ export default function RankingPage() {
         <ErrorState type="not-found" variant="inline" title="조건에 맞는 게임이 없어요" description="장르를 바꿔보세요" />
       )}
 
+      {!isLoading && !error && data?.status === 'ok' && data.note && items.length > 0 && (
+        <p className="text-[12px] text-zinc-500">{data.note}</p>
+      )}
+
       {!isLoading && !error && items.length > 0 && <RankingTable items={items} type={type} />}
 
       {isNewTab && items.length > 0 && (

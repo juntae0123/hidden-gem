@@ -14,8 +14,9 @@ $TaskName   = "HiddenGem_Weekly_Ingest"
 $ProjectDir = "C:\Hidden-Gem-project"
 $LogPath    = "$ProjectDir\logs\weekly_task.log"
 
-# 파이프라인은 batch 컨테이너에서 실행 (의존성이 그 이미지에 있음)
-# 전제: 실행 시각에 Docker Desktop이 켜져 있어야 함 (설정 > 로그인 시 시작 권장)
+# 파이프라인은 batch 이미지에서 실행 (의존성이 그 이미지에 있음).
+# run_weekly.ps1 이 Docker 엔진을 기다린 뒤 'docker compose run --rm' 으로 일회성 컨테이너를 띄운다.
+# (예전 'docker compose exec' 방식은 컨테이너가 꺼져 있으면 실패 — 9/13·9/20 누락, R-27)
 
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
@@ -25,8 +26,8 @@ if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
 New-Item -ItemType Directory -Force -Path "$ProjectDir\logs" | Out-Null
 
 $Action = New-ScheduledTaskAction `
-    -Execute "cmd.exe" `
-    -Argument "/c `"docker compose exec -T batch python -m embeddings.weekly_pipeline >> `"$LogPath`" 2>&1`"" `
+    -Execute "powershell.exe" `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$ProjectDir\scripts\pipeline\run_weekly.ps1`"" `
     -WorkingDirectory $ProjectDir
 
 $Trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday -At "03:30AM"

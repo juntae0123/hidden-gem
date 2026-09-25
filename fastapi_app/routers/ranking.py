@@ -59,6 +59,7 @@ class RankingItem(BaseModel):
     velocity_per_day: Optional[float] = None  # new
     delta_30d: Optional[int] = None           # rising
     growth_30d_pct: Optional[float] = None    # rising
+    window_days: Optional[int] = None         # rising: 실제 비교 구간(일). 30일 이력이 없으면 7~29일 (R-27)
     badge: str = ""                           # "히든젬" | "주목" | "떠오르는" | "신작" | ""
 
 
@@ -164,39 +165,53 @@ async def rank_new(db, genre, limit, quiet: bool = False):
     return [_item(i + 1, g, "new", velocity_per_day=v) for i, (_, v, g) in enumerate(rows[:limit])]
 
 
+RISING_MIN_GAP_DAYS = 7        # 이보다 짧은 구간은 노이즈 — 비교하지 않는다
+RISING_TARGET_DAYS = 30        # 목표 구간. 이력이 모자라면 7일 이상 중 30일에 가장 가까운 시점을 쓴다 (R-27)
+RISING_MIN_DELTA_30D = 20      # 30일 환산 Δ 기준
+RISING_RELAXED_DELTA_30D = 5   # 기준 통과가 RISING_MIN_FILL 미만이면 이 값으로 완화
+RISING_MIN_FILL = 10
+
+
 async def rank_rising(db, genre, limit):
-    """review_history(app_id, refreshed_at, total_reviews) 에서 30일 Δ. 테이블이 없거나 이력이 1회분이면 collecting.
+    """review_history(app_id, refreshed_at, total_reviews) 에서 최근 구간 Δ.
+    30일 전 시점이 없으면 7일 이상 떨어진 시점 중 30일에 가장 가까운 것을 쓰고, 정렬은 30일 환산 증가율로 한다 (R-27).
+    표시는 실제 구간·실제 건수 그대로(window_days) — 환산값을 실측처럼 보이지 않게.
+    7일 이상 떨어진 이력쌍이 하나도 없을 때만 신작 속도 랭킹으로 임시 대체한다(빈 탭 방지, note 로 명시).
     테이블 부재만 'collecting' 으로 처리한다 — 그 외 SQL 오류를 삼키면 장애가 '데이터 쌓는 중'으로 위장된다 (검토 E-8)."""
     exists = (await db.execute(text("SELECT to_regclass('review_history')"))).scalar()
     if exists is None:
         return [], "collecting", "리뷰 이력 테이블이 없다 — refresh_reviews 가 append-only 이력을 쌓기 시작한 뒤 생긴다"
     try:
-        sql = text("""
+        sql = text(f"""
             WITH latest AS (
                 SELECT DISTINCT ON (app_id) app_id, refreshed_at, total_reviews
                 FROM review_history ORDER BY app_id, refreshed_at DESC
             ),
             past AS (
-                SELECT DISTINCT ON (h.app_id) h.app_id, h.total_reviews AS past_total, h.refreshed_at AS past_at
-                FROM review_history h
-                WHERE h.refreshed_at <= NOW() - INTERVAL '30 days'
-                ORDER BY h.app_id, h.refreshed_at DESC
+                SELECT DISTINCT ON (h.app_id) h.app_id, h.total_reviews AS past_total,
+                       EXTRACT(EPOCH FROM (l.refreshed_at - h.refreshed_at)) / 86400.0 AS gap_days
+                FROM review_history h JOIN latest l ON l.app_id = h.app_id
+                WHERE h.refreshed_at <= l.refreshed_at - INTERVAL '{RISING_MIN_GAP_DAYS} days'
+                ORDER BY h.app_id,
+                         ABS(EXTRACT(EPOCH FROM (l.refreshed_at - h.refreshed_at)) / 86400.0 - {RISING_TARGET_DAYS}),
+                         h.refreshed_at DESC
             )
-            SELECT l.app_id, l.total_reviews, p.past_total,
+            SELECT l.app_id, l.total_reviews, p.past_total, p.gap_days,
                    (l.total_reviews - p.past_total) AS delta
             FROM latest l JOIN past p ON p.app_id = l.app_id
-            WHERE l.total_reviews - p.past_total >= 20
+            WHERE l.total_reviews - p.past_total > 0
         """)
-        rows = (await db.execute(sql)).fetchall()
+        rows = (await db.execute(sql)).fetchall()   # 상수만 f-string 으로 넣는다 (사용자 입력 없음)
     except Exception as e:
         await db.rollback()
         logger.exception("rank_rising SQL 실패")
         raise HTTPException(status_code=500, detail=f"요즘 뜨는 랭킹 계산 실패: {type(e).__name__}")
     if not rows:
-        return [], "collecting", "30일 전 이력이 아직 없다 — 주간 리뷰 갱신 4~5회 뒤부터 계산된다"
-    deltas = {r.app_id: (int(r.delta), int(r.past_total)) for r in rows}
+        items = await rank_new(db, genre, limit)
+        return items, "ok", "리뷰 이력이 아직 일주일치가 안 된다 — 쌓이는 동안 출시 초기 속도 기준으로 대신 보여준다"
+    deltas = {r.app_id: (int(r.delta), int(r.past_total), float(r.gap_days)) for r in rows}
     pool = await _base_pool(db, genre)
-    scored = []
+    cands = []
     for g in pool:
         if g.app_id not in deltas:
             continue
@@ -205,13 +220,31 @@ async def rank_rising(db, genre, limit):
         w = wilson_lower(g.steam_positive_ratio, g.review_count)
         if w < 0.5:
             continue
-        delta, past = deltas[g.app_id]
-        growth = delta / max(past, 50) * 100.0      # 절대 건수면 유명작이 독식 → 상대 증가율
-        scored.append((growth, delta, g))
+        delta, past, gap = deltas[g.app_id]
+        scale = RISING_TARGET_DAYS / max(gap, RISING_MIN_GAP_DAYS)
+        d30 = delta * scale
+        growth30 = delta / max(past, 50) * 100.0 * scale   # 절대 건수면 유명작이 독식 → 상대 증가율 (30일 환산)
+        cands.append((growth30, d30, delta, gap, g))
+    scored = [c for c in cands if c[1] >= RISING_MIN_DELTA_30D]
+    relaxed = False
+    if len(scored) < min(limit, RISING_MIN_FILL):
+        scored = [c for c in cands if c[1] >= RISING_RELAXED_DELTA_30D]
+        relaxed = True
     scored.sort(key=lambda r: (r[0], r[1]), reverse=True)
-    items = [_item(i + 1, g, "rising", delta_30d=d, growth_30d_pct=round(gr, 1))
-             for i, (gr, d, g) in enumerate(scored[:limit])]
-    return items, "ok", ""
+    top = scored[:limit]
+    items = [_item(i + 1, g, "rising", delta_30d=delta,
+                   growth_30d_pct=round(delta / max(deltas[g.app_id][1], 50) * 100.0, 1),
+                   window_days=int(round(gap)))
+             for i, (_, _, delta, gap, g) in enumerate(top)]
+    note = ""
+    if top:
+        gaps = sorted(int(round(c[3])) for c in top)
+        med = gaps[len(gaps) // 2]
+        if med < RISING_TARGET_DAYS - 2:
+            note = f"한 달치 이력이 쌓이는 중이라 최근 약 {med}일 기준으로 계산했다 (순위는 30일 환산)"
+        if relaxed:
+            note = (note + " · " if note else "") + "기준을 낮춰 표본을 채웠다"
+    return items, "ok", note
 
 
 @router.get("/ranking", response_model=RankingResponse)
@@ -221,7 +254,7 @@ async def ranking(
     limit: int = Query(30, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    key = f"rank:{CACHE_VERSION}:{type}:{genre or '-'}:{limit}"
+    key = f"rank2:{CACHE_VERSION}:{type}:{genre or '-'}:{limit}"
     cached = await recommendation_cache.get(key)
     if cached:
         return RankingResponse(**cached)
@@ -237,5 +270,7 @@ async def ranking(
         items, status, note = await rank_rising(db, genre, limit)
 
     resp = RankingResponse(type=type, genre=genre, total=len(items), status=status, note=note, items=items)
-    await recommendation_cache.set(key, resp.model_dump(), ttl=settings.CACHE_TTL_RANKING)
+    # rising 은 이력 갱신(주 1회, ~2.5h) 직후 바로 반영되도록 짧게 — 6h 캐시가 갱신 전 결과를 붙잡고 있지 않게 (R-27)
+    ttl = min(settings.CACHE_TTL_RANKING, 1800) if type == "rising" else settings.CACHE_TTL_RANKING
+    await recommendation_cache.set(key, resp.model_dump(), ttl=ttl)
     return resp

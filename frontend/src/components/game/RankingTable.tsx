@@ -2,7 +2,7 @@
  * Ranking table — 사용자 무관 지표 랭킹 (R-12).
  * 랭킹 테이블. 탭마다 '근거 숫자'가 다르다:
  *   steady  발굴지수 · 리뷰 n · 긍정률
- *   rising  30일 +N건 (+x%)
+ *   rising  N일 +N건 (+x%)  — N = 실제 비교 구간 (이력 부족 시엔 신작 속도로 임시 대체)
  *   new     출시 D+n · 리뷰 n · 하루 x건
  * 신작에는 점수처럼 보이는 숫자를 붙이지 않는다 — 속도와 리뷰 수만.
  */
@@ -42,13 +42,15 @@ function Evidence({ item, type }: { item: RankingItem; type: RankingType }) {
       </div>
     );
   }
-  if (type === 'rising') {
+  if (type === 'rising' && item.delta_30d !== null && item.delta_30d !== undefined) {
+    // 실제 비교 구간(window_days)을 그대로 표시 — 한 달치 이력이 쌓이기 전엔 7~29일 (R-27)
+    const days = item.window_days ?? 30;
     return (
       <div className="text-right flex-shrink-0">
-        <div className="font-mono text-[13px] text-orange-700 dark:text-orange-400" title="최근 30일 리뷰 증가">
-          +{(item.delta_30d ?? 0).toLocaleString()}
+        <div className="font-mono text-[13px] text-orange-700 dark:text-orange-400" title={`최근 ${days}일 리뷰 증가`}>
+          +{item.delta_30d.toLocaleString()}
         </div>
-        <div className="text-[10px] text-zinc-500">30일 {item.growth_30d_pct !== null ? `+${item.growth_30d_pct}%` : ''} · 총 {rc.toLocaleString()}</div>
+        <div className="text-[10px] text-zinc-500">{days}일 {item.growth_30d_pct !== null ? `+${item.growth_30d_pct}%` : ''} · 총 {rc.toLocaleString()}</div>
       </div>
     );
   }

@@ -182,6 +182,7 @@ export interface RankingItem {
   velocity_per_day: number | null;   // new
   delta_30d: number | null;          // rising
   growth_30d_pct: number | null;     // rising
+  window_days?: number | null;       // rising: 실제 비교 구간(일)
   badge: string;
 }
 
