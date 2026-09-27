@@ -34,6 +34,7 @@ from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -48,7 +49,15 @@ from embeddings.exposure_policy import (  # noqa: E402
 DB_URL = os.getenv("DATABASE_URL")
 if not DB_URL:
     raise ValueError(".env에 DATABASE_URL이 없습니다!")
-engine = create_engine(DB_URL)
+# 운영 DB 는 Railway 공개 프록시 경유 — 3시간짜리 실행 중 연결이 끊기는 일이 실제로 있었다 (2026-09-26, 7,072/8,640 에서 중단).
+# pre_ping: 풀에서 꺼낸 죽은 연결을 버리고 새로 연결 / recycle: 5분 넘은 연결 교체 / keepalive: 프록시 유휴 절단 방지
+engine = create_engine(
+    DB_URL, pool_pre_ping=True, pool_recycle=300,
+    connect_args={"connect_timeout": 15, "keepalives": 1, "keepalives_idle": 30,
+                  "keepalives_interval": 10, "keepalives_count": 5},
+)
+DB_RETRY_WAITS = (5, 15, 30, 60, 120)   # 한 게임 쓰기 재시도 간격(초). 다 실패하면 그 게임만 건너뛴다 (다음 실행이 다시 집는다)
+MAX_CONSECUTIVE_DB_FAILS = 10           # 연속으로 이만큼 못 쓰면 DB 가 죽은 것 — 중단하고 exit 1
 
 APPREVIEWS_URL = "https://store.steampowered.com/appreviews/{app_id}"
 REQUEST_DELAY_SEC = 1.0
@@ -174,8 +183,26 @@ def update_game(conn, app_id: int, summary: Dict) -> None:
     """), {"app_id": app_id, "now": datetime.now(), "rc": total, "pos": summary["positive"]})
 
 
+def write_with_retry(app_id: int, summary: Dict) -> bool:
+    """연결 끊김(OperationalError 등)만 재시도. 게임마다 트랜잭션이 따로라 재시도해도 중복 기록 없음."""
+    for attempt, wait in enumerate((0,) + DB_RETRY_WAITS):
+        if wait:
+            print(f"      DB 연결 끊김 — {wait}초 뒤 재시도 ({attempt}/{len(DB_RETRY_WAITS)})")
+            time.sleep(wait)
+        try:
+            with engine.begin() as conn:
+                update_game(conn, app_id, summary)
+            return True
+        except (OperationalError, DBAPIError) as e:
+            if isinstance(e, DBAPIError) and not e.connection_invalidated and not isinstance(e, OperationalError):
+                raise                                   # SQL 자체 오류는 재시도로 안 고쳐진다 — 그대로 터뜨린다
+            engine.dispose()                            # 풀에 남은 죽은 연결 전부 폐기
+    return False
+
+
 def run(targets: List[Dict], dry_run: bool) -> Dict[str, int]:
-    stats = {"fetched": 0, "failed": 0, "with_reviews": 0}
+    stats = {"fetched": 0, "failed": 0, "with_reviews": 0, "db_failed": 0}
+    consecutive_db_fail = 0
     n = len(targets)
     for i, t in enumerate(targets, 1):
         summary = fetch_review_summary(t["app_id"])
@@ -187,8 +214,15 @@ def run(targets: List[Dict], dry_run: bool) -> Dict[str, int]:
             if summary["total"] > 0:
                 stats["with_reviews"] += 1
             if not dry_run:
-                with engine.begin() as conn:
-                    update_game(conn, t["app_id"], summary)
+                if write_with_retry(t["app_id"], summary):
+                    consecutive_db_fail = 0
+                else:
+                    stats["db_failed"] += 1
+                    consecutive_db_fail += 1
+                    print(f"   [{i:>5}/{n}] {t['app_id']:<9} DB 쓰기 실패 — 건너뜀 (연속 {consecutive_db_fail})")
+                    if consecutive_db_fail >= MAX_CONSECUTIVE_DB_FAILS:
+                        print(f"\nDB 쓰기 {MAX_CONSECUTIVE_DB_FAILS}회 연속 실패 — 중단. 같은 명령을 다시 돌리면 남은 것만 이어서 한다")
+                        sys.exit(1)
             if i <= 20 or i % 50 == 0 or summary["total"] >= MIN_REVIEWS_FOR_EXPOSURE:
                 mark = "게이트 통과" if summary["total"] >= MIN_REVIEWS_FOR_EXPOSURE else ""
                 print(f"   [{i:>5}/{n}] {t['app_id']:<9} {str(t['name'])[:30]:32} "
@@ -240,7 +274,7 @@ def main():
         print(f"대상 ({m}, {args.cohort}): {len(targets):,}건, 예상 {est_min:.0f}분")
         if targets:
             stats = run(targets, args.dry_run)
-            print(f"\n조회 {stats['fetched']:,}건 (리뷰 있음 {stats['with_reviews']:,}) / 실패 {stats['failed']}건")
+            print(f"\n조회 {stats['fetched']:,}건 (리뷰 있음 {stats['with_reviews']:,}) / 실패 {stats['failed']}건 / DB 쓰기 실패 {stats['db_failed']}건")
 
     if args.dry_run:
         print("\nDry-run: DB 미변경")

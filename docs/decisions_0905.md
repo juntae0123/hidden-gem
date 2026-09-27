@@ -432,3 +432,12 @@ PRD §4-2 "변별력 25 vs 3.5" 의 25 = 5.0². 개발자가 알고 쓴 것. 경
     `setup_weekly_task.ps1` 은 이 실행기를 호출하도록 변경 (재등록 필요).
 - 규칙: **예약 작업은 '떠 있는 무언가'에 기대지 않는다.** 필요한 걸 스스로 띄우고, 실패는 exit code 로 드러낸다.
   "태스크 성공" ≠ "파이프라인 성공" — 로그의 `weekly run end (exit 0)` 줄로 확인.
+
+### R-27 후속 (2026-09-26) 3시간 이력 갱신이 7,072/8,640 에서 `server closed the connection unexpectedly` 로 죽었다
+- 원인: 운영 DB 를 Railway 공개 프록시로 3시간 붙잡는 작업인데 엔진이 `create_engine(DB_URL)` 그대로 — 끊긴 연결을 감지·재연결하는 장치가 없었다.
+  한 번 끊기면 트레이스백으로 전체 종료. (게임마다 커밋이라 7,071건은 저장됨, 재실행 시 `--stale-days 7` 로 남은 것만 이어짐)
+- 조치 (`embeddings/refresh_reviews.py`): `pool_pre_ping` · `pool_recycle=300` · TCP keepalive · `connect_timeout=15`.
+  게임 단위 쓰기를 `write_with_retry` 로 감싸 연결 오류만 5·15·30·60·120초 간격 재시도(재시도 전 `engine.dispose()`),
+  끝내 실패하면 그 게임만 건너뛰고 계속, 10회 연속이면 exit 1. SQL 자체 오류는 재시도하지 않고 그대로 터뜨린다.
+- 진단 도구 `embeddings/diag_prod.py`: 연결 여부 · 최근 24h 이력 건수 · 세션/락 대기 한 번에. `--kill-idle-tx` 로 5분+ idle in transaction 정리.
+- 규칙: **원격 DB 를 오래 붙잡는 배치는 끊김을 전제로 짠다** — pre_ping + 단위 작업 재시도 + 재실행 시 이어하기.
