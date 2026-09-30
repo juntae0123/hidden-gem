@@ -441,3 +441,12 @@ PRD §4-2 "변별력 25 vs 3.5" 의 25 = 5.0². 개발자가 알고 쓴 것. 경
   끝내 실패하면 그 게임만 건너뛰고 계속, 10회 연속이면 exit 1. SQL 자체 오류는 재시도하지 않고 그대로 터뜨린다.
 - 진단 도구 `embeddings/diag_prod.py`: 연결 여부 · 최근 24h 이력 건수 · 세션/락 대기 한 번에. `--kill-idle-tx` 로 5분+ idle in transaction 정리.
 - 규칙: **원격 DB 를 오래 붙잡는 배치는 끊김을 전제로 짠다** — pre_ping + 단위 작업 재시도 + 재실행 시 이어하기.
+
+### R-27 후속2 (2026-09-28) 스케줄러는 처음으로 제대로 떴는데, 신작 배치가 OpenAI 401 로 죽으며 이력 갱신까지 같이 멈췄다
+- 로그: `[03:30:04] docker ok` → `batch#1` 업로드에서 `401 invalid_api_key …KZ8A` → `weekly run end (exit 1)`. 실행기(run_weekly.ps1)는 의도대로 동작.
+- 원인 1: 9/16 키 교체 때 **Railway 변수만** 바꾸고 로컬 `.env` 는 폐기된 옛 키 그대로. batch 컨테이너는 로컬 `.env` 를 읽는다.
+- 원인 2: `run_step` 이 실패 시 `sys.exit` — OpenAI 와 무관한 recheck·history·gem 단계까지 전부 건너뜀. '요즘 뜨는' 재료가 또 끊길 뻔했다.
+- 조치 (`embeddings/weekly_pipeline.py`): `run_step` 은 `StepFailed` 를 던지고, 신작 구간만 그 예외로 중단. recheck/history/gem/percentile 은
+  `safe_step` 으로 각자 실행(실패는 기록만). 시작 시 `GET /v1/models` 로 키 사전 점검(무과금) — 401 이면 신작 구간을 건너뛰고 로그에 원인 명시.
+  하나라도 실패하면 마지막에 `파이프라인 부분 실패: …` + exit 1 (스케줄러 재시도·로그 판정용).
+- 규칙은 CLAUDE.md §5'' 에 박음 (키 교체 시 로컬 .env 포함).

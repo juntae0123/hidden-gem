@@ -144,8 +144,29 @@ def run_step(name: str, cmd: list[str]) -> None:
     with open(LOG_DIR / "weekly_pipeline.log", "a", encoding="utf-8") as lf:
         result = subprocess.run(cmd, cwd=PROJECT_ROOT, stdout=lf, stderr=subprocess.STDOUT)
     if result.returncode != 0:
-        notify(f"{name} 단계 실패 (exit {result.returncode}) — 파이프라인 중단")
-        sys.exit(result.returncode)
+        notify(f"{name} 단계 실패 (exit {result.returncode})")
+        raise StepFailed(name, result.returncode)
+
+
+class StepFailed(Exception):
+    """단계 실패. 예전엔 여기서 sys.exit 했다 — 신작 분석(OpenAI)이 죽으면 OpenAI 와 무관한
+    리뷰 이력·발굴 지수 갱신까지 같이 멈춰 '요즘 뜨는' 재료가 끊겼다 (R-27 후속2, 2026-09-28)."""
+    def __init__(self, name: str, code: int):
+        super().__init__(f"{name} exit {code}")
+        self.name, self.code = name, code
+
+
+def openai_key_ok() -> bool:
+    """신작 구간 전에 키 유효성만 1회 확인 (GET /v1/models, 무과금). 401/403 이면 False.
+    네트워크 오류 등 판정 불가면 True — 원래대로 시도하게 둔다."""
+    key = os.getenv("OPENAI_API_KEY", "")
+    if not key:
+        return False
+    try:
+        r = requests.get("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {key}"}, timeout=15)
+        return r.status_code not in (401, 403)
+    except requests.RequestException:
+        return True
 
 
 def count_csv_rows(path: Path) -> int:
@@ -321,52 +342,74 @@ def main() -> None:
 
     processed_total = 0
     iterations = 0
-    while True:
-        # 킬 스위치 둘: STOP_PIPELINE 은 전부 멈춤, STOP_BACKFILL 은 --loop(백필)만 멈춤.
-        # 09-04 비용 사고 때 만든 STOP_BACKFILL 이 주간 1회차까지 막아 운영 갱신이 조용히 0건이 되던 것 (2026-09-06 발견).
-        if (DATA_DIR / "STOP_PIPELINE").exists():
-            notify("STOP_PIPELINE 파일 감지 — 종료 (재개: data/STOP_PIPELINE 삭제)")
-            break
-        if args.loop and (DATA_DIR / "STOP_BACKFILL").exists():
-            notify("STOP_BACKFILL 파일 감지 — 백필 루프 진행 없이 종료 (재개: 파일 삭제 후 재실행)")
-            break
-        iterations += 1
-        n = run_iteration(iterations)
-        processed_total += n
-        if n == 0:
-            notify("신작/pending 없음 — 종료" if iterations == 1 else f"더 처리할 게임 없음 (총 {iterations - 1}회차)")
-            break
-        if args.crawl_only or not args.loop:
-            break
-        if iterations >= args.max_loops:
-            notify(f"루프 상한 {args.max_loops}회 도달 — 종료 (다시 실행하면 이어서 진행)")
-            break
-        time.sleep(10)
+    failures: list[str] = []
+    ingest_ok = True
+    if not args.crawl_only and not openai_key_ok():
+        ingest_ok = False
+        failures.append("openai-key")
+        notify("OPENAI_API_KEY 무효(401) — 신작 수집·분석 건너뜀. 리뷰 이력·발굴 지수 갱신은 계속한다. "
+               "로컬 .env 의 키를 Railway 와 같은 새 키로 바꿀 것")
+    def safe_step(name: str, cmd: list) -> bool:
+        try:
+            run_step(name, cmd)
+            return True
+        except StepFailed:
+            failures.append(name)
+            return False
+
+    try:
+        if not ingest_ok:
+            raise StepFailed("openai-key", 1)
+        while True:
+            # 킬 스위치 둘: STOP_PIPELINE 은 전부 멈춤, STOP_BACKFILL 은 --loop(백필)만 멈춤.
+            # 09-04 비용 사고 때 만든 STOP_BACKFILL 이 주간 1회차까지 막아 운영 갱신이 조용히 0건이 되던 것 (2026-09-06 발견).
+            if (DATA_DIR / "STOP_PIPELINE").exists():
+                notify("STOP_PIPELINE 파일 감지 — 종료 (재개: data/STOP_PIPELINE 삭제)")
+                break
+            if args.loop and (DATA_DIR / "STOP_BACKFILL").exists():
+                notify("STOP_BACKFILL 파일 감지 — 백필 루프 진행 없이 종료 (재개: 파일 삭제 후 재실행)")
+                break
+            iterations += 1
+            n = run_iteration(iterations)
+            processed_total += n
+            if n == 0:
+                notify("신작/pending 없음 — 종료" if iterations == 1 else f"더 처리할 게임 없음 (총 {iterations - 1}회차)")
+                break
+            if args.crawl_only or not args.loop:
+                break
+            if iterations >= args.max_loops:
+                notify(f"루프 상한 {args.max_loops}회 도달 — 종료 (다시 실행하면 이어서 진행)")
+                break
+            time.sleep(10)
+    except StepFailed as e:
+        if e.name != "openai-key":
+            failures.append(e.name)
+            notify(f"신작 구간 중단 ({e}) — 리뷰 이력·발굴 지수 갱신은 계속")
 
     if processed_total and not args.crawl_only:
         # gem_percentile은 전체 분포 재계산이라 루프 끝에 1회
-        run_step("percentile", [py, "-m", "embeddings.recalc_percentile", "--yes"])
+        safe_step("percentile", [py, "-m", "embeddings.recalc_percentile", "--yes"])
 
     if not args.crawl_only:
         # 게이트에 걸려 비활성인 신작 중 30일 넘게 재조회 안 한 것 — 리뷰가 붙었으면 다시 켠다
-        run_step("recheck", [py, "-m", "embeddings.refresh_reviews", "--recheck", "--stale-days", "30"])
+        safe_step("recheck", [py, "-m", "embeddings.refresh_reviews", "--recheck", "--stale-days", "30"])
         # 주간 리뷰 이력 (R-11 rising 의 재료): 활성 게임 전부, 마지막 조회 7일 초과분. 1.3초/건 → 활성 7천 건이면 ~2.5h.
         # 게이트는 건드리지 않는다(--no-gate) — 노출 규칙 변경은 R-4 가 따로 정한다.
         if not args.skip_history:
-            run_step("history", [py, "-m", "embeddings.refresh_reviews", "--stale", "--stale-days", "7",
+            safe_step("history", [py, "-m", "embeddings.refresh_reviews", "--stale", "--stale-days", "7",
                                  "--cohort", "all", "--no-gate"])
         # 발굴 지수 갱신 (R-3): 리뷰 수가 바뀐 만큼 Wilson×무명도도 바뀐다. 전 게임 재계산, 수 초.
-        run_step("gem", [py, "-m", "embeddings.gem_evidence", "--fill", "--yes"])
+        safe_step("gem", [py, "-m", "embeddings.gem_evidence", "--fill", "--yes"])
 
-    if args.audit_n and processed_total:
+    if args.audit_n and processed_total and "openai-key" not in failures:
         # 품질 드리프트 게이트: 교사 게임 N개를 학생 모델로 다시 매겨 기준선과 대조한다.
         # 학생 모델/few-shot/프롬프트가 조용히 바뀌어 데이터 품질이 내려가는 것을 잡는 장치.
         # N=30 이면 비용 $0.2 수준. 회귀가 감지되면 audit_student 가 exit 3 → 알림 후 중단.
         log(f"품질 드리프트 점검 (교사 {args.audit_n}건 재분석 후 기준선 대조)")
-        run_step("audit-make", [py, "-m", "embeddings.audit_student",
+        safe_step("audit-make", [py, "-m", "embeddings.audit_student",
                                "--make-holdout", str(args.audit_n)])
         before_audit = latest_batch_output()
-        run_step("audit-batch", [py, "-m", "embeddings.batch_generator",
+        safe_step("audit-batch", [py, "-m", "embeddings.batch_generator",
                                  "--csv", str(DATA_DIR / "audit" / "holdout.csv"),
                                  "--full", "--yes", "--model", args.model,
                                  "--fewshot", args.fewshot, "--fewshot-n", str(args.fewshot_n), "--sync"])
@@ -383,6 +426,9 @@ def main() -> None:
             notify("품질 점검용 배치 결과 없음 — 점검 생략")
 
     elapsed = datetime.now() - started
+    if failures:
+        notify(f"파이프라인 부분 실패: {', '.join(failures)} — {iterations}회차, 처리 {processed_total}개 (소요 {elapsed})")
+        sys.exit(1)
     notify(f"파이프라인 완료: {iterations}회차, 처리 {processed_total}개 (소요 {elapsed})")
 
 
