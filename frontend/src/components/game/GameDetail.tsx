@@ -20,9 +20,12 @@ import { getGenreCoreMetrics, METRIC_LABELS, cn } from '@/lib/utils';
 import { METRIC_DESCRIPTIONS } from '@/lib/constants';
 import { recordTasteAction, recordTasteActionBeacon } from '@/lib/api';
 import { LoginPromptModal } from '@/components/ui/LoginPromptModal';
+import type { GameDetail as GameDetailData } from '@/types/game';
 
 interface GameDetailProps {
   appId: number;
+  /** 서버 컴포넌트가 미리 받은 상세 — 있으면 첫 HTML 에 본문이 실린다 (크롤러·링크 미리보기용) */
+  initialData?: GameDetailData;
 }
 
 /**
@@ -81,8 +84,8 @@ function MetricBar({ metricKey, value }: { metricKey: string; value: number }) {
   );
 }
 
-export function GameDetail({ appId }: GameDetailProps) {
-  const { data: game, isLoading, error, refetch } = useGameDetail(appId);
+export function GameDetail({ appId, initialData }: GameDetailProps) {
+  const { data: game, isLoading, error, refetch } = useGameDetail(appId, initialData);
   const favorites       = useUserStore(s => s.favorites);
   const toggleFavorite  = useUserStore(s => s.toggleFavorite);
   const isLoggedIn      = useUserStore(s => s.isLoggedIn);

@@ -11,7 +11,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { recommendByGame, recommendByPreference, getVibes, recommendByVibe, fetchRanking, HIDDEN_GEM_MAX_REVIEWS } from '@/lib/api';
-import type { RankingType } from '@/types/game';
+import type { RankingType, RankingResponse, RecommendationResponse } from '@/types/game';
 
 // ==================== 매일 순환 테마 / Daily Rotating Themes ====================
 
@@ -117,12 +117,20 @@ export function useDefaultRecommendations(count: number = 9) {
 /**
  * Recommend similar games by reference game ID (game detail page).
  * 특정 게임 기반 유사 게임 추천 (게임 상세 페이지).
+ *
+ * initialData: 서버 컴포넌트가 미리 받아 온 결과 (SEO 2026-10-14). 있으면 첫 화면이
+ *   서버 HTML 에 그대로 실리고, staleTime 동안은 브라우저가 같은 요청을 다시 보내지 않는다.
  */
-export function useRecommendByGame(appId: number | null, count: number = 6) {
+export function useRecommendByGame(
+  appId: number | null,
+  count: number = 6,
+  initialData?: RecommendationResponse,
+) {
   return useQuery({
     queryKey: ['recommend', 'by-game', appId, count],
     queryFn:  () => recommendByGame(appId as number, count),
     enabled:  appId !== null && !Number.isNaN(appId),
+    initialData,
     staleTime: 1000 * 60 * 15,
     gcTime:    1000 * 60 * 30,
     retry: 1,
@@ -199,10 +207,16 @@ export function useNewLeague(prefs: Record<string, number> | null, count: number
  * 진짜 랭킹 — 사용자 무관 지표. 6시간 서버 캐시와 맞춘 staleTime.
  * Korean: steady(발굴 지수) / rising(30일 증가율) / new(초기 속도).
  */
-export function useRanking(type: RankingType, genre: string | null, limit: number = 30) {
+export function useRanking(
+  type: RankingType,
+  genre: string | null,
+  limit: number = 30,
+  initialData?: RankingResponse,   // 서버가 미리 받은 첫 탭(steady·전체) 결과 — 그 키에만 넘긴다
+) {
   return useQuery({
     queryKey: ['ranking', type, genre ?? '-', limit],
     queryFn:  () => fetchRanking(type, genre, limit),
+    initialData,
     staleTime: 1000 * 60 * 30,
     gcTime:    1000 * 60 * 60,
     retry: 1,

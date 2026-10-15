@@ -14,24 +14,29 @@ import { useRecommendByGame } from '@/hooks/useRecommend';
 import { GameGrid } from './GameGrid';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { GameGridSkeleton } from '@/components/ui/LoadingSkeleton';
+import type { RecommendationResponse } from '@/types/game';
 
 interface RecommendListProps {
   appId: number;
   count?: number;
+  /** 서버 컴포넌트가 미리 받은 추천 — 있으면 카드 링크가 첫 HTML 에 실린다 (SEO 2026-10-14) */
+  initialData?: RecommendationResponse;
+  /** 섹션 제목 (기본: '이 게임과 비슷한 게임'). 상세 페이지는 '<게임명> 같은 게임' 을 넘긴다 */
+  title?: string;
 }
 
 /**
  * Render similar games based on reference game.
  * 기준 게임 기반 유사 게임 렌더링.
  */
-export function RecommendList({ appId, count = 6 }: RecommendListProps) {
-  const { data, isLoading, error, refetch } = useRecommendByGame(appId, count);
+export function RecommendList({ appId, count = 6, initialData, title }: RecommendListProps) {
+  const { data, isLoading, error, refetch } = useRecommendByGame(appId, count, initialData);
   const games = data?.recommendations ?? [];
 
   return (
     <section className="mt-12">
       <h2 className="text-[13px] font-medium text-zinc-700 dark:text-zinc-300 mb-4">
-        이 게임과 비슷한 게임
+        {title ?? '이 게임과 비슷한 게임'}
       </h2>
 
       {/* 에러 상태 */}

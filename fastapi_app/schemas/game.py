@@ -202,6 +202,17 @@ class GameWithMetrics(BaseModel):
     metrics: Optional[GameMetricResponse] = None
 
 
+class SitemapIdsResponse(BaseModel):
+    """
+    Exposed app_id page for sitemap generation.
+    Korean: 사이트맵용 노출 게임 app_id 목록 (한 쪽). total 은 노출 게임 전체 수 — 프런트가 파일 개수를 센다.
+    """
+    total: int
+    offset: int
+    limit: int
+    app_ids: List[int]
+
+
 # ==================== 추천 요청 / Recommendation Requests ====================
 
 class RecommendByGameRequest(BaseModel):

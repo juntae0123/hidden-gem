@@ -154,6 +154,16 @@ C 문장 검색  semantic_search               (임베딩85% + 힌트15%) × 94 
 → 한쪽 공식만 고치면 세 화면의 점수가 서로 비교 불가능해진다. gem 관련 수정은 항상
 세 경로를 모두 본다.
 
+
+### C-17. Next 메타데이터는 자식 페이지로 **얕게** 상속된다 — 루트에 둔 값이 전 페이지의 값이 된다 (2026-10-14 R-28)
+- 루트 layout 의 `alternates.canonical: '/'` 는 자기 canonical 이 없는 **모든 하위 페이지**에 그대로 붙는다.
+  상세·랭킹이 "나는 홈의 중복"이라고 검색엔진에 신고하던 상태였다. → canonical·`og:url` 은 루트에 두지 않고 페이지마다 선언한다.
+- 반대 방향도 있다: 자식이 `openGraph` 를 지정하면 루트의 `openGraph` 는 **통째로** 버려진다(필드 단위 병합이 아니다).
+  `siteName`·`locale` 과 루트 `opengraph-image` 파일의 이미지까지 사라진다(실측: /ranking·/search 에서 og:image 누락).
+  → `lib/seo.ts` 의 `OG_BASE` 를 펼치고, 이미지가 없으면 `DEFAULT_OG_IMAGE` 를 넣는다.
+- `'use client'` 페이지는 서버 HTML 에 **데이터가 없다**(React Query 가 브라우저에서 받는다). 화면에 보인다고 크롤러가 본 게 아니다.
+  확인은 `curl -s <URL> | grep -o "<title>.*</title>"` 처럼 **JS 없이 받은 원본 HTML** 로 한다.
+
 ---
 
 ## 4. 이번 버그들의 실제 원인 분류

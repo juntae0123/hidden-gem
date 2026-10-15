@@ -5,9 +5,8 @@ import { SITE_URL } from '@/lib/constants';
  * Static sitemap for crawlers.
  * 정적 사이트맵 — 검색 엔진 수집용.
  *
- * 게임 상세(/game/[id]) 는 1만 건이 넘어 빌드 시 전량 나열하지 않는다.
- * 랭킹·검색 페이지에서 내부 링크로 도달 가능하므로 크롤러가 따라간다.
- * (전량 색인이 필요해지면 분할 사이트맵으로 나눈다 — 파일당 5만 URL 제한)
+ * 게임 상세(/game/[id])는 여기 넣지 않고 분할 사이트맵(app/game/sitemap.ts → /game/sitemap/<n>.xml)이
+ * 맡는다 (SEO 2026-10-14). 둘을 묶는 안내 파일은 /sitemap-index.xml.
  */
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
@@ -16,6 +15,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ['/search', 'daily', 0.9],
     ['/ranking', 'daily', 0.9],
     ['/onboarding', 'monthly', 0.5],
+    ['/onboarding/swipe', 'monthly', 0.6],
     ['/login', 'yearly', 0.3],
     ['/privacy', 'yearly', 0.3],
     ['/terms', 'yearly', 0.3],

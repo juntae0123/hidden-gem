@@ -450,3 +450,36 @@ PRD §4-2 "변별력 25 vs 3.5" 의 25 = 5.0². 개발자가 알고 쓴 것. 경
   `safe_step` 으로 각자 실행(실패는 기록만). 시작 시 `GET /v1/models` 로 키 사전 점검(무과금) — 401 이면 신작 구간을 건너뛰고 로그에 원인 명시.
   하나라도 실패하면 마지막에 `파이프라인 부분 실패: …` + exit 1 (스케줄러 재시도·로그 판정용).
 - 규칙은 CLAUDE.md §5'' 에 박음 (키 교체 시 로컬 .env 포함).
+
+## R-28. (2026-10-14) 검색엔진이 본 사이트는 빈 껍데기였다 — 서버 HTML·게임별 메타데이터·전량 사이트맵
+- 상황: 홈·게임 상세·랭킹·취향 분석이 전부 `'use client'` 페이지. 클라이언트 컴포넌트도 서버에서 그려지지만,
+  데이터는 브라우저의 React Query 가 받아 오므로 **서버 HTML 에는 스켈레톤만** 있었다(홈은 `useSearchParams` 때문에
+  Suspense 폴백까지 밀려 h1 도 없었다). 게임 상세는 게임별 `<title>`·설명이 없어 전부 홈과 같은 제목,
+  사이트맵은 정적 7개뿐, 공유 카드 이미지 없음. 루트 layout 의 `keywords` 에 '인디게임'(서비스 정의와 어긋남).
+- 추가 발견: 루트 layout 의 `alternates.canonical: '/'` 가 **모든 하위 페이지로 상속**되고 있었다 — 상세·랭킹이
+  "홈의 중복"이라고 검색엔진에 스스로 신고하던 상태. (C-17)
+- 판단: 화면을 다시 만들지 않는다. 서버 컴포넌트가 같은 API 를 먼저 불러 **기존 클라이언트 컴포넌트에 `initialData`
+  로 넘긴다.** 같은 화면이 서버 HTML 로 먼저 나오고, 찜·행동 로그·Steam 클릭 같은 상호작용은 그대로 남는다.
+  서버만 그리는 것은 '게임 소개' 블록(설명·개발사·평가·두드러진 지표)과 JSON-LD 뿐 — 화면 중복을 만들지 않는다.
+- 구현:
+  - `game/[appId]/page.tsx` 서버 래퍼: `generateMetadata`(제목 `<게임명> 같은 게임 · 비슷한 게임 추천`, 설명에 장르 핵심
+    지표 상위 3개, canonical `/game/<id>`, og:image = API `header_image`), 하루 ISR(`generateStaticParams` 빈 배열),
+    숫자 아닌 id 는 404, 노출 게이트에서 내린 게임(`is_active=false`)·미분석은 `noindex`.
+  - 비슷한 게임은 클라이언트와 **같은 요청**(`POST /games/recommend/by-game`, count 6) — 서버 Redis 캐시 키도 같다.
+  - 실패 정책(`lib/server-api.ts`): API 가 죽으면 최소 페이지 + 클라이언트가 다시 불러옴. 첫 시도 실패 시 revalidate 300
+    으로 한 번 더 부른다 — Next 는 fetch 의 짧은 revalidate 를 페이지 주기로 끌어내리므로 **실패한 렌더가 하루 동안 캐시되지
+    않는다**(실측: 실패 렌더 `s-maxage=300`, API 복구 5분 뒤 정상 렌더 `s-maxage=86400`).
+  - 사이트맵: `GET /games/sitemap-ids`(신규, `is_active AND is_analyzed` = 검색과 같은 노출 조건, app_id 순, Redis 6h,
+    레이트 리밋 default) → `app/game/sitemap.ts`(`generateSitemaps`, 파일당 1만) + 묶음 안내 `/sitemap-index.xml`.
+    라우트는 `/{app_id}` **보다 위** — 아래에 두면 'sitemap-ids' 가 app_id 로 잡혀 422.
+  - 홈: 히어로(h1 + 서비스 정의 + /search·/ranking·/onboarding/swipe 링크)를 서버 `page.tsx` 로, 검색·추천은 `HomeContent`(client).
+    랭킹: 서버 래퍼가 첫 탭(숨은 명작) 30개를 `initialData` 로. 취향 분석: layout 으로 메타데이터만.
+  - 기본 OG 이미지 `app/opengraph-image.tsx` — 한글은 Noto Sans KR 에서 **문구에 쓰인 글자만** 남긴 부분 글꼴(73KB, OFL).
+    전체 글꼴(6MB)을 넣지 않은 이유: 이미지는 빌드 때 한 번 만들어지고, 빠진 글자가 있으면 빌드가 Google Fonts 접속을 시도한다.
+- 검증: 목 API(실제 pydantic 응답 모델로 직렬화)로 `next build`·`next start` → `curl` 원본 HTML 에서 제목·설명·canonical·
+  og:image·h1·비슷한 게임 링크 확인, 사이트맵 23,456건이 3파일(1만/1만/3,456)로, API 를 끈 채 깨끗한 빌드도 성공(사이트맵 5파일·
+  빈 목록·5분 주기). 헤드리스 Chromium 390px 에서 하이드레이션 오류 없음·가로 넘침 없음. 백엔드 pytest 74 통과(신규 11).
+- 미검증: 운영 API·운영 도메인(샌드박스에서 접근 불가), 실제 구글/네이버 색인 결과, 실제 휴대폰 화면.
+- 남은 위험: SSR 의 by-game 호출도 `RATE_LIMIT_RECOMMEND_ANON`(20/분, IP 단위)을 탄다. uvicorn 이 `--proxy-headers` 없이
+  떠 있어 운영에서 `req.client.host` 가 실제 사용자 IP 인지 확인이 필요하다 — 프록시 IP 하나로 묶여 있다면 크롤러가 많이 들어올 때
+  사용자 추천과 한도를 나눠 쓴다(429 면 SSR 은 추천 없이 그리고 5분 뒤 다시 그린다).

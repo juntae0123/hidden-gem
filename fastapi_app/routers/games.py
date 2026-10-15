@@ -15,6 +15,7 @@ Endpoints:
     POST /games/search/semantic          - 자연어 시맨틱 검색
     GET  /games/stats/overview           - DB 통계
     GET  /games/metrics/list             - 지표 목록
+    GET  /games/sitemap-ids              - 사이트맵용 노출 게임 app_id 목록 (SEO 2026-10-14)
     GET  /games/{app_id}                 - 게임 상세 + 60개 지표
     POST /games/recommend/by-game        - 특정 게임 기반 유사 게임 추천 (v5: 앵커 100점)
     POST /games/recommend/by-preference  - 유저 선호도 기반 맞춤 추천
@@ -37,6 +38,7 @@ from schemas.game import (
     GameWithMetrics, GameSearchResult,
     RecommendByGameRequest, RecommendByPreferenceRequest,
     RecommendationResponse, RecommendedGame,
+    SitemapIdsResponse,
 )
 from services.recommender import recommender, EXCLUSION_KEYWORDS
 from services.vibe_config import get_vibe_list, get_vibe_preferences, get_vibe_secondary
@@ -233,6 +235,47 @@ async def list_vibes():
     경로: /api/v1/games/vibes (prefix=/games)
     """
     return {"vibes": get_vibe_list()}
+
+
+# ==================== 사이트맵 / Sitemap ====================
+# 경로 순서 주의: 이 라우트는 반드시 `/{app_id}` 보다 **위**에 둔다. FastAPI 는 등록 순서대로 경로를
+# 맞추고, `/{app_id}` 는 'sitemap-ids' 도 경로로는 잡은 뒤 int 변환에서 422 를 낸다 (다음 라우트로 넘어가지 않는다).
+
+SITEMAP_CACHE_TTL = 21600      # 6h — 노출 게이트는 주간 배치에서 바뀐다. invalidate_all 의 'sitemap:*' 로도 지워진다
+SITEMAP_MAX_LIMIT = 10000      # 프런트 GAME_SITEMAP_CHUNK 와 같다 (구글 상한은 파일당 5만)
+
+
+@router.get("/sitemap-ids", response_model=SitemapIdsResponse,
+            dependencies=[Depends(_LIMIT_DEFAULT)])
+async def sitemap_ids(
+    offset: int = Query(0, ge=0, le=10_000_000),
+    limit: int = Query(SITEMAP_MAX_LIMIT, ge=1, le=SITEMAP_MAX_LIMIT),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    사이트맵용 노출 게임 app_id 목록 (SEO 2026-10-14).
+
+    노출 조건은 검색(`/games/search`)과 같다: `is_active AND is_analyzed`.
+    is_active 는 노출 게이트(embeddings.exposure_policy)가 내린 게임을 뺀다 — 검색에 안 나오는 게임을
+    검색엔진에만 올리지 않는다. (주의 C-3: 배치 재적재가 게이트로 내린 게임을 다시 켜면 여기에도 다시 들어온다)
+    app_id 오름차순 고정 — 쪽 나눔(offset)이 실행마다 같은 파일에 같은 게임을 넣는다.
+    점수와 무관한 목록이라 캐시 키에 점수 버전(_key_version)을 넣지 않는다.
+    """
+    cache_key = f"sitemap:ids:{offset}:{limit}"
+    cached = await recommendation_cache.get(cache_key)
+    if cached:
+        return SitemapIdsResponse(**cached)
+
+    exposed = (Game.is_active == True, Game.is_analyzed == True)  # noqa: E712
+    total = (await db.execute(select(func.count(Game.id)).where(*exposed))).scalar() or 0
+    rows = await db.execute(
+        select(Game.app_id).where(*exposed).order_by(Game.app_id).offset(offset).limit(limit)
+    )
+    app_ids = [int(a) for a in rows.scalars().all()]
+
+    response = SitemapIdsResponse(total=int(total), offset=offset, limit=limit, app_ids=app_ids)
+    await recommendation_cache.set(cache_key, response.model_dump(), ttl=SITEMAP_CACHE_TTL)
+    return response
 
 
 # ==================== 게임 상세 / Game Detail ====================

@@ -5,7 +5,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: '이용약관 · Hidden Gem',
+  title: '이용약관',   // 루트 템플릿이 ' · Hidden Gem' 을 붙인다 (예전엔 두 번 붙었다)
   description: 'Hidden Gem 이용약관',
 };
 

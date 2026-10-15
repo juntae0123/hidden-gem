@@ -6,7 +6,7 @@ import { CONTACT_EMAIL } from '@/lib/constants';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: '개인정보처리방침 · Hidden Gem',
+  title: '개인정보처리방침',   // 루트 템플릿이 ' · Hidden Gem' 을 붙인다 (예전엔 두 번 붙었다)
   description: 'Hidden Gem 개인정보처리방침',
 };
 

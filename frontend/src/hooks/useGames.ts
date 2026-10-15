@@ -10,16 +10,18 @@ import {
   getStatsOverview,
   getMetricsList,
 } from '@/lib/api';
+import type { GameDetail } from '@/types/game';
 
 /**
  * Fetch game detail by appId
  * appId로 게임 상세 정보 조회 훅
  */
-export function useGameDetail(appId: number | null) {
+export function useGameDetail(appId: number | null, initialData?: GameDetail) {
   return useQuery({
     queryKey: ['game', appId],
     queryFn: () => getGameDetail(appId as number),
     enabled: appId !== null && !Number.isNaN(appId),
+    initialData,   // 서버 컴포넌트가 받은 상세 (SEO 2026-10-14) — 첫 HTML 에 본문이 실린다
     staleTime: 1000 * 60 * 5, // 5분 / 5 min
   });
 }
