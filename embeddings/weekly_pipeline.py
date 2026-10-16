@@ -89,16 +89,28 @@ def acquire_lock() -> Path:
     """
     lock = DATA_DIR / "pipeline.lock"
     if lock.exists():
+        parts = lock.read_text().split(maxsplit=1)
         try:
-            old_pid = int(lock.read_text().split()[0])
-        except (ValueError, IndexError, OSError):
+            old_pid = int(parts[0])
+        except (ValueError, IndexError):
             old_pid = None
-        alive = old_pid is not None and Path(f"/proc/{old_pid}").exists()
+        try:
+            started = datetime.strptime(parts[1].strip(), "%Y-%m-%d %H:%M:%S")
+            age_h = (datetime.now() - started).total_seconds() / 3600
+        except (ValueError, IndexError):
+            age_h = None
+        # 이 파이프라인은 'docker compose run --rm' 으로 매번 새 컨테이너에서 돈다 → PID 가 항상 1.
+        # 컨테이너 사이 PID 비교는 무의미하므로(1 은 늘 자기 자신) 락의 '나이'로 판정한다.
+        # 2026-10-04 중단된 실행이 PID 1 락을 남겨 10/12 주간 실행이 /proc/1 을 보고 계속 멈췄다 (C-18, R-29).
+        STALE_HOURS = 26  # ExecutionTimeLimit 과 동일. 이보다 오래된 락은 비정상 종료 잔해로 본다
+        fresh = age_h is not None and age_h < STALE_HOURS
+        alive = fresh and old_pid not in (None, 1, os.getpid()) and Path(f"/proc/{old_pid}").exists()
         if alive:
-            log(f"다른 파이프라인이 이미 실행 중이다 (PID {old_pid}) — 시작하지 않는다. "
-                f"정말 겹쳐 돌려야 하면 {lock} 를 지운다.")
+            log(f"다른 파이프라인이 실행 중이다 (PID {old_pid}, {age_h:.1f}h 전 시작) — 시작하지 않는다. "
+                f"정말 겹쳐 돌리려면 {lock} 를 지운다.")
             sys.exit(1)
-        log(f"오래된 락 발견 (PID {old_pid}, 살아있지 않음) — 이어받는다")
+        age_str = f"{age_h:.1f}h 전" if age_h is not None else "시각 불명"
+        log(f"오래된·무의미한 락 발견 (PID {old_pid}, {age_str}) — 이어받는다")
     DATA_DIR.mkdir(exist_ok=True)
     lock.write_text(f"{os.getpid()} {datetime.now():%Y-%m-%d %H:%M:%S}\n")
     atexit.register(lambda: lock.unlink(missing_ok=True))

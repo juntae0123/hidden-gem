@@ -483,3 +483,19 @@ PRD §4-2 "변별력 25 vs 3.5" 의 25 = 5.0². 개발자가 알고 쓴 것. 경
 - 남은 위험: SSR 의 by-game 호출도 `RATE_LIMIT_RECOMMEND_ANON`(20/분, IP 단위)을 탄다. uvicorn 이 `--proxy-headers` 없이
   떠 있어 운영에서 `req.client.host` 가 실제 사용자 IP 인지 확인이 필요하다 — 프록시 IP 하나로 묶여 있다면 크롤러가 많이 들어올 때
   사용자 추천과 한도를 나눠 쓴다(429 면 SSR 은 추천 없이 그리고 5분 뒤 다시 그린다).
+
+## R-29. (2026-10-16) 주간 파이프라인이 10/12 에 돌지 않았다 — PC 가 아니라 PID 1 락 잔해 (C-18)
+- 상황: 10/12(월) 03:30 태스크는 떴다(`weekly run start`, `docker ok`, 컨테이너 생성). 그런데 파이프라인이
+  `다른 파이프라인이 이미 실행 중이다 (PID 1)` 로 exit 1. 10/04 실행이 Ctrl+C 로 끊기며 남긴 `data/pipeline.lock`(`1 2026-10-04 18:30:16`).
+  `run --rm` 컨테이너에서 python 은 늘 PID 1 → `/proc/1` 검사가 항상 참 → 고치지 않으면 10/19, 10/26 … 전부 같은 이유로 실패.
+- 판단: PID 로 컨테이너 사이의 생존을 판정할 수 없다. 락의 나이(시작 시각)로 판정하고, PID 1·자기 PID 는 근거에서 뺀다.
+  26h(=ExecutionTimeLimit) 보다 오래된 락은 잔해. 겹침 방지력은 약해지지만, 주간 실행은 168h 간격이고 백필은 사람이 돌리므로 받아들인다.
+- 구현: `embeddings/weekly_pipeline.py acquire_lock` — 타임스탬프 파싱 + `STALE_HOURS = 26` + `old_pid not in (None, 1, os.getpid())`.
+  잔해 락은 `data/pipeline.lock.stale_20261004` 로 옮겨 둠(삭제해도 됨). `embeddings/` 는 볼륨 마운트라 재빌드 없이 다음 실행부터 적용.
+- 검증: 결정 로직 단위 검증 4건 — 10/04 잔해(PID 1, 8일 전) → 이어받음 / PID 1 1h 전 → 이어받음(한계) / 다른 PID 1h 전 살아있음 → 거부 /
+  살아있는 PID 라도 30h 전 → 이어받음. `py_compile` 통과. 실제 주간 실행은 미검증(아래).
+- 미검증·할 일: 놓친 2주(10/05~10/18)를 한 번에 — `docker compose run --rm -T batch python -m embeddings.weekly_pipeline --days 14 --limit 100`
+  (기본 `--days 7 --limit 50` 은 10/05~10/11 출시작을 건너뛴다). 비용은 회차 500건 $2.45 기준 100건 ≈ $0.5(추정, 대시보드로 확인).
+  끝나면 `logs/weekly_task.log` 에 `weekly run end (exit 0)` 와 `오래된·무의미한 락 발견 … 이어받는다` 확인.
+- 남은 위험: 비정상 종료 뒤 26h 안에는 여전히 새 실행이 거부된다(월 03:30 태스크의 RestartCount 2·30분 간격은 그 안이라 재시도도 거부).
+  → 태스크 실패 알림이 없다. 다음 과제: `exit 1` 이면 Windows 알림 또는 Claude 정기 확인에 로그 끝줄 점검 추가.
