@@ -20,6 +20,9 @@ const nextConfig: NextConfig = {
   }),
   allowedDevOrigins: ['192.168.75.81'],
   images: {
+    // Steam CDN 이미지는 이미 압축·리사이즈된 jpg. Vercel 이미지 최적화를 거치면
+    // Hobby 한도(Transformations 5K/30일)를 넘어 사이트가 정지된다 (2026-10-18 정지, R-30)
+    unoptimized: true,
     remotePatterns: [
       { protocol: 'https', hostname: 'cdn.cloudflare.steamstatic.com' },
       { protocol: 'https', hostname: 'shared.akamai.steamstatic.com' },

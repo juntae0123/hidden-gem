@@ -499,3 +499,12 @@ PRD §4-2 "변별력 25 vs 3.5" 의 25 = 5.0². 개발자가 알고 쓴 것. 경
   끝나면 `logs/weekly_task.log` 에 `weekly run end (exit 0)` 와 `오래된·무의미한 락 발견 … 이어받는다` 확인.
 - 남은 위험: 비정상 종료 뒤 26h 안에는 여전히 새 실행이 거부된다(월 03:30 태스크의 RestartCount 2·30분 간격은 그 안이라 재시도도 거부).
   → 태스크 실패 알림이 없다. 다음 과제: `exit 1` 이면 Windows 알림 또는 Claude 정기 확인에 로그 끝줄 점검 추가.
+
+## R-30. (2026-10-20) Vercel 이 사이트를 정지했다 — 이미지 최적화 한도 초과 (Hobby Transformations 8.9K / 5K)
+- 상황: hiddengemdb.com 이 「This deployment is temporarily paused」. Vercel Usage(최근 30일): Image Optimization Transformations **8.9K / 5K** 초과로 10/18 정지.
+  나머지는 한도 안 — Cache Writes 25K/100K, ISR Writes 28K/200K, Fluid Active CPU 26m 56s/4h (준태 대시보드 캡처 10/20).
+- 원인: R-28 에서 게임 상세 9,387쪽을 서버 HTML 로 열자 검색엔진이 전량을 긁었고, 쪽마다 `next/image` 가 Steam 표지를 Vercel 에서 다시 변환했다.
+  Steam CDN 이미지는 이미 압축·리사이즈된 jpg 라 변환으로 얻는 게 거의 없다.
+- 판단: Vercel 이미지 최적화를 끈다. `frontend/next.config.ts` 의 `images.unoptimized: true`. 이미지는 Steam CDN 에서 바로 받는다.
+- 정지 해제: 자동으로 안 풀린다. 30일 롤링 사용량이 한도 아래로 내려간 뒤 vercel.com/help 에 요청하거나 Pro 로 올려야 한다. 정지 중엔 새 커밋도 배포되지 않는다.
+- 미검증: `next build` 는 이 PC 에서 아직 안 돌림. 정지 해제 뒤 배포되면 Usage 의 Transformations 가 더 늘지 않는지 하루 뒤 확인.
